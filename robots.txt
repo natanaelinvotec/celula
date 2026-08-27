@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://www.celulams.com.br/sitemap.xml

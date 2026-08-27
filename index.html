@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Laboratório Célula Diagnósticos</title>
+    
+    <!-- Meta Tags SEO -->
+    <meta name="description" content="Laboratório Célula em Campo Grande - MS. Exames laboratoriais, teste de ancestralidade e atendimento humanizado.">
+    <meta name="keywords" content="laboratório, exames, campo grande, ms, análises clínicas, ancestralidade, saúde">
+    
+    <!-- Open Graph (Redes Sociais e WhatsApp) -->
+    <meta property="og:title" content="Laboratório Célula Diagnósticos">
+    <meta property="og:description" content="Exames laboratoriais, teste de ancestralidade e atendimento humanizado em Campo Grande - MS.">
+    <meta property="og:image" content="C:\Users\kungamble\Downloads\CelulaMS\img\logo-celula.png">
+    <meta property="og:type" content="website">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="C:\Users\kungamble\Downloads\CelulaMS\img\favicon.png">
+    
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- Header -->
+    <header>
+        <div class="logo-container">
+            <img src="C:\Users\kungamble\Downloads\CelulaMS\img\logo-celula.png" alt="Logo Célula" class="logo-img">
+        </div>
+        
+        <!-- Botão Menu Mobile -->
+        <div class="menu-toggle" id="mobile-menu">
+            <i class="fa-solid fa-bars"></i>
+        </div>
+
+        <!-- Wrapper do menu -->
+        <div class="nav-wrapper" id="nav-wrapper">
+            <ul class="nav-links">
+                <li><a href="#">Home</a></li>
+                <li><a href="#perfis">Exames</a></li>
+                <li><a href="#unidades">Unidades</a></li>
+                <li><a href="https://wa.me/5567981240201" target="_blank" >Convênios</a></li>
+            </ul>
+            <div class="header-buttons">
+                <!-- Alterado para abrir o Modal único de Laudos Autolac -->
+                <button class="btn btn-blue" onclick="openModal('modalLaudos')">Portal do Paciente</button>
+                <button class="btn btn-red" onclick="openModal('modalLaudos')">Portal do Médico</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="hero" style="background: url('file:///C:/Users/kungamble/Downloads/CelulaMS/img/slider_ancestralidade.jpg') center/cover no-repeat;">
+        <div class="hero-overlay"></div>
+        <div class="hero-content">
+            <h1>CÉLULA DIAGNÓSTICOS:<br>Teste Genético de Ancestralidade.</h1>
+            <p>Conheça suas origens, tendências genéticas e personalize seus cuidados com a saúde. Uma verdadeira viagem no tempo através do seu DNA.</p>
+            <a href="https://wa.me/5567981240201" target="_blank" class="btn btn-red" style="font-size: 1.1rem; padding: 15px 30px; display:inline-flex; align-items:center; gap:10px;">
+                <i class="fa-brands fa-whatsapp"></i> Agendar Exame Online
+            </a>
+        </div>
+        <div class="hero-video-container">
+            <div class="hero-video-wrapper">
+                <div class="hero-video-inner">
+                    <video id="heroVideo" src="C:\Users\kungamble\Downloads\CelulaMS\img\ancestralidade.mp4" autoplay loop muted playsinline></video>
+                    <!-- Botão de controle de som -->
+                    <button id="muteBtn" class="mute-btn" aria-label="Ativar som">
+                        <i class="fa-solid fa-volume-xmark"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Acessos Rápidos -->
+    <section id="acessos" class="acessos-section">
+        <h2>Acesso aos Resultados</h2>
+        <div class="acessos-grid">
+            <!-- Todos os botões agora abrem o frame unificado do Autolac -->
+            <div class="acesso-card" onclick="openModal('modalLaudos')">
+                <i class="fa-solid fa-user"></i>
+                <h3>Paciente</h3>
+                <button class="btn btn-outline">Acessar</button>
+            </div>
+            <div class="acesso-card" onclick="openModal('modalLaudos')">
+                <i class="fa-solid fa-hospital"></i>
+                <h3>Local de Atendimento</h3>
+                <button class="btn btn-outline">Acessar</button>
+            </div>
+            <div class="acesso-card" onclick="openModal('modalLaudos')">
+                <i class="fa-solid fa-building"></i>
+                <h3>Empresa Conveniada</h3>
+                <button class="btn btn-outline">Acessar</button>
+            </div>
+            <div class="acesso-card" onclick="openModal('modalLaudos')">
+                <i class="fa-solid fa-user-doctor"></i>
+                <h3>Acesso Médico</h3>
+                <button class="btn btn-outline">Acessar</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- Perfis de Saúde -->
+    <section id="perfis" class="perfis-section">
+        <div class="perfis-header">
+            <h2>Nossos Perfis de Exames</h2>
+            <p>Escolha o perfil ideal para entender e cuidar da sua saúde de forma completa.</p>
+        </div>
+        
+        <div class="bento-grid">
+            <div class="bento-card card-tall" style="background: linear-gradient(to top, rgba(0,0,0,0.8), rgba(0,0,0,0.2)), url('file:///C:/Users/kungamble/Downloads/CelulaMS/img/familia.jpg') center/cover;">
+                <div class="card-content">
+                    <span class="card-tag">BÁSICO</span>
+                    <h3>Perfil Saúde</h3>
+                    <p>Avalia anemia, infecções, glicose, colesterol e a função dos seus rins e fígado.</p>
+                    <button class="btn-leia-mais" onclick="openModal('modalPerfilSaude')">Leia mais <i class="fa-solid fa-chevron-right"></i></button>
+                </div>
+            </div>
+            <div class="bento-card card-wide card-dark-blue">
+                <div class="card-content">
+                    <span class="card-tag">AVANÇADO</span>
+                    <h3>Perfil Saúde Prime</h3>
+                    <p>Uma visão mais profunda da sua saúde, incluindo o funcionamento da tireoide, níveis de energia e vitaminas D e B12 essenciais para a memória e foco.</p>
+                    <button class="btn-leia-mais" onclick="openModal('modalPerfilPrime')">Leia mais <i class="fa-solid fa-chevron-right"></i></button>
+                </div>
+                <div class="card-image-circle">
+                    <img src="file:///C:/Users/kungamble/Downloads/CelulaMS/img/draflaviav.jpg" alt="Saúde Prime" style="object-position: top;">
+                </div>
+            </div>
+            <div class="bento-card card-dark" style="background: linear-gradient(to top, rgba(0,0,0,0.8), rgba(0,0,0,0.2)), url('file:///C:/Users/kungamble/Downloads/CelulaMS/img/emagrecedoras.jpg') center/cover;">
+                <div class="card-content">
+                    <span class="card-tag">EMAGRECIMENTO</span>
+                    <h3>Perfil Pré-Caneta</h3>
+                    <p>Garante que o seu processo de emagrecimento seja seguro e eficiente, avaliando pâncreas, insulina e fígado.</p>
+                    <button class="btn-leia-mais" onclick="openModal('modalPerfilPreCaneta')">Leia mais <i class="fa-solid fa-chevron-right"></i></button>
+                </div>
+            </div>
+            <div class="bento-card card-purple" style="background: linear-gradient(to top, rgba(0,0,0,0.8), rgba(0,0,0,0.2)), url('https://images.unsplash.com/photo-1534438327276-14e5300c3a48?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80') center/cover;">
+                <div class="card-content">
+                    <span class="card-tag">PERFORMANCE</span>
+                    <h3>Perfil Biofit</h3>
+                    <p>Para quem busca superar os próprios limites, melhorar a composição corporal, hipertrofia e ter mais energia no treino.</p>
+                    <button class="btn-leia-mais" onclick="openModal('modalPerfilBiofit')">Leia mais <i class="fa-solid fa-chevron-right"></i></button>
+                </div>
+            </div>
+            <div class="bento-card card-dark-blue-2" style="background: linear-gradient(to top, rgba(0,0,0,0.8), rgba(0,0,0,0.2)), url('https://images.unsplash.com/photo-1519689680058-324335c77eba?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80') center/cover;">
+                <div class="card-content">
+                    <span class="card-tag">CUIDADO ESPECIAL</span>
+                    <h3>Perfil Infantil</h3>
+                    <p>Acompanha o ritmo intenso de crescimento e a saúde das crianças.</p>
+                    <button class="btn-leia-mais" onclick="openModal('modalPerfilInfantil')">Leia mais <i class="fa-solid fa-chevron-right"></i></button>
+                </div>
+            </div>
+            <div class="bento-card card-light-blue" style="background: linear-gradient(to top, rgba(0,0,0,0.8), rgba(0,0,0,0.2)), url('https://images.unsplash.com/photo-1512621776951-a57141f2eefd?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80') center/cover;">
+                <div class="card-content">
+                    <span class="card-tag">NUTRIÇÃO</span>
+                    <h3>Perfil Vitamine</h3>
+                    <p>Descubra se o seu corpo está realmente nutrido e protegido.</p>
+                    <button class="btn-leia-mais" onclick="openModal('modalPerfilVitamine')">Leia mais <i class="fa-solid fa-chevron-right"></i></button>
+                </div>
+            </div>
+            
+            <div class="bento-card card-dark" style="background: linear-gradient(to top, rgba(0,0,0,0.8), rgba(0,0,0,0.2)), url('file:///C:/Users/kungamble/Downloads/CelulaMS/img/anemias.jpg') center/cover;">
+                <div class="card-content">
+                    <span class="card-tag">INVESTIGAÇÃO</span>
+                    <h3>Perfil Anemia</h3>
+                    <p>Investiga a fundo as causas do cansaço excessivo e fraqueza em adultos.</p>
+                    <button class="btn-leia-mais" onclick="openModal('modalPerfilAnemia')">Leia mais <i class="fa-solid fa-chevron-right"></i></button>
+                </div>
+            </div>
+            
+            <div class="bento-card card-purple" style="background: linear-gradient(to top, rgba(0,0,0,0.8), rgba(0,0,0,0.2)), url('https://images.unsplash.com/photo-1584036561566-baf8f5f1b144?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80') center/cover;">
+                <div class="card-content">
+                    <span class="card-tag">IMUNIDADE</span>
+                    <h3>Perfil Imunochek</h3>
+                    <p>Avalia detalhadamente sua resistência contra infecções e vírus.</p>
+                    <button class="btn-leia-mais" onclick="openModal('modalPerfilImunochek')">Leia mais <i class="fa-solid fa-chevron-right"></i></button>
+                </div>
+            </div>
+            <div class="bento-card card-wide card-dark-blue">
+                <div class="card-content">
+                    <span class="card-tag">EXCLUSIVO</span>
+                    <h3>Perfil Personalizado</h3>
+                    <p>Montado com acompanhamento técnico e profissional pela nossa equipe de bioquímicos.</p>
+                    <button class="btn-leia-mais" onclick="openModal('modalPerfilPersonalizado')">Leia mais <i class="fa-solid fa-chevron-right"></i></button>
+                </div>
+                <div class="card-image-circle">
+                    <img src="https://images.unsplash.com/photo-1579684385127-1ef15d508118?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80" alt="Personalizado" style="object-position: center;">
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- NOSSAS UNIDADES -->
+    <section id="unidades" class="unidades-section">
+        <h2>Nossas Unidades</h2>
+        <p class="unidades-subtitle">Encontre a unidade do Laboratório Célula mais próxima de você em Mato Grosso do Sul.</p>
+        
+        <div class="unidades-grid">
+            <div class="unidade-card">
+                <div class="unidade-img" style="background-image: url('file:///C:/Users/kungamble/Downloads/CelulaMS/img/matriz.jpg');"></div>
+                <div class="unidade-info">
+                    <h3>Matriz</h3>
+                    <p><i class="fa-solid fa-location-dot"></i> Rua Abrão Júlio Rahe, 87 - Centro</p>
+                    <ul class="horas-lista">
+                        <li><strong>Atendimento:</strong> 06:15 às 18:00</li>
+                        <li><strong>Coleta:</strong> até 17:30</li>
+                        <li><strong>Sábado:</strong> 06:15 às 11:00</li>
+                    </ul>
+                    <a href="https://maps.google.com/?q=Rua+Abrão+Júlio+Rahe,+87+-+Centro,+Campo+Grande+-+MS" target="_blank" class="btn-mapa">Ver no Mapa <i class="fa-solid fa-map-location-dot"></i></a>
+                </div>
+            </div>
+            <div class="unidade-card">
+                <div class="unidade-img" style="background-image: url('file:///C:/Users/kungamble/Downloads/CelulaMS/img/celantonino.jpg');"></div>
+                <div class="unidade-info">
+                    <h3>Coronel Antonino</h3>
+                    <p><i class="fa-solid fa-location-dot"></i> Av. Castelo Branco, 630 - Cel. Antonino</p>
+                    <ul class="horas-lista">
+                        <li><strong>Atendimento:</strong> 06:15 às 12:00 | 13:00 às 16:15</li>
+                        <li><strong>Coleta:</strong> até 15:00</li>
+                        <li><strong>Sábado:</strong> 06:15 às 10:15</li>
+                    </ul>
+                    <a href="https://maps.google.com/?q=Av.+Castelo+Branco,+630+-+Coronel+Antonino,+Campo+Grande+-+MS" target="_blank" class="btn-mapa">Ver no Mapa <i class="fa-solid fa-map-location-dot"></i></a>
+                </div>
+            </div>
+            <div class="unidade-card">
+                <div class="unidade-img" style="background-image: url('file:///C:/Users/kungamble/Downloads/CelulaMS/img/novalima.jpg');"></div>
+                <div class="unidade-info">
+                    <h3>Nova Lima</h3>
+                    <p><i class="fa-solid fa-location-dot"></i> Rua Zulmira Borba, 1192 - Nova Lima</p>
+                    <ul class="horas-lista">
+                        <li><strong>Atendimento:</strong> 06:15 às 11:00 | 13:00 às 16:15</li>
+                        <li><strong>Coleta:</strong> até 15:00</li>
+                        <li><strong>Sábado:</strong> 06:15 às 10:15</li>
+                    </ul>
+                    <a href="https://maps.google.com/?q=Rua+Zulmira+Borba,+1192+-+Nova+Lima,+Campo+Grande+-+MS" target="_blank" class="btn-mapa">Ver no Mapa <i class="fa-solid fa-map-location-dot"></i></a>
+                </div>
+            </div>
+            <div class="unidade-card">
+                <div class="unidade-img" style="background-image: url('file:///C:/Users/kungamble/Downloads/CelulaMS/img/guaicurus.jpg');"></div>
+                <div class="unidade-info">
+                    <h3>Guaicurus</h3>
+                    <p><i class="fa-solid fa-location-dot"></i> Av. Guaicurus, 4483 - Jd. Monumento</p>
+                    <ul class="horas-lista">
+                        <li><strong>Atendimento:</strong> 06:15 às 11:30 | 13:30 às 16:15</li>
+                        <li><strong>Coleta:</strong> até 15:30</li>
+                        <li><strong>Sábado:</strong> 06:15 às 10:15</li>
+                    </ul>
+                    <a href="https://maps.google.com/?q=Av.+Guaicurus,+4483+-+Jardim+Monumento,+Campo+Grande+-+MS" target="_blank" class="btn-mapa">Ver no Mapa <i class="fa-solid fa-map-location-dot"></i></a>
+                </div>
+            </div>
+            <div class="unidade-card">
+                <div class="unidade-img" style="background-image: url('file:///C:/Users/kungamble/Downloads/CelulaMS/img/coophavila.jpg');"></div>
+                <div class="unidade-info">
+                    <h3>Coophavila</h3>
+                    <p><i class="fa-solid fa-location-dot"></i> Av. Marinha, 611 - Coophavila II</p>
+                    <ul class="horas-lista">
+                        <li><strong>Atendimento:</strong> 06:15 às 16:30</li>
+                        <li><strong>Coleta:</strong> até 16:00</li>
+                        <li><strong>Sábado:</strong> 06:15 às 10:15</li>
+                    </ul>
+                    <a href="https://maps.google.com/?q=Av.+Marinha,+611+-+Coophavila+II,+Campo+Grande+-+MS" target="_blank" class="btn-mapa">Ver no Mapa <i class="fa-solid fa-map-location-dot"></i></a>
+                </div>
+            </div>
+            <div class="unidade-card">
+                <div class="unidade-img" style="background-image: url('file:///C:/Users/kungamble/Downloads/CelulaMS/img/jcastilhos.jpg');"></div>
+                <div class="unidade-info">
+                    <h3>Júlio de Castilhos</h3>
+                    <p><i class="fa-solid fa-location-dot"></i> Av. Júlio de Castilho, 1925 - Lar do Trabalhador</p>
+                    <ul class="horas-lista">
+                        <li><strong>Atendimento:</strong> 06:15 às 12:00 | 13:00 às 16:15</li>
+                        <li><strong>Coleta:</strong> até 15:00</li>
+                        <li><strong>Sábado:</strong> 06:15 às 10:15</li>
+                    </ul>
+                    <a href="https://maps.google.com/?q=Av.+Júlio+de+Castilho,+1925+-+Lar+do+Trabalhador,+Campo+Grande+-+MS" target="_blank" class="btn-mapa">Ver no Mapa <i class="fa-solid fa-map-location-dot"></i></a>
+                </div>
+            </div>
+            <div class="unidade-card">
+                <div class="unidade-img" style="background-image: url('file:///C:/Users/kungamble/Downloads/CelulaMS/img/sgo.jpg');"></div>
+                <div class="unidade-info">
+                    <h3>São Gabriel do Oeste</h3>
+                    <p><i class="fa-solid fa-location-dot"></i> Rua João Evangelista Rosa, 72 - Centro</p>
+                    <ul class="horas-lista">
+                        <li><strong>Atendimento:</strong> 06:00 às 11:00 | 13:00 às 16:00</li>
+                        <li><strong>Coleta:</strong> Verificar na unidade</li>
+                        <li><strong>Sábado:</strong> 06:00 às 10:00</li>
+                    </ul>
+                    <a href="https://maps.google.com/?q=Rua+João+Evangelista+Rosa,+72+-+Centro,+São+Gabriel+do+Oeste+-+MS" target="_blank" class="btn-mapa">Ver no Mapa <i class="fa-solid fa-map-location-dot"></i></a>
+                </div>
+            </div>
+            <div class="unidade-card" style="border: 2px solid var(--blue-500); background-color: var(--blue-50);">
+                <div class="unidade-img" style="background-image: url('file:///C:/Users/kungamble/Downloads/CelulaMS/img/coletaexterna.jpg'); border-bottom: 4px solid var(--red-brand);"></div>
+                <div class="unidade-info">
+                    <h3>Coleta Externa</h3>
+                    <p><i class="fa-solid fa-car-side"></i> Coleta Residencial e Empresarial</p>
+                    <ul class="horas-lista">
+                        <li><strong>Agendamento:</strong> 06:15 às 17:30</li>
+                        <li><span style="font-size:0.8rem; color:var(--text-light); line-height:1.2; display:block; margin-top:5px;">Pedidos após este horário serão processados no dia seguinte por ordem de abertura em sequência cronológica.</span></li>
+                    </ul>
+                    <a href="https://wa.me/5567981240201" target="_blank" class="btn-mapa" style="background:var(--red-brand); color:white;">Agendar na Central <i class="fa-brands fa-whatsapp"></i></a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- FOOTER -->
+    <footer class="main-footer">
+        <div class="footer-top">
+            <div class="footer-contact-info">
+                <h2>Contate-nos</h2>
+                <p>Precisa de ajuda com seus exames ou laudos? Nossa equipe está pronta para te atender de forma rápida e humanizada.</p>
+                <div class="footer-buttons">
+                    <a href="https://wa.me/5567981240201" target="_blank" class="btn-footer btn-whatsapp">
+                        <i class="fa-brands fa-whatsapp"></i> Atendimento Online
+                    </a>
+                </div>
+            </div>
+            <div class="footer-graphic">
+                <div class="rectangle-image">
+                    <img src="file:///C:/Users/kungamble/Downloads/CelulaMS/img/saude.jpg" alt="Atendimento Laboratório Célula">
+                </div>
+                <div class="decorative-rect-1"></div>
+                <div class="decorative-rect-2"></div>
+            </div>
+        </div>
+
+        <div class="footer-links-grid">
+            <div class="footer-col brand-col">
+                <h3 style="color:white; font-size: 1.5rem; margin-bottom: 15px;">CÉLULA</h3>
+                <ul>
+                    <li><a href="#" onclick="openModal('modalMissao')">Missão, Visão e Valores</a></li>
+                    <li><a href="mailto:contato@celulams.com.br">Sala de imprensa</a></li>
+                    <li><a href="mailto:rh@celulams.com.br">Carreiras <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.7em;"></i></a></li>
+                </ul>
+                <div class="social-icons">
+                    <a href="#"><i class="fa-brands fa-linkedin-in"></i></a>
+                    <a href="#"><i class="fa-brands fa-x-twitter"></i></a>
+                    <a href="#"><i class="fa-brands fa-facebook-f"></i></a>
+                    <a href="#"><i class="fa-brands fa-instagram"></i></a>
+                </div>
+            </div>
+            <div class="footer-col">
+                <h3>Perguntas frequentes</h3>
+                <ul>
+                    <li><a href="#unidades">Nossas Unidades</a></li>
+                    <li><a href="#acessos">Resultados dos testes</a></li>
+                    <li><a href="#acessos">Todos os pacientes</a></li>
+                    <li><a href="#acessos">Todos os médicos</a></li>
+                </ul>
+            </div>
+            <div class="footer-col">
+                <h3>Recursos</h3>
+                <ul>
+                    <li><a href="#">Convênios atendidos</a></li>
+                    <li><a href="#" onclick="openModal('modalPrivacidade')">Aviso de Práticas de Privacidade</a></li>
+                    <li><a href="https://wa.me/5567981240201" target="_blank">Preparo de Exames</a></li>
+                </ul>
+            </div>
+            <div class="footer-col">
+                <h3>Links rápidos</h3>
+                <ul>
+                    <li><a href="https://wa.me/5567981240201" target="_blank">Agendamento</a></li>
+                    <li><a href="https://wa.me/5567981240201" target="_blank">Coleta Domiciliar</a></li>
+                    <li><a href="#unidades">Unidades</a></li>
+                    <li><a href="https://wa.me/5567981240201" target="_blank">Exames Toxicológicos</a></li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="footer-bottom">
+            <div class="legal-links">
+                <a href="#" onclick="openModal('modalConformidade')">Conformidade</a> | 
+                <a href="#" onclick="openModal('modalDeclaracao')">Declaração de Privacidade</a> | 
+                <a href="#" onclick="openModal('modalTermos')">Termos de Uso</a>
+            </div>
+            <p class="copyright">&copy; Direitos reservados Laboratório Célula Diagnósticos Citológicos LTDA 2026</p>
+        </div>
+    </footer>
+
+    <!-- ================= NOVO MODAL UNIFICADO DO SISTEMA AUTOLAC (IFRAME) ================= -->
+    <div class="modal-overlay" id="modalLaudos">
+        <div class="modal-box" style="padding: 20px; width: 95%; max-width: 650px; height: 85vh; max-height: 700px; display: flex; flex-direction: column;">
+            <i class="fa-solid fa-xmark close-modal" onclick="closeModal('modalLaudos')" style="position: absolute; top: -15px; right: -15px; background: white; border: 2px solid var(--blue-100); z-index: 10;"></i>
+            <h3 class="modal-title" style="margin-top: 5px; margin-bottom: 15px; font-size: 1.4rem;">Acesso aos Laudos</h3>
+            <!-- Iframe do sistema da Autolac -->
+            <iframe src="https://laudos.autolac.com.br/#/login" width="100%" height="100%" style="border:none; border-radius: 15px; flex-grow: 1; background: var(--blue-50);"></iframe>
+        </div>
+    </div>
+
+    <!-- ================= MODAIS DOS PERFIS DE EXAMES ================= -->
+    <div class="modal-overlay" id="modalPerfilSaude">
+        <div class="modal-box perfil-detalhe-box">
+            <i class="fa-solid fa-xmark close-modal" onclick="closeModal('modalPerfilSaude')"></i>
+            <div class="perfil-capa" style="background-image: url('file:///C:/Users/kungamble/Downloads/CelulaMS/img/familia.jpg');"></div>
+            <div class="perfil-info">
+                <h3>Perfil Saúde</h3>
+                <p>Para ajudar você a entender sua saúde, veja o que cada exame analisa:</p>
+                <ul class="exames-lista">
+                    <li><strong>Hemograma (HEM):</strong> Avalia anemia, infecções, suas células de defesa e plaquetas.</li>
+                    <li><strong>Glicose (GLI):</strong> Avalia o nível de açúcar no sangue no dia do exame.</li>
+                    <li><strong>Colesterol Total e Frações:</strong> Avalia o equilíbrio geral entre as gorduras boas e ruins.</li>
+                    <li><strong>Triglicerídeos (TRIG):</strong> Reflexo direto da sua alimentação.</li>
+                    <li><strong>Creatinina e Ureia:</strong> Capacidade de filtragem dos rins.</li>
+                    <li><strong>TGO / TGP / Gama GT / Fosfatase Alcalina / Bilirrubinas:</strong> Conjunto que avalia o fígado.</li>
+                    <li><strong>EAS (Urina):</strong> Identifica infecções urinárias.</li>
+                </ul>
+                <a href="https://wa.me/5567981240201" target="_blank" class="btn btn-whatsapp w-100"><i class="fa-brands fa-whatsapp"></i> Adquira o Perfil</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modalPerfilPrime">
+        <div class="modal-box perfil-detalhe-box">
+            <i class="fa-solid fa-xmark close-modal" onclick="closeModal('modalPerfilPrime')"></i>
+            <div class="perfil-capa" style="background-image: url('file:///C:/Users/kungamble/Downloads/CelulaMS/img/draflavia.jpg');"></div>
+            <div class="perfil-info">
+                <h3>Perfil Saúde Prime</h3>
+                <p>Para ajudar você a entender sua saúde de forma ainda mais profunda:</p>
+                <ul class="exames-lista">
+                    <li><strong>Exames do Perfil Saúde:</strong> Hemograma, Glicose, Colesterol, Triglicerídeos, Rins e Fígado.</li>
+                    <li><strong>TSH e T4 Livre:</strong> Avaliam o funcionamento da tireoide, que regula metabolismo e energia.</li>
+                    <li><strong>Vitamina D:</strong> Fundamental para imunidade e saúde dos ossos.</li>
+                    <li><strong>Vitamina B12:</strong> Essencial para o sistema nervoso, memória, foco e prevenção de fadiga.</li>
+                    <li><strong>Sódio, Potássio e Magnésio:</strong> Essenciais para o equilíbrio de líquidos e evitar cãibras.</li>
+                </ul>
+                <a href="https://wa.me/5567981240201" target="_blank" class="btn btn-whatsapp w-100"><i class="fa-brands fa-whatsapp"></i> Adquira o Perfil</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modalPerfilPreCaneta">
+        <div class="modal-box perfil-detalhe-box">
+            <i class="fa-solid fa-xmark close-modal" onclick="closeModal('modalPerfilPreCaneta')"></i>
+            <div class="perfil-capa" style="background-image: url('file:///C:/Users/kungamble/Downloads/CelulaMS/img/emagrecedoras.jpg');"></div>
+            <div class="perfil-info">
+                <h3>Perfil Pré-Caneta</h3>
+                <p>Garantia de segurança e eficiência no emagrecimento:</p>
+                <ul class="exames-lista">
+                    <li><strong>Glicose, Insulina e Hemoglobina Glicada:</strong> Essencial para entender como seu corpo processa o açúcar.</li>
+                    <li><strong>Amilase e Lipase:</strong> Avaliam detalhadamente o funcionamento do pâncreas. Obrigatório para canetas emagrecedoras.</li>
+                    <li><strong>Perfil Lipídico e Fígado (TGO/TGP/GGT):</strong> Saúde do fígado e queima de gorduras.</li>
+                    <li><strong>Ferritina:</strong> Marcador para descobrir inflamação no corpo.</li>
+                    <li><strong>TSH, Vitamina D e B12:</strong> Regulação metabólica e energia diária.</li>
+                </ul>
+                <a href="https://wa.me/5567981240201" target="_blank" class="btn btn-whatsapp w-100"><i class="fa-brands fa-whatsapp"></i> Adquira o Perfil</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modalPerfilBiofit">
+        <div class="modal-box perfil-detalhe-box">
+            <i class="fa-solid fa-xmark close-modal" onclick="closeModal('modalPerfilBiofit')"></i>
+            <div class="perfil-capa" style="background-image: url('https://images.unsplash.com/photo-1534438327276-14e5300c3a48?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80');"></div>
+            <div class="perfil-info">
+                <h3>Perfil Biofit</h3>
+                <p>Para quem busca superar os limites e melhorar a composição corporal:</p>
+                <ul class="exames-lista">
+                    <li><strong>Testosterona Total e Livre:</strong> Principal hormônio para performance, ganho de massa, força e disposição.</li>
+                    <li><strong>Ácido Lático / Lactato:</strong> Marcador essencial para avaliar a fadiga muscular e limite de esforço.</li>
+                    <li><strong>Cálcio e Zinco:</strong> Contração muscular, imunidade e reparação dos tecidos.</li>
+                    <li><strong>Creatinina, Ureia e Ácido Úrico:</strong> Reflexo do metabolismo de proteínas.</li>
+                    <li><strong>Hemograma e Vitaminas D/B12:</strong> Oxigenação muscular e energia.</li>
+                </ul>
+                <a href="https://wa.me/5567981240201" target="_blank" class="btn btn-whatsapp w-100"><i class="fa-brands fa-whatsapp"></i> Adquira o Perfil</a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="modal-overlay" id="modalPerfilInfantil">
+        <div class="modal-box perfil-detalhe-box">
+            <i class="fa-solid fa-xmark close-modal" onclick="closeModal('modalPerfilInfantil')"></i>
+            <div class="perfil-capa" style="background-image: url('https://images.unsplash.com/photo-1519689680058-324335c77eba?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80');"></div>
+            <div class="perfil-info">
+                <h3>Perfil Infantil</h3>
+                <p>Acompanha o crescimento e protege a saúde das crianças:</p>
+                <ul class="exames-lista">
+                    <li><strong>Hemograma (HEM):</strong> Essencial para investigar sinais de anemia e monitorar células de defesa.</li>
+                    <li><strong>Glicose (GLI):</strong> Avalia como o corpo processa energia e atua na prevenção do diabetes infantil.</li>
+                    <li><strong>Proteína C-Reativa (PCR):</strong> Marcador eficiente para descobrir inflamações ou infecções agudas.</li>
+                    <li><strong>EAS (Urina):</strong> Avalia a função dos rins e identifica infecções urinárias.</li>
+                    <li><strong>Exame Parasitológico (EPF):</strong> Investiga vermes que podem causar dores, falta de apetite e irritabilidade.</li>
+                </ul>
+                <a href="https://wa.me/5567981240201" target="_blank" class="btn btn-whatsapp w-100"><i class="fa-brands fa-whatsapp"></i> Adquira o Perfil</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modalPerfilVitamine">
+        <div class="modal-box perfil-detalhe-box">
+            <i class="fa-solid fa-xmark close-modal" onclick="closeModal('modalPerfilVitamine')"></i>
+            <div class="perfil-capa" style="background-image: url('https://images.unsplash.com/photo-1512621776951-a57141f2eefd?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80');"></div>
+            <div class="perfil-info">
+                <h3>Perfil Vitamine</h3>
+                <p>Descubra se o seu corpo está realmente nutrido:</p>
+                <ul class="exames-lista">
+                    <li><strong>Hemograma (HEM):</strong> Avalia a saúde geral do sangue.</li>
+                    <li><strong>Ferro e Ferritina:</strong> Fundamentais para investigar cansaço e fraqueza.</li>
+                    <li><strong>Sódio, Potássio e Magnésio:</strong> Evitam cãibras, controlam a pressão e hidratam as células.</li>
+                    <li><strong>Cálcio e Fósforo:</strong> Garantem ossos e dentes fortes.</li>
+                    <li><strong>Selênio e Zinco:</strong> Aliados da imunidade e cicatrização.</li>
+                    <li><strong>Vitaminas A, B12, C, D e E:</strong> Essenciais para visão, foco, colágeno, força muscular e proteção das células contra envelhecimento.</li>
+                </ul>
+                <a href="https://wa.me/5567981240201" target="_blank" class="btn btn-whatsapp w-100"><i class="fa-brands fa-whatsapp"></i> Adquira o Perfil</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modalPerfilAnemia">
+        <div class="modal-box perfil-detalhe-box">
+            <i class="fa-solid fa-xmark close-modal" onclick="closeModal('modalPerfilAnemia')"></i>
+            <div class="perfil-capa" style="background-image: url('file:///C:/Users/kungamble/Downloads/CelulaMS/img/anemias.jpg');"></div>
+            <div class="perfil-info">
+                <h3>Perfil Anemia</h3>
+                <p>Investigação aprofundada de cansaço excessivo e palidez:</p>
+                <ul class="exames-lista">
+                    <li><strong>Hemograma (HEM):</strong> Avalia a quantidade e qualidade dos glóbulos vermelhos.</li>
+                    <li><strong>Ferro e Ferritina:</strong> Avaliam o ferro circulante e os estoques do corpo.</li>
+                    <li><strong>Capacidade Total (CAPATINT) e Reticulócitos:</strong> Como o corpo transporta ferro e se a medula fabrica sangue novo.</li>
+                    <li><strong>Eletroforese de Hemoglobina:</strong> Investiga alterações genéticas no sangue.</li>
+                    <li><strong>Vitamina B12 e Ácido Fólico:</strong> A falta delas afeta a energia e a memória.</li>
+                    <li><strong>LDH e Sangue Oculto:</strong> Investiga se há destruição celular precoce ou sangramento silencioso.</li>
+                </ul>
+                <a href="https://wa.me/5567981240201" target="_blank" class="btn btn-whatsapp w-100"><i class="fa-brands fa-whatsapp"></i> Adquira o Perfil</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modalPerfilImunochek">
+        <div class="modal-box perfil-detalhe-box">
+            <i class="fa-solid fa-xmark close-modal" onclick="closeModal('modalPerfilImunochek')"></i>
+            <div class="perfil-capa" style="background-image: url('https://images.unsplash.com/photo-1584036561566-baf8f5f1b144?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80');"></div>
+            <div class="perfil-info">
+                <h3>Perfil Imunochek</h3>
+                <p>Saiba como está a resistência do seu corpo:</p>
+                <ul class="exames-lista">
+                    <li><strong>Hemograma (HEM):</strong> Identifica sinais de infecção e conta as células de defesa.</li>
+                    <li><strong>Imunoglobulinas (IgA, IgE, IgG e IgM):</strong> O batalhão de choque, avalia alergias, memória imunológica e infecções ativas.</li>
+                    <li><strong>Proteína C-Reativa (PCR):</strong> Descobre inflamações silenciosas ou agudas.</li>
+                    <li><strong>Zinco e Selênio:</strong> "Combustível" direto para o sistema imune.</li>
+                    <li><strong>Vitaminas C, D e A:</strong> Escudo protetor contra vírus e bactérias.</li>
+                </ul>
+                <a href="https://wa.me/5567981240201" target="_blank" class="btn btn-whatsapp w-100"><i class="fa-brands fa-whatsapp"></i> Adquira o Perfil</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modalPerfilPersonalizado">
+        <div class="modal-box perfil-detalhe-box">
+            <i class="fa-solid fa-xmark close-modal" onclick="closeModal('modalPerfilPersonalizado')"></i>
+            <div class="perfil-capa" style="background-image: url('file:///C:/Users/kungamble/Downloads/CelulaMS/img/equipe.jpg');"></div>
+            <div class="perfil-info">
+                <h3>Perfil Personalizado</h3>
+                <p>Criado exclusivamente para suas necessidades.</p>
+                <p style="font-weight: normal; color: var(--text-light); text-align: justify;">O Perfil Personalizado é montado conforme a sua necessidade conversando com um de nossos bioquímicos. Nós indicamos um profissional médico conforme o resultado dos exames ou atuamos sob a orientação médica especializada que você já possui para garantir o melhor acompanhamento.</p>
+                <a href="https://wa.me/5567981240201" target="_blank" class="btn btn-whatsapp w-100" style="margin-top:20px;"><i class="fa-brands fa-whatsapp"></i> Falar com Bioquímico</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= MODAIS DE TEXTOS INSTITUCIONAIS ================= -->
+    <div class="modal-overlay" id="modalMissao">
+        <div class="modal-box">
+            <i class="fa-solid fa-xmark close-modal" onclick="closeModal('modalMissao')"></i>
+            <h3 class="modal-title">Nossa Identidade</h3>
+            <div style="text-align: center; color: var(--text-dark); line-height: 1.6;">
+                <p><strong>Missão:</strong> Promover saúde e bem-estar através de diagnósticos precisos e atendimento humanizado.</p>
+                <p><strong>Visão:</strong> Ser referência em medicina diagnóstica em Mato Grosso do Sul, inovando sempre.</p>
+                <p><strong>Valores:</strong> Ética, excelência, cuidado, responsabilidade e precisão.</p>
+                <br>
+                <p style="color: var(--blue-600); font-weight: 800;">Laboratório pioneiro desde 2008 genuinamente sul-mato-grossense.</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="modal-overlay" id="modalPrivacidade">
+        <div class="modal-box" style="max-height: 80vh; overflow-y: auto;">
+            <i class="fa-solid fa-xmark close-modal" onclick="closeModal('modalPrivacidade')"></i>
+            <h3 class="modal-title">Aviso de Práticas de Privacidade</h3>
+            <div style="color: var(--text-dark); line-height: 1.6; font-size: 0.95rem;">
+                <p>O Laboratório Célula respeita a sua privacidade e garante o sigilo total das suas informações de saúde, em conformidade com a LGPD (Lei Geral de Proteção de Dados) e normas vigentes de análises clínicas.</p>
+                <p>Seus dados sensíveis são utilizados exclusivamente para a realização de exames, diagnósticos e para a disponibilização dos seus laudos através dos nossos portais seguros.</p>
+                <p>Não compartilhamos seus dados médicos com terceiros sem sua autorização expressa, exceto em casos de obrigatoriedade legal (notificações compulsórias aos órgãos de saúde).</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modalConformidade">
+        <div class="modal-box">
+            <i class="fa-solid fa-xmark close-modal" onclick="closeModal('modalConformidade')"></i>
+            <h3 class="modal-title">Conformidade</h3>
+            <p style="color: var(--text-dark); text-align: justify; font-size: 0.95rem;">O Laboratório Célula atua sob rigorosos padrões de Qualidade e Conformidade estabelecidos pela ANVISA, Ministério da Saúde e órgãos acreditadores, garantindo a rastreabilidade e calibração de todos os nossos processos analíticos e laboratoriais.</p>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modalDeclaracao">
+        <div class="modal-box">
+            <i class="fa-solid fa-xmark close-modal" onclick="closeModal('modalDeclaracao')"></i>
+            <h3 class="modal-title">Declaração de Privacidade</h3>
+            <p style="color: var(--text-dark); text-align: justify; font-size: 0.95rem;">Ao utilizar nossos portais e serviços online, você concorda com a coleta de dados básicos de navegação para aprimoramento da sua experiência. Suas informações de cadastro são criptografadas de ponta a ponta.</p>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modalTermos">
+        <div class="modal-box">
+            <i class="fa-solid fa-xmark close-modal" onclick="closeModal('modalTermos')"></i>
+            <h3 class="modal-title">Termos de Uso</h3>
+            <p style="color: var(--text-dark); text-align: justify; font-size: 0.95rem;">Os resultados disponibilizados via internet têm caráter estritamente informativo para o paciente e seu médico assistente. O laudo original impresso ou assinado digitalmente permanece sendo o documento oficial. Em caso de dúvidas, nossa equipe técnica está à disposição.</p>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
