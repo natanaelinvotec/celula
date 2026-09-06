@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <link rel="canonical" href="https://celulams.com.br/exames.html" />
+    <script id="Cookiebot" src="https://consent.cookiebot.com/uc.js" data-cbid="0a0fabd3-6f44-4a2d-bd9a-e2dd596c3085" data-blockingmode="auto" type="text/javascript"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Exames e Resultados - Laboratório Célula</title>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <div class="logo-container">
+            <a href="/"><img src="/img/logo-celula.png" alt="Logo Célula" class="logo-img"></a>
+        </div>
+        <div class="menu-toggle" id="mobile-menu"><i class="fa-solid fa-bars"></i></div>
+        <nav class="nav-wrapper" id="nav-wrapper">
+            <ul class="nav-links">
+                <li><a href="/">Home</a></li>
+                <li><a href="/exames.html">Exames</a></li>
+                <li><a href="/unidades.html">Unidades</a></li>
+                <li><a href="/contato.html">Contato</a></li>
+            </ul>
+            <div class="header-buttons">
+                <button class="btn btn-blue" onclick="openModal('modalLaudos')">Portal do Paciente</button>
+            </div>
+        </nav>
+    </header>
+
+    <section id="perfis" class="perfis-section" style="margin-top: 40px; margin-bottom: 60px;">
+        <div class="perfis-header">
+            <h2>Nossos Perfis de Exames</h2>
+            <p>Escolha o perfil ideal para entender e cuidar da sua saúde de forma completa.</p>
+        </div>
+        <div class="bento-grid">
+            <div class="bento-card card-tall" style="background: linear-gradient(to top, rgba(0,0,0,0.8), rgba(0,0,0,0.2)), url('/img/familia.jpg') center/cover;">
+                <div class="card-content">
+                    <span class="card-tag">BÁSICO</span><h3>Perfil Saúde</h3>
+                    <p>Avalia anemia, infecções, glicose, colesterol e a função dos seus rins e fígado.</p>
+                    <button class="btn-leia-mais" onclick="openModal('modalPerfilSaude')">Leia mais <i class="fa-solid fa-chevron-right"></i></button>
+                </div>
+            </div>
+            <div class="bento-card card-wide card-dark-blue">
+                <div class="card-content">
+                    <span class="card-tag">AVANÇADO</span><h3>Perfil Saúde Prime</h3>
+                    <p>Uma visão mais profunda da sua saúde, incluindo tireoide, níveis de energia e vitaminas D e B12.</p>
+                    <button class="btn-leia-mais" onclick="openModal('modalPerfilPrime')">Leia mais <i class="fa-solid fa-chevron-right"></i></button>
+                </div>
+                <div class="card-image-circle"><img src="/img/draflaviav.jpg" alt="Saúde Prime" style="object-position: top;"></div>
+            </div>
+            <!-- Pode colar aqui o restante exato dos cards do seu bento-grid original (Pré-Caneta, Biofit, etc) -->
+        </div>
+    </section>
+
+    <!-- Modais de Exames -->
+    <div class="modal-overlay" id="modalPerfilSaude">
+        <div class="modal-box perfil-detalhe-box">
+            <i class="fa-solid fa-xmark close-modal" onclick="closeModal('modalPerfilSaude')"></i>
+            <div class="perfil-capa" style="background-image: url('/img/familia.jpg');"></div>
+            <div class="perfil-info">
+                <h3>Perfil Saúde</h3>
+                <p>Para ajudar você a entender sua saúde, veja o que cada exame analisa:</p>
+                <ul class="exames-lista">
+                    <li><strong>Hemograma (HEM):</strong> Avalia anemia, infecções, suas células de defesa e plaquetas.</li>
+                    <li><strong>Glicose (GLI):</strong> Avalia o nível de açúcar no sangue no dia do exame.</li>
+                </ul>
+                <a href="https://wa.me/5567981240201" target="_blank" class="btn btn-whatsapp w-100"><i class="fa-brands fa-whatsapp"></i> Adquira o Perfil</a>
+            </div>
+        </div>
+    </div>
+    <!-- (Insira aqui os outros Modais de Exames do seu arquivo antigo: modalPerfilPrime, etc) -->
+    
+    <div class="modal-overlay" id="modalLaudos">
+        <div class="modal-box" style="padding: 20px; width: 95%; max-width: 650px; height: 85vh;"><i class="fa-solid fa-xmark close-modal" onclick="closeModal('modalLaudos')"></i><iframe src="https://laudos.autolac.com.br/#/login" width="100%" height="100%"></iframe></div>
+    </div>
+    
+    <a href="https://wa.me/5567981240201" target="_blank" class="whatsapp-float"><i class="fa-brands fa-whatsapp"></i></a>
+    <script src="script.js"></script>
+</body>
+</html>

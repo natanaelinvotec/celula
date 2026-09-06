@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <link rel="canonical" href="https://celulams.com.br/contato.html" />
+    <script id="Cookiebot" src="https://consent.cookiebot.com/uc.js" data-cbid="0a0fabd3-6f44-4a2d-bd9a-e2dd596c3085" data-blockingmode="auto" type="text/javascript"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contato e Convênios - Laboratório Célula</title>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <div class="logo-container">
+            <a href="/"><img src="/img/logo-celula.png" alt="Logo Célula" class="logo-img"></a>
+        </div>
+        <div class="menu-toggle" id="mobile-menu"><i class="fa-solid fa-bars"></i></div>
+        <nav class="nav-wrapper" id="nav-wrapper">
+            <ul class="nav-links">
+                <li><a href="/">Home</a></li>
+                <li><a href="/exames.html">Exames</a></li>
+                <li><a href="/unidades.html">Unidades</a></li>
+                <li><a href="/contato.html">Contato</a></li>
+            </ul>
+            <div class="header-buttons">
+                <button class="btn btn-blue" onclick="openModal('modalLaudos')">Portal do Paciente</button>
+            </div>
+        </nav>
+    </header>
+
+    <section class="acessos-section" style="min-height: 50vh; display: flex; flex-direction: column; justify-content: center;">
+        <h2>Fale Conosco</h2>
+        <p style="font-size: 1.2rem; margin-bottom: 40px; color: var(--text-dark);">Dúvidas sobre convênios, exames ou agendamentos? Estamos prontos para ajudar.</p>
+        <div class="acessos-grid">
+            <a href="https://wa.me/5567981240201" target="_blank" style="text-decoration: none;">
+                <div class="acesso-card">
+                    <i class="fa-brands fa-whatsapp"></i>
+                    <h3>WhatsApp</h3>
+                    <button class="btn btn-outline">Conversar</button>
+                </div>
+            </a>
+            <a href="mailto:contato@celulams.com.br" style="text-decoration: none;">
+                <div class="acesso-card">
+                    <i class="fa-solid fa-envelope"></i>
+                    <h3>E-mail</h3>
+                    <button class="btn btn-outline">Escrever</button>
+                </div>
+            </a>
+        </div>
+    </section>
+    
+    <div class="modal-overlay" id="modalLaudos">
+        <div class="modal-box" style="padding: 20px; width: 95%; max-width: 650px; height: 85vh;"><i class="fa-solid fa-xmark close-modal" onclick="closeModal('modalLaudos')"></i><iframe src="https://laudos.autolac.com.br/#/login" width="100%" height="100%"></iframe></div>
+    </div>
+    
+    <a href="https://wa.me/5567981240201" target="_blank" class="whatsapp-float"><i class="fa-brands fa-whatsapp"></i></a>
+    <script src="script.js"></script>
+</body>
+</html>
