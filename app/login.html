@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Entrar · Pedidos por IA · Célula Diagnósticos</title>
+<link rel="icon" href="img/favicon.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<main class="login">
+  <form class="box" id="f">
+    <img src="img/logo-celula.png" alt="Célula Diagnósticos">
+    <h1>Pedidos por IA</h1>
+    <p class="note" style="text-align:center;margin:-6px 0 4px">Central de atendimento e painel gerencial</p>
+    <div class="err" id="err" hidden></div>
+    <label class="f">E-mail<input class="in" id="email" type="email" autocomplete="username" required></label>
+    <label class="f">Senha<input class="in" id="senha" type="password" autocomplete="current-password" required minlength="6"></label>
+    <button class="btn blue" id="btn" type="submit" style="justify-content:center">Entrar</button>
+    <button class="btn ghost" id="esqueci" type="button" style="justify-content:center">Esqueci minha senha</button>
+  </form>
+</main>
+<script type="module">
+import { login, resetSenha, auth, toast } from './js/firebase.js';
+import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/12.3.0/firebase-auth.js';
+const $ = id => document.getElementById(id);
+const next = new URLSearchParams(location.search).get('next');
+if (new URLSearchParams(location.search).get('inativo')) { $('err').textContent = 'Este usuário está desativado. Fale com a administração.'; $('err').hidden = false; }
+onAuthStateChanged(auth, u => { if (u) location.replace(next && /^[\w-]+\.html$/.test(next) ? next : 'orcamento.html'); });
+const MSG = { 'auth/invalid-credential': 'E-mail ou senha incorretos.', 'auth/user-not-found': 'E-mail não cadastrado.', 'auth/wrong-password': 'Senha incorreta.', 'auth/too-many-requests': 'Muitas tentativas. Aguarde alguns minutos.', 'auth/invalid-email': 'E-mail inválido.', 'auth/network-request-failed': 'Sem conexão com a internet.' };
+$('f').addEventListener('submit', async e => {
+  e.preventDefault(); $('btn').disabled = true; $('btn').innerHTML = '<span class="spin"></span> Entrando…'; $('err').hidden = true;
+  try { await login($('email').value.trim(), $('senha').value); }
+  catch (err) { $('err').textContent = MSG[err.code] || 'Não foi possível entrar (' + err.code + ').'; $('err').hidden = false; $('btn').disabled = false; $('btn').textContent = 'Entrar'; }
+});
+$('esqueci').addEventListener('click', async () => {
+  const em = $('email').value.trim(); if (!em) { $('err').textContent = 'Digite seu e-mail para receber o link de redefinição.'; $('err').hidden = false; return; }
+  try { await resetSenha(em); toast('Enviamos um e-mail para redefinir a senha.', true); } catch (err) { $('err').textContent = MSG[err.code] || 'Não foi possível enviar o e-mail.'; $('err').hidden = false; }
+});
+</script>
+</body>
+</html>

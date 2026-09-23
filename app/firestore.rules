@@ -1,0 +1,82 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function logado() { return request.auth != null; }
+    function perfil() { return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data; }
+    function temPerfil() { return exists(/databases/$(database)/documents/usuarios/$(request.auth.uid)); }
+    function ativo() { return logado() && temPerfil() && perfil().ativo != false; }
+    function admin() { return ativo() && perfil().papel == 'admin'; }
+    function emailAdmin() { return logado() && request.auth.token.email != null
+      && request.auth.token.email.lower() in get(/databases/$(database)/documents/config/app).data.admins; }
+
+    // ---- configuração ----
+    match /config/app { allow read: if logado(); allow write: if admin(); }
+    match /config/contadores {
+      allow read: if ativo();
+      // só incremento de 1 no contador de orçamentos
+      allow create: if ativo() && request.resource.data.keys().hasOnly(['orcamento']) && request.resource.data.orcamento == 1;
+      allow update: if ativo() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['orcamento'])
+                    && request.resource.data.orcamento == resource.data.orcamento + 1;
+    }
+
+    // ---- catálogo: leitura para logados, escrita só admin ----
+    match /convenios/{id} { allow read: if logado(); allow write: if admin(); }
+    match /exames/{id}    { allow read: if logado(); allow write: if admin(); }
+    match /precos_manuais/{id} { allow read: if logado(); allow write: if admin(); }
+    match /auditoria/{id} { allow read: if admin(); allow create: if admin(); allow update, delete: if false; }
+
+    // ---- aprendizado da IA ----
+    match /apelidos/{id} {
+      allow read: if logado();
+      allow create: if ativo() && request.resource.data.keys().hasAll(['texto', 'textoNorm', 'mnemonico', 'origem', 'confirmacoes', 'criadoEm'])
+                    && request.resource.data.texto is string && request.resource.data.texto.size() <= 200
+                    && request.resource.data.textoNorm is string && request.resource.data.textoNorm.size() <= 200
+                    && request.resource.data.mnemonico is string && request.resource.data.mnemonico.size() <= 30
+                    && request.resource.data.origem in ['recepcao', 'ia', 'aprovacao', 'catalogo', 'guia_db']
+                    && request.resource.data.confirmacoes is int && request.resource.data.confirmacoes >= 1;
+      allow update: if admin() || (ativo() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['confirmacoes', 'mnemonico', 'unidade', 'atualizadoEm', 'origem', 'texto'])
+                    && request.resource.data.confirmacoes is int && request.resource.data.confirmacoes >= resource.data.confirmacoes);
+      allow delete: if admin();
+    }
+
+    // ---- usuários ----
+    match /usuarios/{uid} {
+      allow read: if logado();
+      // primeiro acesso: o próprio usuário cria seu perfil (admin só se o e-mail estiver em config/app.admins)
+      allow create: if (logado() && request.auth.uid == uid
+                        && request.resource.data.papel == (emailAdmin() ? 'admin' : 'atendente')
+                        && request.resource.data.ativo == true) || admin();
+      // o próprio: nome, foto, último acesso · admin: tudo
+      allow update: if (logado() && request.auth.uid == uid
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nome', 'fotoBase64', 'ultimoAcesso', 'atualizadoEm'])) || admin();
+      allow delete: if false;
+    }
+
+    // ---- solicitações (fila de conferência) ----
+    match /solicitacoes/{id} {
+      allow read: if ativo();
+      allow create: if ativo() && request.resource.data.status == 'pendente' && request.resource.data.atendenteUid == request.auth.uid
+                    && request.resource.data.textoLido is string && request.resource.data.textoLido.size() <= 300;
+      allow update: if admin();
+      allow delete: if false;
+    }
+
+    // ---- orçamentos ----
+    match /orcamentos/{id} {
+      allow read: if ativo();
+      allow create: if ativo() && request.resource.data.atendenteUid == request.auth.uid
+                    && request.resource.data.itens is list && request.resource.data.itens.size() <= 150
+                    && request.resource.data.total is number && request.resource.data.total >= 0
+                    && request.resource.data.status in ['rascunho', 'gravado', 'enviado', 'aguardando_conferencia', 'convertido', 'perdido'];
+      // qualquer atendente ativa pode atualizar (a coleta pode acontecer em outra unidade); admin também
+      allow update: if ativo()
+                    && request.resource.data.status in ['rascunho', 'gravado', 'enviado', 'aguardando_conferencia', 'convertido', 'perdido']
+                    && request.resource.data.atendenteUid == resource.data.atendenteUid
+                    && request.resource.data.numero == resource.data.numero;
+      allow delete: if false;
+    }
+
+    match /{document=**} { allow read, write: if false; }
+  }
+}

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Minha conta · Célula Diagnósticos</title>
+<link rel="icon" href="img/favicon.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<script type="module">
+import { exigirLogin, trocarSenha, toast, comprimirImagem, escapeHtml } from './js/firebase.js';
+import { montarShell } from './js/shell.js';
+import * as D from './js/dados.js';
+const { perfil } = await exigirLogin();
+const root = montarShell({ perfil, ativo: 'cfg', titulo: 'Minha conta', subtitulo: 'foto, nome e senha' });
+root.innerHTML = `<div class="card" style="max-width:520px"><div class="card-b form">
+  <div class="full" style="display:flex;gap:14px;align-items:center"><span class="av l" id="avPrev">${perfil.fotoBase64 ? `<img src="${perfil.fotoBase64}">` : escapeHtml(perfil.nome.slice(0,2).toUpperCase())}</span><div><button class="btn ghost sm" id="btnFoto">Trocar foto</button><input type="file" id="foto" accept="image/*" hidden><div class="note">Compactada no navegador (~200 px).</div></div></div>
+  <label class="f full">Nome<input class="in" id="nome" value="${escapeHtml(perfil.nome)}"></label>
+  <label class="f full">E-mail<input class="in" value="${escapeHtml(perfil.email)}" disabled></label>
+  <div class="full"><button class="btn blue" id="btnSalvar">Salvar</button></div>
+  <label class="f">Nova senha<input class="in" id="s1" type="password" minlength="6"></label><label class="f">Repita a senha<input class="in" id="s2" type="password"></label>
+  <div class="full"><button class="btn ghost" id="btnSenha">Trocar senha</button></div></div></div>`;
+const $ = id => document.getElementById(id); let foto = perfil.fotoBase64 || null;
+$('btnFoto').onclick = () => $('foto').click();
+$('foto').addEventListener('change', async e => { if (!e.target.files[0]) return; foto = await comprimirImagem(e.target.files[0], 200, .8); $('avPrev').innerHTML = `<img src="${foto}">`; });
+$('btnSalvar').onclick = async () => { try { await D.editarUsuario(perfil.uid, { nome: $('nome').value.trim(), fotoBase64: foto }); toast('Perfil salvo', true); } catch (e) { toast(e.message); } };
+$('btnSenha').onclick = async () => { if ($('s1').value.length < 6 || $('s1').value !== $('s2').value) { toast('As senhas precisam ter 6+ caracteres e ser iguais.'); return; } try { await trocarSenha($('s1').value); toast('Senha alterada', true); } catch (e) { toast(e.code === 'auth/requires-recent-login' ? 'Por segurança, saia e entre de novo antes de trocar a senha.' : e.message); } };
+</script>
+</body>
+</html>

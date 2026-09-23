@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Meus orçamentos · Célula Diagnósticos</title>
+<link rel="icon" href="img/favicon.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<script type="module">
+import { exigirLogin } from './js/firebase.js';
+import { montarShell } from './js/shell.js';
+import { montarHistorico } from './js/historico.js';
+const { perfil } = await exigirLogin();
+const root = montarShell({ perfil, ativo: 'hist', titulo: 'Meus orçamentos', subtitulo: 'busque por paciente, número ou telefone e marque quem veio coletar' });
+montarHistorico(root, { perfil, admin: false });
+</script>
+</body>
+</html>

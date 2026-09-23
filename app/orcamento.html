@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Novo orçamento por IA · Célula Diagnósticos</title>
+<link rel="icon" href="img/favicon.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap">
+<link rel="stylesheet" href="css/app.css">
+<style>
+.orc{display:grid;grid-template-columns:360px 1fr;gap:16px;align-items:start}
+@media (max-width:1000px){.orc{grid-template-columns:1fr}}
+.left{display:flex;flex-direction:column;gap:14px;position:sticky;top:calc(env(safe-area-inset-top,0px) + 12px)}
+@media (max-width:1000px){.left{position:static}}
+.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+@media (max-width:640px){.summary{grid-template-columns:repeat(2,1fr)}}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px 14px}
+.tile span{font-size:.7rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.tile b{display:block;font-size:1.35rem;font-weight:900;color:var(--blue-d);font-variant-numeric:tabular-nums}
+.tile.warn b{color:var(--warn)}.tile.crit b{color:var(--red)}
+.progress{display:flex;flex-direction:column;gap:6px;font-size:.85rem;font-weight:700;color:var(--muted)}
+.progress .bar{height:8px;border-radius:99px;background:var(--blue-100);overflow:hidden}
+.progress .bar i{display:block;height:100%;width:30%;background:linear-gradient(90deg,var(--blue),var(--red));animation:ind 1.4s ease-in-out infinite}
+@keyframes ind{0%{transform:translateX(-100%)}100%{transform:translateX(400%)}}
+.nm small{display:block;font-weight:600;color:var(--muted);font-size:.75rem}
+.pz{display:inline-flex;align-items:center;font-size:.78rem;font-weight:800;padding:3px 9px;border-radius:999px;background:var(--blue-50);color:var(--blue-d);white-space:nowrap}
+.pz.long{background:var(--warn-50);color:var(--warn)}
+.hand{font-family:'Segoe Print','Comic Sans MS',cursive;background:#fff8e6;color:#3b2a08;padding:1px 8px;border-radius:6px;border:1px solid #f0d58f}
+.cands{display:flex;gap:6px;flex-wrap:wrap}
+.cands button{border:2px solid var(--line);background:var(--surface);border-radius:12px;padding:6px 10px;font-weight:800;font-size:.82rem;text-align:left}
+.cands button:hover{border-color:var(--blue)}
+.cands button small{display:block;font-weight:600;color:var(--muted)}
+.wait{display:inline-flex;align-items:center;gap:8px;font-weight:800;color:var(--warn);font-size:.85rem}
+.wait i{width:10px;height:10px;border-radius:50%;background:var(--warn);animation:pulse 1.2s infinite}
+@keyframes pulse{50%{opacity:.3}}
+.tbl td{padding:9px 12px}
+</style>
+</head>
+<body>
+<script type="module" src="js/orcamento.js"></script>
+<noscript>Este sistema precisa de JavaScript.</noscript>
+</body>
+</html>
