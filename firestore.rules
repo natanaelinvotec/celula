@@ -1,0 +1,47 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Catálogo: leitura livre, escrita só pelo console / Functions (admin)
+    match /config/{doc}    { allow read: if true; allow write: if false; }
+    match /convenios/{doc} { allow read: if true; allow write: if false; }
+    match /exames/{doc}    { allow read: if true; allow write: if false; }
+
+    // Aprendizado da IA: a recepção confirma "texto lido -> mnemônico"
+    match /apelidos/{id} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasAll(['texto', 'textoNorm', 'mnemonico', 'origem', 'confirmacoes', 'criadoEm'])
+                    && request.resource.data.texto is string && request.resource.data.texto.size() <= 200
+                    && request.resource.data.textoNorm is string && request.resource.data.textoNorm.size() <= 200
+                    && request.resource.data.mnemonico is string && request.resource.data.mnemonico.size() <= 30
+                    && request.resource.data.origem in ['recepcao', 'ia']
+                    && request.resource.data.confirmacoes is int && request.resource.data.confirmacoes >= 1;
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['confirmacoes', 'mnemonico', 'unidade', 'atualizadoEm'])
+                    && request.resource.data.confirmacoes is int
+                    && request.resource.data.confirmacoes >= resource.data.confirmacoes;
+      allow delete: if false;
+    }
+
+    // Orçamentos gerados pela página
+    match /orcamentos/{id} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasAll(['unidade', 'convenio', 'itens', 'total', 'status', 'criadoEm'])
+                    && request.resource.data.itens is list && request.resource.data.itens.size() <= 100
+                    && request.resource.data.total is number && request.resource.data.total >= 0
+                    && request.resource.data.status in ['rascunho', 'gravado', 'enviado', 'perdido', 'convertido'];
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['itens', 'total', 'status', 'paciente', 'celular', 'observacoes', 'atualizadoEm']);
+      allow delete: if false;
+    }
+
+    // Preços/prazos informados manualmente quando o exame não tem valor no convênio
+    match /precos_manuais/{id} {
+      allow read: if true;
+      allow create, update: if request.resource.data.keys().hasAll(['mnemonico', 'convenio', 'valor', 'prazoDias'])
+                    && request.resource.data.valor is number && request.resource.data.valor >= 0
+                    && request.resource.data.prazoDias is int && request.resource.data.prazoDias >= 0;
+      allow delete: if false;
+    }
+
+    match /{document=**} { allow read, write: if false; }
+  }
+}
