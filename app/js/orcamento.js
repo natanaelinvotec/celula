@@ -42,7 +42,7 @@ root.innerHTML = `
       <div class="progress" id="prog" hidden><div class="bar"><i></i></div><span id="progTxt">Preparando…</span></div>
       <button class="btn red" id="btnRun" style="justify-content:center" disabled>Analisar pedido com a IA</button>
     </div></section>
-    <div class="side-card" style="margin:0"><b id="memN">…</b>grafias aprendidas com a recepção · cada confirmação sua ensina a IA</div>
+    <div class="note" style="grid-column:1/-1;text-align:center"><b id="memN">…</b> grafias aprendidas com a recepção · cada confirmação sua ensina a IA</div>
   </aside>
   <section>
     <div class="card" style="margin-bottom:14px"><div class="card-b" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
