@@ -53,10 +53,24 @@ export async function resolver(textoLido, { renal = false, normalizadoIA } = {})
   const alvo = [t, norm(normalizadoIA)].filter(Boolean);
   for (const a of alvo) { const ex = cat.find(c => ok(c) && c.nomeBusca === a); if (ex) return [{ ex, confianca: .93, via: 'nome' }]; }
   const toks = [...new Set(alvo.flatMap(a => a.split(' ')))].filter(w => w.length > 2 && !['DE', 'DA', 'DO', 'E', 'EM', 'PARA', 'COM'].includes(w));
-  const score = c => toks.filter(w => c.nomeBusca.includes(w)).length;
-  const hits = cat.filter(c => ok(c) && score(c) > 0).map(c => ({ c, s: score(c) / toks.length, n: c.nomeBusca.length }))
+  // Pontuação por palavra: igual (1) > começa igual (.85) > parecida, tolera erro de grafia ex. TIROGLOBULINA≈TIREOGLOBULINA (.75) > pedaço dentro de outra palavra (.3)
+  const pontoTok = (w, palavras, nb) => {
+    if (palavras.includes(w)) return 1;
+    if (w.length >= 4 && palavras.some(p => p.startsWith(w) || w.startsWith(p) && p.length >= 4)) return .85;
+    if (w.length >= 5) { let best = 0; for (const p of palavras) if (Math.abs(p.length - w.length) <= 3) best = Math.max(best, similar(w, p)); if (best >= .7) return .75; }
+    return nb.includes(w) ? .3 : 0;
+  };
+  const score = c => { const palavras = c.nomeBusca.split(' '); return toks.reduce((a, w) => a + pontoTok(w, palavras, c.nomeBusca), 0); };
+  const hits = cat.filter(ok).map(c => ({ c, s: score(c) / toks.length, n: c.nomeBusca.length })).filter(h => h.s >= .3)
     .sort((a, b) => b.s - a.s || ((b.c.precos?.particular != null) - (a.c.precos?.particular != null)) || a.n - b.n).slice(0, 6);
   return hits.map((h, i) => ({ ex: h.c, confianca: Math.max(.35, Math.min(.85, h.s * .85) - i * .05), via: 'busca' }));
+}
+/** Similaridade entre duas palavras (Dice sobre pares de letras): 1 = iguais, 0 = nada em comum. */
+export function similar(a, b) {
+  if (a === b) return 1; if (a.length < 2 || b.length < 2) return 0;
+  const bg = s => { const m = new Map(); for (let i = 0; i < s.length - 1; i++) { const k = s.slice(i, i + 2); m.set(k, (m.get(k) || 0) + 1); } return m; };
+  const A = bg(a), B = bg(b); let inter = 0; for (const [k, v] of A) inter += Math.min(v, B.get(k) || 0);
+  return (2 * inter) / (a.length - 1 + b.length - 1);
 }
 
 /** Aprendizado: a recepção confirmou que "textoLido" é "mnemonico". */
@@ -69,11 +83,13 @@ export async function ensinar(textoLido, mnemonico, unidade) {
 }
 
 // ---------- solicitações (fila de conferência) ----------
-export async function solicitar({ orcamentoId, orcamentoNumero, textoLido, normalizadoIA, guiaDb, convenio, setorSugerido }) {
+export async function solicitar({ orcamentoId, orcamentoNumero, textoLido, normalizadoIA, guiaDb, convenio, setorSugerido, sugestao }) {
   const u = auth.currentUser;
   const ref = await addDoc(collection(db, 'solicitacoes'), {
-    status: 'pendente', orcamentoId: orcamentoId || null, orcamentoNumero: orcamentoNumero || null, textoLido, normalizadoIA: normalizadoIA || null,
+    status: 'pendente', orcamentoId: orcamentoId || null, orcamentoNumero: orcamentoNumero || null, textoLido: String(textoLido || '').slice(0, 300), normalizadoIA: normalizadoIA || null,
     guiaDb: guiaDb || null, convenio, setorSugerido: setorSugerido || 'Análises Clínicas',
+    // o que a atendente preencheu (nome, mnemônico, prazo, valor, obs) — a gestão recebe pré-preenchido
+    sugestao: sugestao ? { nome: sugestao.nome || null, mnemonico: sugestao.mnemonico || null, prazoDias: sugestao.prazoDias ?? null, valor: sugestao.valor ?? null, obs: sugestao.obs || null } : null,
     atendenteUid: u.uid, atendenteNome: u.displayName || u.email, criadoEm: serverTimestamp(),
   });
   return ref.id;

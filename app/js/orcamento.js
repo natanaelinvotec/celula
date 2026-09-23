@@ -145,15 +145,34 @@ function render() {
 }
 function askBox(it) {
   const warn = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px;flex:none"><path d="M12 9v4m0 4h.01M10.3 3.9 2.5 17.5A2 2 0 0 0 4.2 20.5h15.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>';
-  const busca = `<div class="search" style="min-width:260px;flex:1"><input class="in" placeholder="Buscar o exame correto (nome ou mnemônico)" data-fix="${it.uid}" autocomplete="off"><div class="sug" hidden></div></div>`;
+  if (it.status === 'conferencia') return `<div class="ask crit"><span class="wait"><i></i>Aguardando conferência da gestão (solicitação enviada${it.solId ? '' : '…'}). A linha será preenchida automaticamente ao aprovar.</span></div>`;
+  // Barra de ações comum: digitar o nome correto (puxa do catálogo) · enviar para conferência (com campos abertos)
+  const acoes = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button class="btn ghost sm" data-digitar="${it.uid}">✏️ Clique aqui para digitar o nome correto</button>
+      <button class="btn red sm" data-send="${it.uid}">Enviar para conferência</button>
+    </div>
+    <div class="search" data-fixwrap="${it.uid}" ${it.abrirBusca ? '' : 'hidden'}><input class="in" placeholder="Digite o nome correto do exame — o sistema puxa do catálogo (ex.: insulina, ferritina, anti tireoglobulina)" data-fix="${it.uid}" autocomplete="off" value="${escapeHtml(it.buscaTxt || '')}"><div class="sug" hidden></div></div>
+    ${it.abrirConf ? formConf(it) : ''}`;
   if (it.status === 'flag') return `<div class="ask"><div style="display:flex;gap:10px;align-items:flex-start;color:var(--warn)">${warn}<div>A IA leu <span class="hand">${escapeHtml(it.lido)}</span> e entendeu <b>${escapeHtml(it.ex.nome)}</b> (${Math.round(it.conf * 100)}% de certeza). Está correto?</div></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn blue sm" data-ok="${it.uid}">Sim, está correto</button>
-    ${it.cands.length > 1 ? `<div class="cands">${it.cands.slice(1, 4).map(c => `<button data-pick="${it.uid}" data-m="${c.ex.mnemonico}"><span class="mn">${c.ex.mnemonico}</span> ${escapeHtml(c.ex.nome)}<small>${escapeHtml(c.ex.setor)}</small></button>`).join('')}</div>` : ''}${busca}</div></div>`;
-  if (it.status === 'semvalor') return `<div class="ask crit"><div style="display:flex;gap:10px;align-items:flex-start;color:var(--red)">${warn}<div><b>${escapeHtml(it.ex.nome)}</b> não tem valor cadastrado para o convênio <b>${escapeHtml(st.convenio)}</b>. Envie para a gestão definir valor e prazo — o orçamento atualiza sozinho quando for aprovado.</div></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn red sm" data-send="${it.uid}">Enviar para conferência</button>${busca}</div></div>`;
-  if (it.status === 'conferencia') return `<div class="ask crit"><span class="wait"><i></i>Aguardando conferência da gestão (solicitação enviada${it.solId ? '' : '…'}). A linha será preenchida automaticamente ao aprovar.</span></div>`;
-  return `<div class="ask crit"><div style="display:flex;gap:10px;align-items:flex-start;color:var(--red)">${warn}<div>A IA leu <span class="hand">${escapeHtml(it.lido)}</span> (${escapeHtml(it.normalizado || '')}) mas <b>não encontrou no catálogo</b>. Busque o exame correto ou envie para conferência.</div></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">${busca}<button class="btn red sm" data-send="${it.uid}">Enviar para conferência</button></div></div>`;
+    ${it.cands.length > 1 ? `<div class="cands">${it.cands.slice(1, 4).map(c => `<button data-pick="${it.uid}" data-m="${c.ex.mnemonico}"><span class="mn">${c.ex.mnemonico}</span> ${escapeHtml(c.ex.nome)}<small>${escapeHtml(c.ex.setor)}</small></button>`).join('')}</div>` : ''}</div>
+    <div class="note">Não é nenhum desses? Digite o nome certo abaixo ou mande para a gestão conferir.</div>${acoes}</div>`;
+  if (it.status === 'semvalor') return `<div class="ask crit"><div style="display:flex;gap:10px;align-items:flex-start;color:var(--red)">${warn}<div><b>${escapeHtml(it.ex.nome)}</b> não tem valor cadastrado para o convênio <b>${escapeHtml(st.convenio)}</b>. Envie para a gestão definir valor e prazo — o orçamento atualiza sozinho quando for aprovado.</div></div>${acoes}</div>`;
+  return `<div class="ask crit"><div style="display:flex;gap:10px;align-items:flex-start;color:var(--red)">${warn}<div>A IA leu <span class="hand">${escapeHtml(it.lido)}</span> (${escapeHtml(it.normalizado || '')}) mas <b>não encontrou no catálogo</b>. Digite o nome correto ou envie para conferência preenchendo o que souber.</div></div>${acoes}</div>`;
+}
+/** Mini-formulário da conferência: a atendente preenche o que souber (nome, mnemônico, prazo, valor); a gestão só confirma. */
+function formConf(it) {
+  const s = it.sug || {};
+  return `<div class="form conf" data-confwrap="${it.uid}" style="grid-template-columns:2fr 1fr 1fr 1fr;align-items:end;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px">
+    <label class="f full" style="font-weight:800;color:var(--red)">Preencha o que souber — os campos em branco a gestão completa</label>
+    <label class="f">Nome correto do exame *<input class="in" data-sf="nome" value="${escapeHtml(s.nome ?? it.buscaTxt ?? it.normalizado ?? it.lido ?? it.ex?.nome ?? '')}"></label>
+    <label class="f">Mnemônico AutoLAC<input class="in" data-sf="mnemonico" placeholder="ex.: FERRI-DB" style="text-transform:uppercase;font-family:ui-monospace,monospace" value="${escapeHtml(s.mnemonico ?? it.ex?.mnemonico ?? '')}"></label>
+    <label class="f">Prazo (dias úteis)<input class="in" type="number" min="0" data-sf="prazoDias" placeholder="?" value="${s.prazoDias ?? it.ex?.prazoDias ?? ''}"></label>
+    <label class="f">Valor ${escapeHtml(st.convenio || '')} (R$)<input class="in" type="number" step="0.01" min="0" data-sf="valor" placeholder="?" value="${s.valor ?? ''}"></label>
+    <label class="f full">Observação para a gestão<input class="in" data-sf="obs" placeholder="opcional: onde está no pedido, médico, urgência…" value="${escapeHtml(s.obs ?? '')}"></label>
+    <div class="full" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn red sm" data-confirmar="${it.uid}">Enviar agora para conferência</button><button class="btn ghost sm" data-fecharconf="${it.uid}">Cancelar</button></div>
+  </div>`;
 }
 function stats() {
   const n = st.itens.length, t = st.itens.reduce((a, i) => a + (i.valor || 0), 0);
@@ -169,11 +188,23 @@ $('groups').addEventListener('click', async e => {
   if (b.dataset.ok) { const it = find(b.dataset.ok); it.status = 'ok'; it.conf = 1; await precificar(it); render(); D.ensinar(it.lido, it.ex.mnemonico, perfil.unidade); toast(`A IA aprendeu: “${it.lido}” = ${it.ex.mnemonico}`, true); return; }
   if (b.dataset.pick) { const it = find(b.dataset.pick); await escolher(it, b.dataset.m); return; }
   if (b.dataset.add) { const it = find(b.dataset.add); await escolher(it, b.dataset.m); return; }
-  if (b.dataset.send) { await enviarConferencia(find(b.dataset.send)); return; }
+  if (b.dataset.digitar) { const it = find(b.dataset.digitar); it.abrirBusca = !it.abrirBusca; render(); if (it.abrirBusca) document.querySelector(`[data-fix="${it.uid}"]`)?.focus(); return; }
+  if (b.dataset.send) { const it = find(b.dataset.send); it.abrirConf = true; it.sug = it.sug || {}; if (it.buscaTxt) it.sug.nome = it.buscaTxt; render(); document.querySelector(`[data-confwrap="${it.uid}"] [data-sf="nome"]`)?.focus(); return; }
+  if (b.dataset.fecharconf) { const it = find(b.dataset.fecharconf); it.abrirConf = false; render(); return; }
+  if (b.dataset.confirmar) { const it = find(b.dataset.confirmar); lerSugestao(it); if (!it.sug.nome) { toast('Informe o nome do exame.'); return; } it.abrirConf = false; await enviarConferencia(it); return; }
+  if (b.dataset.naoachou) { const it = find(b.dataset.naoachou); it.buscaTxt = b.dataset.txt; it.abrirConf = true; it.sug = { ...(it.sug || {}), nome: b.dataset.txt }; render(); document.querySelector(`[data-confwrap="${it.uid}"] [data-sf="mnemonico"]`)?.focus(); return; }
 });
+function lerSugestao(it) {
+  const w = document.querySelector(`[data-confwrap="${it.uid}"]`); if (!w) return;
+  const v = k => w.querySelector(`[data-sf="${k}"]`)?.value.trim() || '';
+  const num = x => x === '' ? null : Number(x);
+  it.sug = { nome: v('nome').toUpperCase() || null, mnemonico: v('mnemonico').toUpperCase() || null, prazoDias: num(v('prazoDias')), valor: num(v('valor')), obs: v('obs') || null };
+}
+// guarda o que a atendente digita para sobreviver ao re-render
+document.addEventListener('input', e => { const inp = e.target; if (inp.matches('[data-fix]')) { const it = st.itens.find(i => i.uid === inp.dataset.fix); if (it) it.buscaTxt = inp.value; } if (inp.matches('[data-sf]')) { const it = st.itens.find(i => i.uid === inp.closest('[data-confwrap]')?.dataset.confwrap); if (it) lerSugestao(it); } });
 async function escolher(it, mnemonico) {
   const cat = await D.catalogoMap(); const ex = cat[mnemonico]; if (!ex) return;
-  it.ex = ex; it.status = 'ok'; it.conf = 1; await precificar(it); render();
+  it.ex = ex; it.status = 'ok'; it.conf = 1; it.abrirBusca = false; it.abrirConf = false; it.buscaTxt = ''; await precificar(it); render();
   if (it.lido) { D.ensinar(it.lido, mnemonico, perfil.unidade); toast(`Corrigido e aprendido: “${it.lido}” = ${mnemonico}`, true); }
 }
 // busca em linha (corrigir) e busca global (adicionar)
@@ -181,8 +212,14 @@ document.addEventListener('input', async e => {
   const inp = e.target; if (!(inp.matches('[data-fix]') || inp.id === 'q')) return;
   const box = inp.nextElementSibling; const v = inp.value.trim().toLowerCase(); if (v.length < 2) { box.hidden = true; return; }
   const cat = await D.catalogo();
-  const hits = cat.filter(c => c.ativo !== false && (st.renal ? c.renal : !c.renal) && (c.mnemonico.toLowerCase().includes(v) || c.nomeBusca.toLowerCase().includes(norm(v).toLowerCase()))).slice(0, 12);
-  box.innerHTML = hits.map(c => `<button data-${inp.id === 'q' ? 'novo' : 'add'}="${inp.dataset.fix || 'q'}" data-m="${c.mnemonico}"><span class="m">${c.mnemonico}</span><span>${escapeHtml(c.nome)}</span><span class="m" style="margin-left:auto">${brl(c.precos?.[st.convSlug])}</span></button>`).join('') || '<div class="note" style="padding:10px 12px">Nenhum exame encontrado — use “Enviar para conferência”.</div>';
+  // busca por palavras: "insulina basal" acha INSULINA; "anti tireo" acha ANTI-TIREOGLOBULINA (qualquer ordem, sem acento)
+  const toks = norm(v).split(' ').filter(Boolean); const vm = v.toUpperCase();
+  const pont = c => { const nb = c.nomeBusca; let s = 0; for (const t of toks) { if (nb.includes(t)) s += nb.split(' ').some(w => w.startsWith(t)) ? 2 : 1; } if (c.mnemonico.includes(vm)) s += 3; if (nb.startsWith(toks[0] || '')) s += 1; return s; };
+  const hits = cat.filter(c => c.ativo !== false && (st.renal ? c.renal : !c.renal)).map(c => ({ c, s: pont(c) })).filter(x => x.s >= Math.max(1, toks.length)) // todas as palavras (ou o mnemônico)
+    .sort((a, b) => b.s - a.s || a.c.nomeBusca.length - b.c.nomeBusca.length).slice(0, 12).map(x => x.c);
+  const naoAchou = inp.id === 'q' ? '<div class="note" style="padding:10px 12px">Nenhum exame encontrado.</div>'
+    : `<div class="note" style="padding:10px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">Nenhum exame com esse nome no catálogo.<button class="btn red sm" data-naoachou="${inp.dataset.fix}" data-txt="${escapeHtml(inp.value.trim())}">Enviar “${escapeHtml(inp.value.trim())}” para conferência</button></div>`;
+  box.innerHTML = hits.map(c => `<button data-${inp.id === 'q' ? 'novo' : 'add'}="${inp.dataset.fix || 'q'}" data-m="${c.mnemonico}"><span class="m">${c.mnemonico}</span><span>${escapeHtml(c.nome)}</span><span class="m" style="margin-left:auto">${brl(c.precos?.[st.convSlug])}</span></button>`).join('') || naoAchou;
   box.hidden = false;
 });
 $('sug').addEventListener('click', async e => { const b = e.target.closest('[data-novo]'); if (!b) return; const cat = await D.catalogoMap(); const it = { uid: Math.random().toString(36).slice(2), lido: null, conf: 1, cands: [], ex: cat[b.dataset.m], status: 'ok' }; st.manuais = st.manuais || {}; await precificar(it); st.itens.push(it); $('q').value = ''; $('sug').hidden = true; render(); });
@@ -200,8 +237,9 @@ async function enviarConferencia(it) {
   try {
     await garantirOrcamento('aguardando_conferencia');
     it.status = 'conferencia'; render();
-    it.solId = await D.solicitar({ orcamentoId: st.id, orcamentoNumero: st.numero, textoLido: it.lido || (it.ex?.nome) || '', normalizadoIA: it.normalizado || it.ex?.nome || null, guiaDb: it.ex ? { mnemonico: it.ex.mnemonico, nome: it.ex.nome, setor: it.ex.setor, prazoDias: it.ex.prazoDias } : null, convenio: st.convSlug, setorSugerido: it.ex?.setor });
-    render(); toast('Enviado para conferência — a gestão já vê na fila.', true);
+    const sug = it.sug && Object.values(it.sug).some(v => v != null && v !== '') ? it.sug : null;
+    it.solId = await D.solicitar({ orcamentoId: st.id, orcamentoNumero: st.numero, textoLido: it.lido || sug?.nome || (it.ex?.nome) || '', normalizadoIA: sug?.nome || it.normalizado || it.ex?.nome || null, guiaDb: it.ex ? { mnemonico: it.ex.mnemonico, nome: it.ex.nome, setor: it.ex.setor, prazoDias: it.ex.prazoDias } : null, convenio: st.convSlug, setorSugerido: it.ex?.setor, sugestao: sug });
+    render(); toast('Enviado para conferência — a gestão já vê na fila' + (sug ? ' com o que você preencheu' : '') + '.', true);
   } catch (e) { it.status = it.ex ? 'semvalor' : 'miss'; render(); toast('Não foi possível enviar: ' + e.message); }
 }
 async function onSolicitacoes(sols) {

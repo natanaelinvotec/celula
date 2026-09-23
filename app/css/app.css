@@ -205,3 +205,4 @@ label.f{display:flex;flex-direction:column;gap:5px;font-size:.72rem;font-weight:
 @keyframes sp{to{transform:rotate(360deg)}}
 .badge-n{background:var(--red);color:#fff;font-size:.7rem;font-weight:900;padding:2px 8px;border-radius:999px}
 [hidden]{display:none!important}
+@media (max-width:760px){.ask .form.conf{grid-template-columns:1fr 1fr!important}}

@@ -97,7 +97,7 @@ async function viewSol() {
   renderSol = () => {
     if (tab === 'pendente') lista = pendentes;
     $('solN').innerHTML = `<i></i>${lista.length} ${tab === 'pendente' ? 'pendentes' : tab + 's'}`;
-    $('solq').innerHTML = lista.map(s => { const cor = SETORES[s.setorSugerido]?.cor || 'var(--warn)'; return `<div class="sq ${s.id === solSel ? 'on' : ''}" data-id="${s.id}"><span class="st" style="background:${cor}"></span><div><b>${escapeHtml(s.guiaDb?.nome || s.normalizadoIA || s.textoLido)}</b><small>lido no pedido: <span class="hand">${escapeHtml(s.textoLido)}</span>${s.guiaDb ? ` · <span class="mn">${escapeHtml(s.guiaDb.mnemonico)}</span> sem valor em ${escapeHtml(s.convenio)}` : ' · não está no catálogo'}${s.status !== 'pendente' ? ` · <b>${s.status}</b> ${s.mnemonico || ''}` : ''}</small></div><div class="who"><span class="av s">${escapeHtml(iniciais(s.atendenteNome))}</span>${escapeHtml((s.atendenteNome || '').split(' ')[0])}<br>#${s.orcamentoNumero || '—'} · ${fmtData(s.criadoEm)}</div></div>`; }).join('') || '<div class="note" style="padding:20px;text-align:center">Nada aqui.</div>';
+    $('solq').innerHTML = lista.map(s => { const cor = SETORES[s.setorSugerido]?.cor || 'var(--warn)'; return `<div class="sq ${s.id === solSel ? 'on' : ''}" data-id="${s.id}"><span class="st" style="background:${cor}"></span><div><b>${escapeHtml(s.sugestao?.nome || s.guiaDb?.nome || s.normalizadoIA || s.textoLido)}</b>${s.sugestao ? ' <span class="pill warn" title="a atendente preencheu dados">✎</span>' : ''}<small>lido no pedido: <span class="hand">${escapeHtml(s.textoLido)}</span>${s.guiaDb ? ` · <span class="mn">${escapeHtml(s.guiaDb.mnemonico)}</span> sem valor em ${escapeHtml(s.convenio)}` : ' · não está no catálogo'}${s.status !== 'pendente' ? ` · <b>${s.status}</b> ${s.mnemonico || ''}` : ''}</small></div><div class="who"><span class="av s">${escapeHtml(iniciais(s.atendenteNome))}</span>${escapeHtml((s.atendenteNome || '').split(' ')[0])}<br>#${s.orcamentoNumero || '—'} · ${fmtData(s.criadoEm)}</div></div>`; }).join('') || '<div class="note" style="padding:20px;text-align:center">Nada aqui.</div>';
   };
   renderSol();
   root.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', async () => { root.querySelectorAll('[data-tab]').forEach(x => x.classList.toggle('on', x === b)); tab = b.dataset.tab; if (offTab) { offTab(); offTab = null; } if (tab !== 'pendente') offTab = D.ouvirSolicitacoes(tab, l => { lista = l.slice(0, 100); renderSol(); }); else renderSol(); }));
@@ -105,16 +105,19 @@ async function viewSol() {
   async function form(s) {
     if (!s) return; $('solRef').textContent = `orçamento #${s.orcamentoNumero || '—'} · ${s.atendenteNome}`;
     if (s.status !== 'pendente') { $('solForm').innerHTML = `<div class="note">Solicitação ${s.status}${s.mnemonico ? ' como <b>' + s.mnemonico + '</b>' : ''}${s.motivo ? ' — motivo: ' + escapeHtml(s.motivo) : ''}.</div>`; return; }
-    const g = s.guiaDb; const sug = g?.mnemonico || (norm(s.normalizadoIA || s.textoLido).split(' ').map(w => w.slice(0, 3)).join('').slice(0, 8) + '-DB');
+    const g = s.guiaDb; const at = s.sugestao || {}; // at = o que a atendente preencheu
+    const sug = at.mnemonico || g?.mnemonico || (norm(at.nome || s.normalizadoIA || s.textoLido).split(' ').map(w => w.slice(0, 3)).join('').slice(0, 8) + '-DB');
     const conv = s.convenio; const nomeConv = (convs.find(c => c.slug === conv) || {}).nome || conv;
+    const vConv = at.valor != null ? at.valor : ''; const vPart = conv === 'particular' && at.valor != null ? at.valor : '';
     $('solForm').innerHTML = `<div class="form">
-      <label class="f full">Nome do exame *<input class="in" id="apNome" value="${escapeHtml(g?.nome || s.normalizadoIA || s.textoLido)}"></label>
+      ${s.sugestao ? `<div class="full note" style="background:var(--warn-50);border:1px solid var(--warn);border-radius:8px;padding:8px 10px"><b>Preenchido pela atendente ${escapeHtml((s.atendenteNome || '').split(' ')[0])}:</b> ${[at.nome && 'nome ' + escapeHtml(at.nome), at.mnemonico && 'mnemônico ' + escapeHtml(at.mnemonico), at.prazoDias != null && 'prazo ' + at.prazoDias + ' d.u.', at.valor != null && 'valor ' + brl(at.valor), at.obs && 'obs: ' + escapeHtml(at.obs)].filter(Boolean).join(' · ')} — confira e complete o que faltar.</div>` : ''}
+      <label class="f full">Nome do exame *<input class="in" id="apNome" value="${escapeHtml(at.nome || g?.nome || s.normalizadoIA || s.textoLido)}"></label>
       <label class="f">Mnemônico AutoLAC *<input class="in" id="apM" value="${escapeHtml(sug)}" style="font-family:ui-monospace,monospace;text-transform:uppercase"></label>
       <label class="f">Setor<select class="in" id="apSet">${SETOR_ORDEM.map(x => `<option ${x === (g?.setor || s.setorSugerido) ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
-      <label class="f">Prazo Célula (dias úteis) *<input class="in" type="number" min="0" id="apP" value="${g?.prazoDias ?? ''}"></label>
+      <label class="f">Prazo Célula (dias úteis) *<input class="in" type="number" min="0" id="apP" value="${at.prazoDias ?? g?.prazoDias ?? ''}"></label>
       <label class="f">Código TUSS<input class="in" id="apTuss" placeholder="opcional"></label>
-      <label class="f">Valor PARTICULAR (R$) *<input class="in" type="number" step="0.01" min="0" id="apV1"></label>
-      <label class="f">Valor ${escapeHtml(nomeConv)} (R$)${conv === 'particular' ? '' : ' *'}<input class="in" type="number" step="0.01" min="0" id="apV2" ${conv === 'particular' ? 'disabled placeholder="mesmo que o particular"' : ''}></label>
+      <label class="f">Valor PARTICULAR (R$) *<input class="in" type="number" step="0.01" min="0" id="apV1" value="${vPart}"></label>
+      <label class="f">Valor ${escapeHtml(nomeConv)} (R$)${conv === 'particular' ? '' : ' *'}<input class="in" type="number" step="0.01" min="0" id="apV2" value="${conv === 'particular' ? '' : vConv}" ${conv === 'particular' ? 'disabled placeholder="mesmo que o particular"' : ''}></label>
       <label class="f full">Outras grafias que a IA deve reconhecer (separe por vírgula)<input class="in" id="apAp" value="${escapeHtml(s.normalizadoIA && s.normalizadoIA !== s.textoLido ? s.normalizadoIA : '')}"></label>
       <div class="full" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn ok" id="apOk">✓ Aprovar e devolver ao orçamento</button><button class="btn ghost" id="apNo">Recusar</button><input class="in" id="apMotivo" placeholder="motivo da recusa (opcional)" style="flex:1;min-width:160px"></div>
       <div class="full note">A atendente vê a atualização em tempo real; o exame entra no catálogo e as grafias viram apelidos.</div></div>`;

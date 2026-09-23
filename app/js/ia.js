@@ -12,8 +12,9 @@ const PROMPT = `Você é a recepção de um laboratório de análises clínicas 
 Tarefa: extrair TODOS os exames laboratoriais solicitados, na ordem em que aparecem.
 Regras:
 - "texto": copie exatamente como está escrito (abreviações, erros, siglas), sem corrigir.
-- "normalizado": nome completo padrão do exame em MAIÚSCULAS sem acento (ex.: "Hb glic" -> "HEMOGLOBINA GLICADA", "Vit D" -> "VITAMINA D 25 HIDROXI", "TGP" -> "TRANSAMINASE PIRUVICA TGP", "Anti HCV" -> "HEPATITE C ANTICORPOS", "Ureia pos HD" -> "UREIA POS HEMODIALISE").
-- "confianca": 0 a 1 — quanto você tem certeza da LEITURA da caligrafia (não da existência do exame).
+- "normalizado": nome completo padrão do exame em MAIÚSCULAS sem acento (ex.: "Hb glic" -> "HEMOGLOBINA GLICADA", "Vit D" -> "VITAMINA D 25 HIDROXI", "Vit B12" -> "VITAMINA B12", "TGP" -> "TRANSAMINASE PIRUVICA TGP", "Anti HCV" -> "HEPATITE C ANTICORPOS", "Insulina basal" -> "INSULINA", "Anti-Tireoglobulina" -> "ANTICORPOS ANTI TIREOGLOBULINA", "Ureia pos HD" -> "UREIA POS HEMODIALISE").
+- "confianca": 0 a 1 — quanto você tem certeza da LEITURA da caligrafia (não da existência do exame). Caligrafia difícil: dê a leitura mais provável com confianca baixa (0.3 a 0.6) em vez de omitir o exame.
+- Em guias impressas com caixinhas, inclua SÓ os itens marcados (X, ✓, risco) e TODAS as linhas manuscritas nos campos "OUTROS", "OBS" ou nas margens — cada linha manuscrita costuma ser um exame (ex.: "Vit B12", "Vit D", "Insulina basal", "Ferritina"). Nunca deixe uma linha manuscrita de fora.
 - Um exame por item; "perfil lipídico" vira 4 itens (COLESTEROL TOTAL, HDL, LDL, TRIGLICERIDEOS); "função renal" vira UREIA e CREATININA; "eletrólitos" vira SODIO e POTASSIO.
 - Ignore medicamentos, diagnósticos, CID e orientações. Não invente exames.
 - Se o pedido indicar contexto de nefrologia/hemodiálise/renal, marque "renal": true.
