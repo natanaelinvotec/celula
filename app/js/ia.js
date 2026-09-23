@@ -1,9 +1,11 @@
-// ia.js — leitura do pedido médico com Gemini (Firebase AI Logic · Gemini Developer API).
+// ia.js — leitura do pedido médico com Gemini (Firebase AI Logic · Agent Platform / Vertex AI Gemini API).
+// Cobrado direto no plano Blaze (pagamento por uso), sem cota diária gratuita nem pré-pagamento no AI Studio.
 // Tentativas com espera crescente e modelo reserva; resposta sempre validada como JSON.
 import { app } from './firebase.js';
-import { getAI, getGenerativeModel, GoogleAIBackend } from 'https://www.gstatic.com/firebasejs/12.3.0/firebase-ai.js';
+import { getAI, getGenerativeModel, VertexAIBackend } from 'https://www.gstatic.com/firebasejs/12.3.0/firebase-ai.js';
 
-const ai = getAI(app, { backend: new GoogleAIBackend() });
+// Local "global": único onde os modelos gemini-3.x estão publicados para este projeto.
+const ai = getAI(app, { backend: new VertexAIBackend('global') });
 export const MODELOS = ['gemini-3.6-flash', 'gemini-3.5-flash'];
 
 const PROMPT = `Você é a recepção de um laboratório de análises clínicas no Brasil e está lendo a FOTO de um pedido médico (impresso ou manuscrito, em português).
@@ -31,8 +33,8 @@ export async function lerPedido(dataUrls, { onStatus = () => {}, tentativas = 4 
     for (const nome of MODELOS) {
       try {
         onStatus(`Lendo o pedido com ${nome}${i ? ` (tentativa ${i + 1})` : ''}…`);
-        // Sem responseMimeType: no nível gratuito o modo JSON estruturado devolve 500 com imagens; o JSON vem pelo prompt.
-        const model = getGenerativeModel(ai, { model: nome, generationConfig: { temperature: 0.1, maxOutputTokens: 4096 } });
+        // No backend Vertex o modo JSON estruturado funciona com imagens: resposta já vem em JSON puro.
+        const model = getGenerativeModel(ai, { model: nome, generationConfig: { temperature: 0.1, maxOutputTokens: 4096, responseMimeType: 'application/json' } });
         const t0 = Date.now();
         const r = await model.generateContent(parts);
         const json = extrairJson(r.response.text());
@@ -42,15 +44,15 @@ export async function lerPedido(dataUrls, { onStatus = () => {}, tentativas = 4 
       } catch (e) {
         ultimoErro = e; const msg = String(e.message || e);
         if (/404|not found|no longer available/i.test(msg)) continue;          // modelo indisponível: próximo
-        if (/429|quota|RESOURCE_EXHAUSTED/i.test(msg)) { quota = true; onStatus(`Cota do modelo ${nome} esgotada — tentando o modelo reserva…`); continue; }
+        // 429 no Vertex é "Resource exhausted" momentâneo (capacidade compartilhada): passa pro reserva e repete em seguida
+        if (/429|quota|RESOURCE_EXHAUSTED|resource exhausted/i.test(msg)) { quota = true; onStatus(`Modelo ${nome} ocupado — tentando o modelo reserva…`); continue; }
         if (/500|503|high demand|overloaded|fetch/i.test(msg)) continue;      // instável: tenta o reserva
         throw e;
       }
     }
-    if (quota && i >= 1) break; // cota diária: não adianta insistir
-    onStatus(`Serviço de IA ocupado, nova tentativa em ${3 * (i + 1)} s…`); await dorme(3000 * (i + 1));
+    onStatus(`Serviço de IA ocupado, nova tentativa em ${2 * (i + 1)} s…`); await dorme(2000 * (i + 1));
   }
-  if (quota) throw new Error('A cota gratuita da IA (Gemini) foi atingida. Ela renova à meia-noite (horário do Pacífico, 04:00 em Campo Grande). Para não parar a recepção, ative o plano Blaze no Firebase. Enquanto isso, adicione os exames pela busca manual.');
+  if (quota) throw new Error('O limite de uso da IA (Gemini) foi atingido neste momento. Aguarde um minuto e tente de novo; se persistir, verifique o faturamento do projeto CelulaMS no Firebase. Enquanto isso, adicione os exames pela busca manual.');
   throw new Error('A IA não respondeu após várias tentativas. Você pode digitar os exames manualmente. (' + String(ultimoErro?.message || '').slice(0, 120) + ')');
 }
 
