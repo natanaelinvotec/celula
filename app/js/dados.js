@@ -1,6 +1,6 @@
 // dados.js — acesso ao Firestore: catálogo, convênios, apelidos (aprendizado), solicitações, orçamentos.
 import { db, auth, norm, slug } from './firebase.js';
-import { collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, query, where, orderBy, limit, startAfter, onSnapshot, increment, serverTimestamp, writeBatch, getCountFromServer } from 'https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js';
+import { collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, startAfter, onSnapshot, increment, serverTimestamp, writeBatch, getCountFromServer } from 'https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js';
 
 let _cat = null, _catAt = 0, _cfg = null;
 
@@ -97,6 +97,27 @@ export async function aprovarSolicitacao(sol, { mnemonico, nome, setor, prazoDia
   await b.commit(); _cat = null;
 }
 export const recusarSolicitacao = (sol, motivo) => updateDoc(doc(db, 'solicitacoes', sol.id), { status: 'recusada', motivo: motivo || null, aprovadoPor: auth.currentUser.uid, aprovadoEm: serverTimestamp() });
+
+/** Admin inclui um procedimento novo no catálogo (falha se o mnemônico já existir). */
+export async function criarExame({ mnemonico, nome, setor, prazoDias, codigoTuss, precos, renal }) {
+  const u = auth.currentUser; mnemonico = mnemonico.trim().toUpperCase();
+  if (!/^[A-Z0-9][A-Z0-9\-\.]{1,19}$/.test(mnemonico)) throw new Error('Mnemônico inválido: use letras, números, "-" ou "." (2 a 20 caracteres).');
+  if ((await getDoc(doc(db, 'exames', mnemonico))).exists()) throw new Error(`Já existe um exame com o mnemônico ${mnemonico}.`);
+  const cfg = await config(); const cor = cfg.setores?.[setor]?.cor || '#278d8c';
+  const b = writeBatch(db);
+  b.set(doc(db, 'exames', mnemonico), { mnemonico, nome: nome.trim().toUpperCase(), nomeBusca: norm(nome), setor, cor, laboratorio: setor === 'Próprio' ? 'CELULA' : 'DB',
+    prazoDias: prazoDias ?? null, codigoTuss: codigoTuss || null, precos: precos || {}, renal: !!renal, ativo: true, origem: 'manual', criadoEm: serverTimestamp(), criadoPor: u.uid });
+  b.set(doc(db, 'auditoria', `${Date.now()}_${mnemonico}`), { tipo: 'inclusao', mnemonico, por: u.uid, em: serverTimestamp(), dados: { nome, setor, prazoDias, codigoTuss, precos, renal: !!renal } });
+  await b.commit(); _cat = null;
+}
+/** Admin exclui um procedimento do catálogo (definitivo; fica registrado na auditoria). */
+export async function excluirExame(mnemonico) {
+  const u = auth.currentUser; const cur = (await getDoc(doc(db, 'exames', mnemonico))).data();
+  const b = writeBatch(db);
+  b.delete(doc(db, 'exames', mnemonico));
+  b.set(doc(db, 'auditoria', `${Date.now()}_${mnemonico}`), { tipo: 'exclusao', mnemonico, por: u.uid, em: serverTimestamp(), dados: cur || null });
+  await b.commit(); if (_cat) _cat = _cat.filter(c => c.mnemonico !== mnemonico);
+}
 
 /** Admin edita valor/prazo/visibilidade de um exame do catálogo (com auditoria). */
 export async function editarExame(mnemonico, mudancas) {

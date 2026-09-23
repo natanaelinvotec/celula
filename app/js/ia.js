@@ -25,8 +25,9 @@ const dorme = ms => new Promise(r => setTimeout(r, ms));
  */
 export async function lerPedido(dataUrls, { onStatus = () => {}, tentativas = 4 } = {}) {
   const parts = [{ text: PROMPT }, ...dataUrls.map(u => ({ inlineData: { mimeType: u.startsWith('data:image/png') ? 'image/png' : 'image/jpeg', data: u.split(',')[1] } }))];
-  let ultimoErro;
+  let ultimoErro, quota = false;
   for (let i = 0; i < tentativas; i++) {
+    quota = false;
     for (const nome of MODELOS) {
       try {
         onStatus(`Lendo o pedido com ${nome}${i ? ` (tentativa ${i + 1})` : ''}…`);
@@ -41,13 +42,15 @@ export async function lerPedido(dataUrls, { onStatus = () => {}, tentativas = 4 
       } catch (e) {
         ultimoErro = e; const msg = String(e.message || e);
         if (/404|not found|no longer available/i.test(msg)) continue;          // modelo indisponível: próximo
-        if (/429|quota|RESOURCE_EXHAUSTED/i.test(msg)) { onStatus('Limite de uso da IA atingido, aguardando…'); await dorme(15000); continue; }
+        if (/429|quota|RESOURCE_EXHAUSTED/i.test(msg)) { quota = true; onStatus(`Cota do modelo ${nome} esgotada — tentando o modelo reserva…`); continue; }
         if (/500|503|high demand|overloaded|fetch/i.test(msg)) continue;      // instável: tenta o reserva
         throw e;
       }
     }
+    if (quota && i >= 1) break; // cota diária: não adianta insistir
     onStatus(`Serviço de IA ocupado, nova tentativa em ${3 * (i + 1)} s…`); await dorme(3000 * (i + 1));
   }
+  if (quota) throw new Error('A cota gratuita da IA (Gemini) foi atingida. Ela renova à meia-noite (horário do Pacífico, 04:00 em Campo Grande). Para não parar a recepção, ative o plano Blaze no Firebase. Enquanto isso, adicione os exames pela busca manual.');
   throw new Error('A IA não respondeu após várias tentativas. Você pode digitar os exames manualmente. (' + String(ultimoErro?.message || '').slice(0, 120) + ')');
 }
 

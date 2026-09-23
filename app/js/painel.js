@@ -142,8 +142,18 @@ async function viewCat() {
     <label class="f">Setor<select class="in" id="cset"><option value="">Todos</option>${SETOR_ORDEM.map(s => `<option>${s}</option>`).join('')}</select></label>
     <label class="f">Situação<select class="in" id="csit"><option value="">Todos</option><option value="ativo">Visíveis</option><option value="oculto">Ocultos</option><option value="renal">Renal</option><option value="semvalor">Sem valor no convênio</option><option value="semprazo">Sem prazo</option></select></label>
   </div></div></div>
-  <div class="card"><div class="card-h"><h2>Catálogo de exames</h2><span class="cnt" id="ccnt"></span><div class="sp"></div><span class="note">Edite valor/prazo na linha e clique em Salvar · tudo fica na auditoria</span></div>
-  <div class="card-b tbl-wrap"><table class="tbl"><thead><tr><th>Mnemônico</th><th>Exame</th><th>Setor</th><th>TUSS</th><th>Prazo (d.u.)</th><th class="num">Valor</th><th>Visível</th><th>Renal</th><th></th></tr></thead><tbody id="cbody"></tbody></table></div>
+  <div class="card"><div class="card-h"><h2>Catálogo de exames</h2><span class="cnt" id="ccnt"></span><div class="sp"></div><span class="note">Edite valor/prazo na linha e clique em Salvar · tudo fica na auditoria</span><button class="btn blue sm" id="cnovo">+ Incluir procedimento</button></div>
+  <div class="card-b" id="cform" hidden style="border-bottom:1px solid var(--line);background:var(--surface-2)"><div class="form">
+    <label class="f">Mnemônico AutoLAC *<input class="in" id="nMn" placeholder="ex.: ZINC-DB" style="font-family:ui-monospace,monospace;text-transform:uppercase"></label>
+    <label class="f">Nome do exame *<input class="in" id="nNome" placeholder="ex.: ZINCO SÉRICO"></label>
+    <label class="f">Setor<select class="in" id="nSet">${SETOR_ORDEM.map(x => `<option>${x}</option>`).join('')}</select></label>
+    <label class="f">Prazo Célula (dias úteis) *<input class="in" id="nPrazo" type="number" min="0"></label>
+    <label class="f">Código TUSS<input class="in" id="nTuss" placeholder="opcional"></label>
+    <label class="f">Valor PARTICULAR (R$) *<input class="in" id="nV1" type="number" step="0.01" min="0"></label>
+    <label class="f">Valor no convênio selecionado acima (R$)<input class="in" id="nV2" type="number" step="0.01" min="0" placeholder="opcional"></label>
+    <label class="f" style="justify-content:flex-end"><label class="switch"><input type="checkbox" id="nRenal"><i></i>Exame do pacote renal</label></label>
+    <div class="full" style="display:flex;gap:8px"><button class="btn ok" id="nSalvar">Incluir no catálogo</button><button class="btn ghost" id="nCancel">Cancelar</button></div></div></div>
+  <div class="card-b tbl-wrap"><table class="tbl"><thead><tr><th>Mnemônico</th><th>Exame</th><th>Setor</th><th>TUSS</th><th>Prazo (d.u.)</th><th class="num">Valor</th><th>Visível</th><th>Renal</th><th></th><th></th></tr></thead><tbody id="cbody"></tbody></table></div>
   <div class="card-b" style="display:flex;gap:8px;justify-content:center;border-top:1px solid var(--line)"><button class="btn ghost sm" id="cmais">Mostrar mais</button></div></div>`;
   let lim = 100;
   const render = () => {
@@ -153,10 +163,29 @@ async function viewCat() {
     $('ccnt').textContent = `${Math.min(lim, rows.length)} de ${rows.length} (catálogo: ${cat.length})`; $('cmais').hidden = rows.length <= lim;
     $('cbody').innerHTML = rows.slice(0, lim).map(r => `<tr data-m="${r.mnemonico}"><td><span class="mn sec" style="--c:${SETORES[r.setor]?.cor || 'var(--ac)'}">${r.mnemonico}</span></td><td><b>${escapeHtml(r.nome)}</b>${r.matchPrazo === 'nome' ? '<br><small class="note">prazo casado por nome — conferir</small>' : ''}</td><td><span class="dot" style="background:${SETORES[r.setor]?.cor || 'var(--ac)'}"></span>${escapeHtml(r.setor)}</td><td>${r.codigoTuss || '—'}</td>
       <td><input class="in" type="number" min="0" value="${r.prazoDias ?? ''}" data-f="prazoDias" style="width:70px"></td><td class="num"><input class="in" type="number" step="0.01" min="0" value="${r.precos?.[conv] ?? ''}" placeholder="sem valor" data-f="valor" style="width:105px;text-align:right"></td>
-      <td><label class="switch"><input type="checkbox" data-f="ativo" ${r.ativo !== false ? 'checked' : ''}><i></i></label></td><td><label class="switch"><input type="checkbox" data-f="renal" ${r.renal ? 'checked' : ''}><i></i></label></td><td><button class="btn blue sm" data-save="${r.mnemonico}">Salvar</button></td></tr>`).join('');
+      <td><label class="switch"><input type="checkbox" data-f="ativo" ${r.ativo !== false ? 'checked' : ''}><i></i></label></td><td><label class="switch"><input type="checkbox" data-f="renal" ${r.renal ? 'checked' : ''}><i></i></label></td><td><button class="btn blue sm" data-save="${r.mnemonico}">Salvar</button></td><td><button class="btn ghost sm" data-del="${r.mnemonico}" title="Excluir do catálogo" style="color:var(--red);border-color:var(--red-50)">Excluir</button></td></tr>`).join('');
   };
   ['cq', 'cconv', 'cset', 'csit'].forEach(id => $(id).addEventListener('input', () => { lim = 100; render(); })); $('cmais').onclick = () => { lim += 100; render(); }; render();
+  // incluir procedimento
+  $('cnovo').onclick = () => { $('cform').hidden = !$('cform').hidden; if (!$('cform').hidden) $('nMn').focus(); };
+  $('nCancel').onclick = () => { $('cform').hidden = true; };
+  $('nSalvar').onclick = async () => {
+    const mnemonico = $('nMn').value.trim().toUpperCase(), nome = $('nNome').value.trim(), prazo = parseInt($('nPrazo').value), v1 = parseFloat($('nV1').value), v2 = parseFloat($('nV2').value), conv = $('cconv').value;
+    if (!mnemonico || !nome || isNaN(prazo) || isNaN(v1)) { toast('Preencha mnemônico, nome, prazo e valor PARTICULAR.'); return; }
+    const precos = { particular: v1 }; if (!isNaN(v2) && conv !== 'particular') precos[conv] = v2;
+    $('nSalvar').disabled = true;
+    try { await D.criarExame({ mnemonico, nome, setor: $('nSet').value, prazoDias: prazo, codigoTuss: $('nTuss').value.trim() || null, precos, renal: $('nRenal').checked });
+      const novo = (await D.catalogo(true)).find(c => c.mnemonico === mnemonico); if (novo) cat.unshift(novo);
+      ['nMn', 'nNome', 'nPrazo', 'nTuss', 'nV1', 'nV2'].forEach(id => $(id).value = ''); $('nRenal').checked = false; $('cform').hidden = true; $('cq').value = mnemonico; render();
+      toast(`${mnemonico} incluído no catálogo`, true); }
+    catch (err) { toast(err.message); } $('nSalvar').disabled = false;
+  };
   $('cbody').addEventListener('click', async e => {
+    // excluir (dois cliques: o primeiro pede confirmação)
+    const d = e.target.closest('[data-del]');
+    if (d) { const m = d.dataset.del;
+      if (d.dataset.arm !== '1') { d.dataset.arm = '1'; d.textContent = 'Confirmar exclusão?'; d.classList.replace('ghost', 'red'); setTimeout(() => { if (d.isConnected) { d.dataset.arm = ''; d.textContent = 'Excluir'; d.classList.replace('red', 'ghost'); } }, 4000); return; }
+      d.disabled = true; try { await D.excluirExame(m); const i = cat.findIndex(x => x.mnemonico === m); if (i >= 0) cat.splice(i, 1); render(); toast(`${m} excluído do catálogo (registrado na auditoria)`, true); } catch (err) { toast('Erro: ' + err.message); d.disabled = false; } return; }
     const b = e.target.closest('[data-save]'); if (!b) return; const tr = b.closest('tr'); const m = b.dataset.save; const r = cat.find(x => x.mnemonico === m); const conv = $('cconv').value;
     const prazo = tr.querySelector('[data-f=prazoDias]').value, valor = tr.querySelector('[data-f=valor]').value;
     const mud = { ativo: tr.querySelector('[data-f=ativo]').checked, renal: tr.querySelector('[data-f=renal]').checked, prazoDias: prazo === '' ? null : parseInt(prazo), precos: { ...(r.precos || {}) } };
