@@ -12,7 +12,13 @@ const CONF_MIN = 0.85;
 
 // ---------- estado ----------
 const st = { id: null, numero: null, itens: [], fotos: [], convenio: null, convSlug: null, renal: false, manuais: {}, leitura: null, offSol: null };
-const cfg = await D.config(); const convs = perfil.papel === 'admin' ? await D.conveniosTodos() : await D.convenios(); // atendentes só veem convênios visíveis
+const cfg = await D.config(); const convs = ordenarConvenios(perfil.papel === 'admin' ? await D.conveniosTodos() : await D.convenios()); // atendentes só veem convênios visíveis
+// Ordem do seletor: PARTICULAR (preferencial) → TABELA SOCIAL → PAX → PERFIS (A–Z) → demais (A–Z)
+function ordenarConvenios(list) {
+  const peso = c => { const n = norm(c.nome); if (n === 'PARTICULAR') return 0; if (n === 'TABELA SOCIAL') return 1; if (n === 'PAX') return 2; if (n.startsWith('PERFIL')) return 3; return 4; };
+  return [...list].sort((a, b) => peso(a) - peso(b) || a.nome.localeCompare(b.nome, 'pt-BR'));
+}
+const ehPerfil = c => c && norm(c.nome).startsWith('PERFIL');
 const CONF_MIN_CFG = cfg.confiancaMinima ? cfg.confiancaMinima / 100 : CONF_MIN;
 
 root.innerHTML = `
@@ -25,9 +31,9 @@ root.innerHTML = `
 <div class="orc">
   <aside class="left">
     <section class="card"><div class="card-h"><h2>1 · Convênio e paciente</h2></div><div class="card-b" style="display:flex;flex-direction:column;gap:10px">
-      <label class="f">Convênio *<select class="in" id="conv">${convs.map(c => `<option value="${c.slug}" ${c.slug === 'particular' ? 'selected' : ''}>${escapeHtml(c.nome)}</option>`).join('')}</select></label>
-      <label class="f">Paciente<input class="in" id="pac" placeholder="Nome do interessado" autocomplete="off"></label>
-      <label class="f">Celular / WhatsApp<input class="in" id="tel" placeholder="(67) 9 9999-9999" inputmode="tel"></label>
+      <label class="f">Convênio *<select class="in" id="conv">${convs.map(c => `<option value="${c.slug}" ${c.slug === 'particular' ? 'selected' : ''}>${escapeHtml(c.nome)}${norm(c.nome) === 'PARTICULAR' ? ' — preferencial' : ''}${ehPerfil(c) ? ' ★' : ''}</option>`).join('')}</select></label>
+      <label class="f">Paciente *<input class="in" id="pac" placeholder="Nome do interessado (obrigatório)" autocomplete="off" required></label>
+      <label class="f">Celular / WhatsApp *<input class="in" id="tel" placeholder="(67) 9 9999-9999 (obrigatório)" inputmode="tel" required></label>
       <label class="switch"><input type="checkbox" id="swRenal"><i></i>Orçamento renal (pacote HIPERRIM)</label>
       <span class="note">Ligado: a IA usa só os exames "-DB RENAL". Desligado: eles ficam ocultos.</span>
     </div></section>
@@ -67,7 +73,36 @@ root.innerHTML = `
 
 D.contar('apelidos').then(n => $('memN').textContent = n.toLocaleString('pt-BR')).catch(() => $('memN').textContent = '—');
 st.convSlug = $('conv').value; st.convenio = convs.find(c => c.slug === st.convSlug)?.nome;
-$('conv').addEventListener('change', async () => { st.convSlug = $('conv').value; st.convenio = convs.find(c => c.slug === st.convSlug)?.nome; await reprecificar(); render(); toast('Valores recalculados pela tabela ' + st.convenio); });
+$('conv').addEventListener('change', async () => {
+  st.convSlug = $('conv').value; const c = convs.find(x => x.slug === st.convSlug); st.convenio = c?.nome;
+  if (ehPerfil(c)) { await carregarPerfil(c); return; }
+  await reprecificar(); render(); toast('Valores recalculados pela tabela ' + st.convenio);
+});
+/** Perfil (pacote): carrega todos os exames que têm valor nessa tabela e fecha o total. */
+async function carregarPerfil(c) {
+  const cat = await D.catalogo(); const exs = cat.filter(e => e.ativo !== false && e.precos?.[c.slug] != null).sort((a, b) => a.nome.localeCompare(b.nome));
+  if (!exs.length) { toast(`A tabela ${c.nome} não tem exames com valor cadastrado.`); await reprecificar(); render(); return; }
+  const aplicar = async (substituir) => {
+    st.manuais = await D.precosManuais(st.convSlug);
+    if (substituir) st.itens = st.itens.filter(i => i.status === 'conferencia'); // mantém só o que está na gestão
+    for (const ex of exs) { if (st.itens.some(i => i.ex?.mnemonico === ex.mnemonico)) continue; const it = { uid: Math.random().toString(36).slice(2), lido: null, conf: 1, cands: [], ex, status: 'ok', valor: null, prazoDias: null, origem: null }; await precificar(it); st.itens.push(it); }
+    await reprecificar(); render(); toast(`${c.nome}: ${exs.length} exames carregados · total ${brl(st.itens.reduce((a, i) => a + (i.valor || 0), 0))}`, true);
+  };
+  const temItens = st.itens.some(i => i.status !== 'conferencia');
+  if (!temItens) { await aplicar(true); return; }
+  const m = modal(`<h2 style="margin:0 0 6px;color:var(--blue-d)">${escapeHtml(c.nome)}</h2><p class="note">Este perfil tem <b>${exs.length}</b> exames com valor na tabela. O orçamento já tem ${st.itens.length} exame(s): o que você quer fazer?</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-top:14px"><button class="btn ghost" id="pfAdd">Adicionar aos exames atuais</button><button class="btn blue" id="pfSub">Substituir pelo perfil</button></div>`, { largura: 480 });
+  m.querySelector('#pfAdd').onclick = async () => { fecharModal(); await aplicar(false); };
+  m.querySelector('#pfSub').onclick = async () => { fecharModal(); await aplicar(true); };
+}
+/** Nome e celular são obrigatórios para gravar, gerar PDF ou enviar. */
+function validarPaciente() {
+  const nome = $('pac').value.trim(), tel = soDigitos($('tel').value); let ok = true;
+  $('pac').style.borderColor = nome ? '' : 'var(--red)'; $('tel').style.borderColor = tel.length >= 10 ? '' : 'var(--red)';
+  if (!nome) { toast('Informe o nome do paciente.'); $('pac').focus(); ok = false; }
+  else if (tel.length < 10) { toast('Informe o celular com DDD (ex.: 67 99999-9999).'); $('tel').focus(); ok = false; }
+  return ok;
+}
 $('swRenal').addEventListener('change', async () => { st.renal = $('swRenal').checked; if ($('swRenal').checked && convs.some(c => c.slug === 'hiperrim')) { $('conv').value = 'hiperrim'; $('conv').dispatchEvent(new Event('change')); } await reresolver(); });
 
 // ---------- fotos ----------
@@ -294,6 +329,7 @@ function montarDados(status) {
 }
 $('btnSalvar').addEventListener('click', async () => {
   if (!st.itens.length) { toast('Adicione ao menos um exame.'); return; }
+  if (!validarPaciente()) return;
   const pend = st.itens.filter(i => ['flag', 'miss', 'semvalor'].includes(i.status)).length; if (pend) { toast(`Ainda há ${pend} exame(s) a confirmar ou sem valor.`); return; }
   try {
     await garantirOrcamento(st.itens.some(i => i.status === 'conferencia') ? 'aguardando_conferencia' : 'gravado'); toast(`Orçamento #${numOrc(st.numero)} gravado — gerando PDF…`, true);
@@ -302,6 +338,7 @@ $('btnSalvar').addEventListener('click', async () => {
 });
 async function baixarPdf() {
   if (!st.itens.length) { toast('Adicione ao menos um exame.'); return; }
+  if (!validarPaciente()) return;
   try { if (!st.id) await garantirOrcamento(); await gerarPdf({ ...montarDados(), numero: st.numero, unitarioLiberado: !!st.unitario }, { validadeDias: cfg.validadeDias || 7, unitario: !!st.unitario }); }
   catch (e) { toast('Não consegui gerar o PDF: ' + e.message); }
 }
@@ -309,6 +346,7 @@ $('btnPdf').addEventListener('click', baixarPdf);
 // ---------- valores unitários: pede liberação à gestão; quando aprovada, o PDF sai exame por exame ----------
 $('btnUnit').addEventListener('click', async () => {
   if (!st.itens.length) { toast('Adicione ao menos um exame.'); return; }
+  if (!validarPaciente()) return;
   if (st.unitario) { toast('Liberado pela gestão — o PDF já sai com os valores unitários.', true); baixarPdf(); return; }
   if (st.unitPedido) { toast('Pedido já enviado — aguardando a gestão liberar.'); return; }
   try { await garantirOrcamento(); await D.solicitarLiberacaoUnitario({ orcamentoId: st.id, orcamentoNumero: st.numero, paciente: $('pac').value.trim() }); st.unitPedido = true; $('btnUnit').textContent = 'Aguardando liberação…'; toast('Pedido enviado — a gestão já vê na fila de solicitações.', true); }
@@ -331,13 +369,13 @@ $('btnTransf').addEventListener('click', async () => {
   };
 });
 $('btnZap').addEventListener('click', async () => {
-  if (!st.itens.length) return; try { await garantirOrcamento(); } catch {}
+  if (!st.itens.length) return; if (!validarPaciente()) return; try { await garantirOrcamento(); } catch {}
   const linhas = st.itens.filter(i => i.ex).map(i => `• ${i.ex.nome}${i.prazoDias != null ? ` — ${i.prazoDias} d.u.` : ''}${i.valor != null ? ` — ${brl(i.valor)}` : ''}`);
   const txt = `*Célula Diagnósticos* — Orçamento ${st.numero ? '#' + st.numero : ''}\nPaciente: ${$('pac').value || '-'}\nConvênio: ${st.convenio}\n\n${linhas.join('\n')}\n\n*Total: ${brl(st.itens.reduce((a, i) => a + (i.valor || 0), 0))}*\nValidade: ${cfg.validadeDias || 7} dias · prazos em dias úteis após a coleta.`;
   const tel = soDigitos($('tel').value); window.open(`https://wa.me/${tel ? '55' + tel : ''}?text=${encodeURIComponent(txt)}`, '_blank');
   if (st.id) D.mudarStatus(st.id, 'enviado').catch(() => {});
 });
-$('btnLimpar').addEventListener('click', () => { if (st.offSol) st.offSol(); Object.assign(st, { id: null, numero: null, itens: [], fotos: [], leitura: null, offSol: null, _fotosSol: null, unitario: false, unitPedido: false }); $('btnUnit').textContent = 'Valores unitários'; $('btnUnit').classList.add('ghost'); $('btnUnit').classList.remove('blue'); history.replaceState(null, '', location.pathname); $('prevWrap').hidden = true; $('prev').innerHTML = ''; $('btnRun').disabled = true; $('btnRun').textContent = 'Analisar pedido com a IA'; $('numLbl').textContent = 'novo'; $('leituraInfo').textContent = ''; $('pac').value = ''; $('tel').value = ''; render(); });
+$('btnLimpar').addEventListener('click', () => { if (st.offSol) st.offSol(); Object.assign(st, { id: null, numero: null, itens: [], fotos: [], leitura: null, offSol: null, _fotosSol: null, unitario: false, unitPedido: false }); $('btnUnit').textContent = 'Valores unitários'; $('btnUnit').classList.add('ghost'); $('btnUnit').classList.remove('blue'); history.replaceState(null, '', location.pathname); $('prevWrap').hidden = true; $('prev').innerHTML = ''; $('btnRun').disabled = true; $('btnRun').textContent = 'Analisar pedido com a IA'; $('numLbl').textContent = 'novo'; $('leituraInfo').textContent = ''; $('pac').value = ''; $('tel').value = ''; $('pac').style.borderColor = ''; $('tel').style.borderColor = ''; render(); });
 render();
 
 // ---------- abrir um orçamento existente para editar (orcamento.html?id=...) ----------
