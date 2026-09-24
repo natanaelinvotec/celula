@@ -40,12 +40,15 @@ export function montarShell({ perfil, ativo, titulo, subtitulo, painel = false }
     <div class="top">
       <h1 id="pgTitulo">${escapeHtml(titulo)}<small id="pgSub">${escapeHtml(subtitulo || '')}</small></h1>
       <div class="sp"></div>
+      ${admin ? '' : `<select class="sel-st" id="selStatus" title="Seu status para a gestão"><option value="online">🟢 Online</option><option value="pausa">🟠 Pausa</option><option value="almoco">🍽️ Almoço</option><option value="finalizado">⚪ Finalizado</option></select>`}
       <div class="seg"><button data-tema="light" title="Tema claro">${SUN}</button><button data-tema="dark" title="Tema escuro">${MOON}</button></div>
       <div class="user"><span class="av">${foto}</span><span>${escapeHtml(perfil.nome.split(' ')[0])}<small style="display:block;font-size:.72rem;color:var(--muted)">${admin ? 'Administrador(a)' : 'Atendente'}</small></span></div>
     </div>
     <div id="conteudo"></div>
   </main></div>`);
   document.getElementById('btnSair').addEventListener('click', sair);
+  const sel = document.getElementById('selStatus');
+  if (sel) { sel.value = perfil.status || 'online'; sel.addEventListener('change', async () => { try { const D = await import('./dados.js'); await D.setStatusAtendente(sel.value); } catch (e) { console.warn(e); } }); if (!perfil.status) import('./dados.js').then(D => D.setStatusAtendente('online')).catch(() => {}); }
   temaInit();
   const cur = document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light');
   document.querySelectorAll('[data-tema]').forEach(b => b.classList.toggle('on', b.dataset.tema === cur));

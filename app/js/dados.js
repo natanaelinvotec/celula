@@ -42,7 +42,7 @@ export async function precosManuais(convSlug) {
 export async function resolver(textoLido, { renal = false, normalizadoIA } = {}) {
   const t = norm(textoLido); if (!t) return [];
   const cat = await catalogo();
-  const ok = c => c.ativo !== false && (renal ? !!c.renal : !c.renal);
+  const ok = c => c.ativo !== false && !c.foraAutolac && (renal ? !!c.renal : !c.renal);
   const out = [];
   const ap = await getDocs(query(collection(db, 'apelidos'), where('textoNorm', '==', t), limit(5)));
   for (const a of ap.docs.map(d => d.data()).sort((a, b) => (b.confirmacoes || 0) - (a.confirmacoes || 0))) {
@@ -83,13 +83,15 @@ export async function ensinar(textoLido, mnemonico, unidade) {
 }
 
 // ---------- solicitações (fila de conferência) ----------
-export async function solicitar({ orcamentoId, orcamentoNumero, textoLido, normalizadoIA, guiaDb, convenio, setorSugerido, sugestao }) {
+export async function solicitar({ orcamentoId, orcamentoNumero, textoLido, normalizadoIA, guiaDb, convenio, setorSugerido, sugestao, fotos, motivo }) {
   const u = auth.currentUser;
   const ref = await addDoc(collection(db, 'solicitacoes'), {
     status: 'pendente', orcamentoId: orcamentoId || null, orcamentoNumero: orcamentoNumero || null, textoLido: String(textoLido || '').slice(0, 300), normalizadoIA: normalizadoIA || null,
     guiaDb: guiaDb || null, convenio, setorSugerido: setorSugerido || 'Análises Clínicas',
     // o que a atendente preencheu (nome, mnemônico, prazo, valor, obs) — a gestão recebe pré-preenchido
     sugestao: sugestao ? { nome: sugestao.nome || null, mnemonico: sugestao.mnemonico || null, prazoDias: sugestao.prazoDias ?? null, valor: sugestao.valor ?? null, obs: sugestao.obs || null } : null,
+    // foto(s) do pedido (reduzidas) para a gestão conferir a caligrafia; motivo: 'nao_encontrado' | 'sem_valor' | 'fora_autolac' (possível nova negociação)
+    fotos: (fotos || []).slice(0, 3), motivo: motivo || null,
     atendenteUid: u.uid, atendenteNome: u.displayName || u.email, criadoEm: serverTimestamp(),
   });
   return ref.id;
@@ -103,7 +105,7 @@ export async function aprovarSolicitacao(sol, { mnemonico, nome, setor, prazoDia
   const exRef = doc(db, 'exames', mnemonico); const cur = (await getDoc(exRef)).data() || {};
   const cfg = await config(); const cor = cfg.setores?.[setor]?.cor || '#278d8c';
   b.set(exRef, { ...cur, mnemonico, nome, nomeBusca: norm(nome), setor, cor, laboratorio: setor === 'Próprio' ? 'CELULA' : 'DB', prazoDias, codigoTuss: codigoTuss || cur.codigoTuss || null,
-    precos: { ...(cur.precos || {}), ...precos }, ativo: true, renal: !!cur.renal, origem: cur.origem || 'aprovacao', atualizadoEm: serverTimestamp(), atualizadoPor: u.uid }, { merge: true });
+    precos: { ...(cur.precos || {}), ...precos }, ativo: true, foraAutolac: false, renal: !!cur.renal, origem: cur.origem || 'aprovacao', atualizadoEm: serverTimestamp(), atualizadoPor: u.uid }, { merge: true });
   for (const a of [sol.textoLido, ...(apelidos || [])].filter(Boolean)) {
     const tn = norm(a); if (!tn) continue;
     b.set(doc(db, 'apelidos', slug(tn).slice(0, 200)), { texto: a, textoNorm: tn, mnemonico, origem: 'aprovacao', confirmacoes: 3, criadoEm: serverTimestamp() }, { merge: true });
@@ -152,7 +154,8 @@ export async function proximoNumero() {
 export async function gravarOrcamento(dados, id) {
   const u = auth.currentUser;
   const base = { ...dados, atendenteUid: u.uid, atendenteNome: dados.atendenteNome || u.displayName || u.email, atualizadoEm: serverTimestamp() };
-  if (id) { await updateDoc(doc(db, 'orcamentos', id), base); return id; }
+  // ao editar, a dona do orçamento não muda (transferência é só por transferirOrcamento)
+  if (id) { const { atendenteUid, atendenteNome, ...resto } = base; await updateDoc(doc(db, 'orcamentos', id), resto); return id; }
   const numero = await proximoNumero();
   const ref = await addDoc(collection(db, 'orcamentos'), { ...base, numero, status: dados.status || 'gravado', criadoEm: serverTimestamp() });
   return ref.id;
@@ -174,9 +177,58 @@ export async function orcamentosRecentes({ dias = 30, unidade, atendenteUid, sta
 export async function buscarOrcamentoPorNumero(n) { const s = await getDocs(query(collection(db, 'orcamentos'), where('numero', '==', Number(n)), limit(1))); return s.docs.map(d => ({ id: d.id, ...d.data() }))[0]; }
 export async function buscarOrcamentosPorTelefone(tel) { const s = await getDocs(query(collection(db, 'orcamentos'), where('telefoneDigitos', '==', tel.replace(/\D/g, '')), limit(50))); return s.docs.map(d => ({ id: d.id, ...d.data() })); }
 
+/** Gestão exclui um orçamento (definitivo; fica na auditoria). */
+export async function excluirOrcamento(id) {
+  const u = auth.currentUser; const cur = (await getDoc(doc(db, 'orcamentos', id))).data();
+  const b = writeBatch(db);
+  b.delete(doc(db, 'orcamentos', id));
+  b.set(doc(db, 'auditoria', `${Date.now()}_orc${cur?.numero || id}`), { tipo: 'exclusao_orcamento', orcamentoId: id, numero: cur?.numero || null, por: u.uid, em: serverTimestamp(), dados: { paciente: cur?.paciente || null, total: cur?.total ?? null, itens: (cur?.itens || []).length } });
+  await b.commit();
+}
+/** A atendente dona (ou a gestão) transfere o orçamento para outra atendente. */
+export const transferirOrcamento = (id, { uid, nome }) => updateDoc(doc(db, 'orcamentos', id), { atendenteUid: uid, atendenteNome: nome, transferidoDe: auth.currentUser.uid, transferidoEm: serverTimestamp(), atualizadoEm: serverTimestamp() });
+export const orcamento = async id => { const d = await getDoc(doc(db, 'orcamentos', id)); return d.exists() ? { id: d.id, ...d.data() } : null; };
+/** Status de presença da atendente: online | pausa | almoco | finalizado. */
+export const setStatusAtendente = status => updateDoc(doc(db, 'usuarios', auth.currentUser.uid), { status, statusEm: serverTimestamp() });
+export const ouvirUsuarios = cb => onSnapshot(collection(db, 'usuarios'), s => cb(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.nome || '').localeCompare(b.nome || ''))));
+
+/**
+ * Importa o cadastro do AutoLAC (data/autolac.json): prazos, bancada, material, método, preparo, meios de coleta, sinonímia.
+ * Exames do catálogo que não estão no AutoLAC ficam marcados foraAutolac:true (vão para o fim da lista, "sem valor", e a IA não os usa).
+ */
+export async function importarAutolac(json, onProgress = () => {}) {
+  const u = auth.currentUser; const cfg = await config(); const cat = await catalogoMap();
+  const ops = [];
+  for (const e of json.exames) {
+    const cur = cat[e.m]; const cor = cfg.setores?.[e.setor]?.cor || cur?.cor || '#278d8c';
+    const dados = { bancada: e.bancada || null, material: e.material || null, metodo: e.metodo || null, prazoDias: e.prazoDias || null, jejum: e.jejum || null, preparo: e.preparo || null,
+      meios: e.meios || null, meiosOrigem: e.meiosOrigem || null, sinonimia: e.sinonimia || null, nomeAutolac: e.nomeAutolac || null, foraAutolac: false, autolacEm: serverTimestamp() };
+    if (cur) ops.push(['update', doc(db, 'exames', e.m), { ...dados, setor: e.setor || cur.setor, cor, laboratorio: e.setor === 'Próprio' ? 'CELULA' : (cur.laboratorio || 'DB') }]);
+    else ops.push(['set', doc(db, 'exames', e.m), { mnemonico: e.m, nome: e.nome.toUpperCase(), nomeBusca: norm(e.nome), setor: e.setor, cor, laboratorio: e.setor === 'Próprio' ? 'CELULA' : 'DB', codigoTuss: null, precos: {}, renal: false, ativo: true, origem: 'autolac', criadoEm: serverTimestamp(), criadoPor: u.uid, ...dados }]);
+  }
+  for (const m of json.foraAutolac) if (cat[m]) ops.push(['update', doc(db, 'exames', m), { foraAutolac: true, autolacEm: serverTimestamp() }]);
+  let feitos = 0;
+  for (let i = 0; i < ops.length; i += 450) {
+    const b = writeBatch(db);
+    for (const [tipo, ref, d] of ops.slice(i, i + 450)) tipo === 'set' ? b.set(ref, d) : b.update(ref, d);
+    await b.commit(); feitos += Math.min(450, ops.length - i); onProgress(feitos, ops.length);
+  }
+  await setDoc(doc(db, 'auditoria', `${Date.now()}_autolac`), { tipo: 'importacao_autolac', por: u.uid, em: serverTimestamp(), dados: { exames: json.exames.length, fora: json.foraAutolac.length, fonte: json.fonte || null } });
+  await salvarConfig({ autolacAtualizadoEm: serverTimestamp(), autolacExames: json.exames.length, autolacFora: json.foraAutolac.length });
+  _cat = null; return ops.length;
+}
+
 // ---------- usuários ----------
 export async function usuarios() { const s = await getDocs(collection(db, 'usuarios')); return s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.nome || '').localeCompare(b.nome || '')); }
 export const editarUsuario = (uid, m) => updateDoc(doc(db, 'usuarios', uid), { ...m, atualizadoEm: serverTimestamp() });
 export const meuPerfil = async () => (await getDoc(doc(db, 'usuarios', auth.currentUser.uid))).data();
 export const salvarConfig = m => updateDoc(doc(db, 'config', 'app'), { ...m, atualizadoEm: serverTimestamp() });
+export const contadores = async () => (await getDoc(doc(db, 'config', 'contadores'))).data() || {};
+/** Gestão reinicia a numeração: o próximo orçamento sai como #00001 (fica na auditoria). */
+export async function zerarNumeracao() {
+  const u = auth.currentUser; const cur = await contadores(); const b = writeBatch(db);
+  b.set(doc(db, 'config', 'contadores'), { orcamento: 0, zeradoEm: serverTimestamp(), zeradoPor: u.uid, anterior: cur.orcamento || 0 }, { merge: true });
+  b.set(doc(db, 'auditoria', `${Date.now()}_numeracao`), { tipo: 'numeracao', por: u.uid, em: serverTimestamp(), dados: { anterior: cur.orcamento || 0, novo: 0 } });
+  await b.commit();
+}
 export const contar = async (col) => (await getCountFromServer(collection(db, col))).data().count;

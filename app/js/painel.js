@@ -2,6 +2,7 @@
 import { exigirLogin, brl, fmtData, fmtDia, toast, escapeHtml, iniciais, comprimirImagem, criarUsuario, resetSenha, norm, SETORES, SETOR_ORDEM } from './firebase.js';
 import { montarShell, setTitulo } from './shell.js';
 import { montarHistorico, STATUS } from './historico.js';
+import { mnemonicoHtml, copiar, fichaExame, fotoZoom, numOrc, ICO } from './ui.js';
 import * as D from './dados.js';
 
 const { perfil } = await exigirLogin({ papel: 'admin' });
@@ -45,7 +46,7 @@ async function viewDash() {
     <div class="kpi k1"><div><b>${mes.length}</b><span>Orçamentos no mês</span><small>${mesNome}</small></div><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h5"/></svg></i></div>
     <div class="kpi k2"><div><b>${conv.length}</b><span>Convertidos em coleta</span><small>${taxa}% de conversão</small></div><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12l4 4L19 6"/></svg></i></div>
     <div class="kpi k3"><div><b>${brl(mes.length ? totalOrc / mes.length : 0)}</b><span>Ticket médio</span><small>${brl(totalOrc)} orçados · ${brl(totalConv)} convertidos</small></div><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M7 8h7a3 3 0 0 1 0 6H9a3 3 0 0 0 0 6h8"/></svg></i></div>
-    <div class="kpi k4"><div><b>${pendentes.length}</b><span>Exames em conferência</span><small>aguardando aprovação</small></div><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></i></div>
+    <div class="kpi k4"><div><b>${pendentes.length}</b><span>Exames em conferência</span><small id="kOnline">aguardando aprovação</small></div><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></i></div>
   </div>
   <div class="grid g-dash">
     <div class="card"><div class="card-h"><h2>Orçamentos × Convertidos</h2><span class="cnt">por semana · 8 semanas</span></div><div class="card-b" style="position:relative"><svg class="chart" id="chLine" viewBox="0 0 640 260"></svg><div class="tip" id="tipLine"></div><div class="legend" style="margin-top:8px"><span><i style="background:var(--c1)"></i>Orçamentos</span><span><i style="background:var(--c3)"></i>Convertidos</span></div></div></div>
@@ -53,9 +54,12 @@ async function viewDash() {
     <div class="cal"><div class="h"><span>${mesNome}</span></div><div class="g" id="calGrid"></div><div class="note" style="color:#fff;opacity:.85;margin-top:10px">Número = orçamentos no dia · vermelho: hoje</div></div>
     <div class="card"><div class="card-h"><h2>Quem produz mais</h2><span class="cnt">orçamentos no mês</span></div><div class="card-b"><div class="rank" id="rank">${rank.map((a, i) => `<div class="row"><span class="av s">${escapeHtml(iniciais(a.nome))}</span><div><div class="nm"><span>${i + 1}º ${escapeHtml(a.nome)} <small style="color:var(--muted)">· ${escapeHtml(a.un || '')}</small></span><b>${a.orc}</b></div><div class="bar"><i style="width:${a.orc / (rank[0]?.orc || 1) * 100}%;${i === 0 ? 'background:var(--c3)' : ''}"></i></div></div><span class="pill ok">${a.orc ? Math.round(a.conv / a.orc * 100) : 0}%</span></div>`).join('') || '<span class="note">Sem orçamentos neste mês ainda.</span>'}</div></div></div>
     <div class="card"><div class="card-h"><h2>Conversão por atendente</h2><span class="cnt">coletas ÷ orçamentos</span></div><div class="card-b"><svg class="chart" id="chBars" viewBox="0 0 320 ${Math.max(60, 24 + rank.length * 30)}"></svg></div></div>
-    <div class="card"><div class="card-h"><h2>Atividade recente</h2></div><div class="card-b"><div class="feed">${rows.slice(0, 8).map(r => `<div class="it"><span class="av s">${escapeHtml(iniciais(r.atendenteNome))}</span><div><b>${escapeHtml(r.atendenteNome)} ${r.status === 'convertido' ? 'converteu' : 'gravou'} o orçamento #${r.numero} ${r.paciente ? '· ' + escapeHtml(r.paciente) : ''}</b><small>${fmtData(r.criadoEm)} · ${escapeHtml(r.unidade || '')} · ${brl(r.total)}</small></div></div>`).join('') || '<span class="note">Nada ainda.</span>'}</div></div></div>
+    <div class="card"><div class="card-h"><h2>Atividade recente</h2></div><div class="card-b"><div class="feed">${rows.slice(0, 8).map(r => `<div class="it"><span class="av s">${escapeHtml(iniciais(r.atendenteNome))}</span><div><b>${escapeHtml(r.atendenteNome)} ${r.status === 'convertido' ? 'converteu' : 'gravou'} o orçamento #${numOrc(r.numero)} ${r.paciente ? '· ' + escapeHtml(r.paciente) : ''}</b><small>${fmtData(r.criadoEm)} · ${escapeHtml(r.unidade || '')} · ${brl(r.total)}</small></div></div>`).join('') || '<span class="note">Nada ainda.</span>'}</div></div></div>
   </div>`;
   lineChart(sem); donut(top, mes.length); bars(rank); calendar(mes);
+  // equipe: quem está online / pausa / almoço agora
+  D.usuarios().then(us => { const at = us.filter(u => u.ativo !== false && u.papel !== 'admin'); const on = at.filter(u => (u.status || 'online') === 'online'); const k = $('kOnline'); if (k) k.innerHTML = `aguardando aprovação · <b>${on.length}/${at.length}</b> atendentes online`;
+    const feed = root.querySelector('.feed'); if (feed) feed.insertAdjacentHTML('beforebegin', `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${at.map(u => `<span class="pill" title="${escapeHtml(u.nome)}"><span class="st-dot ${u.status || 'online'}"></span>${escapeHtml((u.nome || '').split(' ')[0])} · ${u.status || 'online'}</span>`).join('')}</div>`); }).catch(() => {});
 }
 function lineChart(SEM) {
   const W = 640, H = 260, L = 44, R = 16, T = 16, B = 34, max = Math.max(5, ...SEM.map(s => s[1])) * 1.15;
@@ -97,7 +101,7 @@ async function viewSol() {
   renderSol = () => {
     if (tab === 'pendente') lista = pendentes;
     $('solN').innerHTML = `<i></i>${lista.length} ${tab === 'pendente' ? 'pendentes' : tab + 's'}`;
-    $('solq').innerHTML = lista.map(s => { const cor = SETORES[s.setorSugerido]?.cor || 'var(--warn)'; return `<div class="sq ${s.id === solSel ? 'on' : ''}" data-id="${s.id}"><span class="st" style="background:${cor}"></span><div><b>${escapeHtml(s.sugestao?.nome || s.guiaDb?.nome || s.normalizadoIA || s.textoLido)}</b>${s.sugestao ? ' <span class="pill warn" title="a atendente preencheu dados">✎</span>' : ''}<small>lido no pedido: <span class="hand">${escapeHtml(s.textoLido)}</span>${s.guiaDb ? ` · <span class="mn">${escapeHtml(s.guiaDb.mnemonico)}</span> sem valor em ${escapeHtml(s.convenio)}` : ' · não está no catálogo'}${s.status !== 'pendente' ? ` · <b>${s.status}</b> ${s.mnemonico || ''}` : ''}</small></div><div class="who"><span class="av s">${escapeHtml(iniciais(s.atendenteNome))}</span>${escapeHtml((s.atendenteNome || '').split(' ')[0])}<br>#${s.orcamentoNumero || '—'} · ${fmtData(s.criadoEm)}</div></div>`; }).join('') || '<div class="note" style="padding:20px;text-align:center">Nada aqui.</div>';
+    $('solq').innerHTML = lista.map(s => { const cor = SETORES[s.setorSugerido]?.cor || 'var(--warn)'; return `<div class="sq ${s.id === solSel ? 'on' : ''}" data-id="${s.id}"><span class="st" style="background:${cor}"></span><div><b>${escapeHtml(s.sugestao?.nome || s.guiaDb?.nome || s.normalizadoIA || s.textoLido)}</b>${s.sugestao ? ' <span class="pill warn" title="a atendente preencheu dados">✎</span>' : ''}<small>lido no pedido: <span class="hand">${escapeHtml(s.textoLido)}</span>${s.motivo === 'fora_autolac' ? ` · <b style="color:var(--red)">fora do AutoLAC — possível nova negociação</b>` : s.guiaDb ? ` · <span class="mn">${escapeHtml(s.guiaDb.mnemonico)}</span> sem valor em ${escapeHtml(s.convenio)}` : ' · não está no catálogo'}${s.fotos?.length ? ' · 📷' : ''}${s.status !== 'pendente' ? ` · <b>${s.status}</b> ${s.mnemonico || ''}` : ''}</small></div><div class="who"><span class="av s">${escapeHtml(iniciais(s.atendenteNome))}</span>${escapeHtml((s.atendenteNome || '').split(' ')[0])}<br>#${s.orcamentoNumero || '—'} · ${fmtData(s.criadoEm)}</div></div>`; }).join('') || '<div class="note" style="padding:20px;text-align:center">Nada aqui.</div>';
   };
   renderSol();
   root.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', async () => { root.querySelectorAll('[data-tab]').forEach(x => x.classList.toggle('on', x === b)); tab = b.dataset.tab; if (offTab) { offTab(); offTab = null; } if (tab !== 'pendente') offTab = D.ouvirSolicitacoes(tab, l => { lista = l.slice(0, 100); renderSol(); }); else renderSol(); }));
@@ -110,6 +114,8 @@ async function viewSol() {
     const conv = s.convenio; const nomeConv = (convs.find(c => c.slug === conv) || {}).nome || conv;
     const vConv = at.valor != null ? at.valor : ''; const vPart = conv === 'particular' && at.valor != null ? at.valor : '';
     $('solForm').innerHTML = `<div class="form">
+      ${s.motivo === 'fora_autolac' ? `<div class="full note" style="background:var(--crit-50);border:1px solid var(--red);border-radius:8px;padding:8px 10px;color:var(--red)"><b>Possível nova negociação:</b> o exame existe no catálogo antigo (${escapeHtml(g?.mnemonico || '')}) mas não está no AutoLAC. Ao aprovar, ele volta a ficar disponível com o valor e prazo informados.</div>` : ''}
+      ${s.fotos?.length ? `<div class="full"><span class="note">Foto do pedido enviada pela atendente — passe o mouse para ampliar, clique para tela cheia:</span><div class="foto-sol" id="fotoSol" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">${s.fotos.map(f => `<img src="${f}" alt="pedido" style="width:200px;border-radius:10px">`).join('')}</div></div>` : ''}
       ${s.sugestao ? `<div class="full note" style="background:var(--warn-50);border:1px solid var(--warn);border-radius:8px;padding:8px 10px"><b>Preenchido pela atendente ${escapeHtml((s.atendenteNome || '').split(' ')[0])}:</b> ${[at.nome && 'nome ' + escapeHtml(at.nome), at.mnemonico && 'mnemônico ' + escapeHtml(at.mnemonico), at.prazoDias != null && 'prazo ' + at.prazoDias + ' d.u.', at.valor != null && 'valor ' + brl(at.valor), at.obs && 'obs: ' + escapeHtml(at.obs)].filter(Boolean).join(' · ')} — confira e complete o que faltar.</div>` : ''}
       <label class="f full">Nome do exame *<input class="in" id="apNome" value="${escapeHtml(at.nome || g?.nome || s.normalizadoIA || s.textoLido)}"></label>
       <label class="f">Mnemônico AutoLAC *<input class="in" id="apM" value="${escapeHtml(sug)}" style="font-family:ui-monospace,monospace;text-transform:uppercase"></label>
@@ -121,12 +127,13 @@ async function viewSol() {
       <label class="f full">Outras grafias que a IA deve reconhecer (separe por vírgula)<input class="in" id="apAp" value="${escapeHtml(s.normalizadoIA && s.normalizadoIA !== s.textoLido ? s.normalizadoIA : '')}"></label>
       <div class="full" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn ok" id="apOk">✓ Aprovar e devolver ao orçamento</button><button class="btn ghost" id="apNo">Recusar</button><input class="in" id="apMotivo" placeholder="motivo da recusa (opcional)" style="flex:1;min-width:160px"></div>
       <div class="full note">A atendente vê a atualização em tempo real; o exame entra no catálogo e as grafias viram apelidos.</div></div>`;
+    if ($('fotoSol')) $('fotoSol').querySelectorAll('img').forEach(im => { const w = document.createElement('div'); w.style.width = '200px'; im.replaceWith(w); w.appendChild(im); fotoZoom(w); });
     $('apOk').onclick = async () => {
       const mnemonico = $('apM').value.trim().toUpperCase(), nome = $('apNome').value.trim().toUpperCase(), prazoDias = parseInt($('apP').value), v1 = parseFloat($('apV1').value), v2 = parseFloat($('apV2').value);
       if (!mnemonico || !nome || isNaN(prazoDias) || isNaN(v1) || (conv !== 'particular' && isNaN(v2))) { toast('Preencha mnemônico, nome, prazo e valores.'); return; }
       const precos = { particular: v1 }; if (conv !== 'particular') precos[conv] = v2;
       $('apOk').disabled = true;
-      try { await D.aprovarSolicitacao(s, { mnemonico, nome, setor: $('apSet').value, prazoDias, codigoTuss: $('apTuss').value.trim() || null, precos, apelidos: $('apAp').value.split(',').map(x => x.trim()).filter(Boolean) }); toast(`${mnemonico} aprovado — orçamento #${s.orcamentoNumero} atualizado`, true); solSel = null; $('solForm').innerHTML = '<div class="note">Selecione um exame na fila.</div>'; }
+      try { await D.aprovarSolicitacao(s, { mnemonico, nome, setor: $('apSet').value, prazoDias, codigoTuss: $('apTuss').value.trim() || null, precos, apelidos: $('apAp').value.split(',').map(x => x.trim()).filter(Boolean) }); toast(`${mnemonico} aprovado — orçamento #${numOrc(s.orcamentoNumero)} atualizado`, true); solSel = null; $('solForm').innerHTML = '<div class="note">Selecione um exame na fila.</div>'; }
       catch (e) { toast('Erro: ' + e.message); $('apOk').disabled = false; }
     };
     $('apNo').onclick = async () => { try { await D.recusarSolicitacao(s, $('apMotivo').value.trim()); toast('Solicitação recusada; a atendente foi avisada.'); solSel = null; $('solForm').innerHTML = '<div class="note">Selecione um exame na fila.</div>'; } catch (e) { toast('Erro: ' + e.message); } };
@@ -143,9 +150,9 @@ async function viewCat() {
     <label class="f" style="grid-column:span 2">Buscar<input class="in" id="cq" placeholder="nome ou mnemônico"></label>
     <label class="f">Convênio (valor exibido)<select class="in" id="cconv">${convs.map(c => `<option value="${c.slug}" ${c.slug === 'particular' ? 'selected' : ''}>${escapeHtml(c.nome)}</option>`).join('')}</select></label>
     <label class="f">Setor<select class="in" id="cset"><option value="">Todos</option>${SETOR_ORDEM.map(s => `<option>${s}</option>`).join('')}</select></label>
-    <label class="f">Situação<select class="in" id="csit"><option value="">Todos</option><option value="ativo">Visíveis</option><option value="oculto">Ocultos</option><option value="renal">Renal</option><option value="semvalor">Sem valor no convênio</option><option value="semprazo">Sem prazo</option></select></label>
+    <label class="f">Situação<select class="in" id="csit"><option value="">Todos</option><option value="ativo">Visíveis</option><option value="oculto">Ocultos</option><option value="renal">Renal</option><option value="semvalor">Sem valor no convênio</option><option value="semprazo">Sem prazo</option><option value="fora">Fora do AutoLAC (sem valor)</option><option value="autolac">Só AutoLAC</option></select></label>
   </div></div></div>
-  <div class="card"><div class="card-h"><h2>Catálogo de exames</h2><span class="cnt" id="ccnt"></span><div class="sp"></div><span class="note">Edite valor/prazo na linha e clique em Salvar · tudo fica na auditoria</span><button class="btn blue sm" id="cnovo">+ Incluir procedimento</button></div>
+  <div class="card"><div class="card-h"><h2>Catálogo de exames</h2><span class="cnt" id="ccnt"></span><div class="sp"></div><span class="note" id="cinfo">Edite valor/prazo na linha e clique em Salvar · tudo fica na auditoria</span><button class="btn blue sm" id="cnovo">+ Incluir procedimento</button></div>
   <div class="card-b" id="cform" hidden style="border-bottom:1px solid var(--line);background:var(--surface-2)"><div class="form">
     <label class="f">Mnemônico AutoLAC *<input class="in" id="nMn" placeholder="ex.: ZINC-DB" style="font-family:ui-monospace,monospace;text-transform:uppercase"></label>
     <label class="f">Nome do exame *<input class="in" id="nNome" placeholder="ex.: ZINCO SÉRICO"></label>
@@ -162,9 +169,10 @@ async function viewCat() {
   const render = () => {
     const q = $('cq').value.trim().toLowerCase(), conv = $('cconv').value, set = $('cset').value, sit = $('csit').value;
     const rows = cat.filter(r => (!q || r.mnemonico.toLowerCase().includes(q) || r.nomeBusca.toLowerCase().includes(norm(q).toLowerCase())) && (!set || r.setor === set) &&
-      (!sit || (sit === 'ativo' && r.ativo !== false) || (sit === 'oculto' && r.ativo === false) || (sit === 'renal' && r.renal) || (sit === 'semvalor' && r.precos?.[conv] == null) || (sit === 'semprazo' && r.prazoDias == null)));
+      (!sit || (sit === 'ativo' && r.ativo !== false) || (sit === 'oculto' && r.ativo === false) || (sit === 'renal' && r.renal) || (sit === 'semvalor' && r.precos?.[conv] == null) || (sit === 'semprazo' && r.prazoDias == null) || (sit === 'fora' && r.foraAutolac) || (sit === 'autolac' && !r.foraAutolac)))
+      .sort((a, b) => (a.foraAutolac ? 1 : 0) - (b.foraAutolac ? 1 : 0) || a.nome.localeCompare(b.nome)); // fora do AutoLAC sempre no fim
     $('ccnt').textContent = `${Math.min(lim, rows.length)} de ${rows.length} (catálogo: ${cat.length})`; $('cmais').hidden = rows.length <= lim;
-    $('cbody').innerHTML = rows.slice(0, lim).map(r => `<tr data-m="${r.mnemonico}"><td><span class="mn sec" style="--c:${SETORES[r.setor]?.cor || 'var(--ac)'}">${r.mnemonico}</span></td><td><b>${escapeHtml(r.nome)}</b>${r.matchPrazo === 'nome' ? '<br><small class="note">prazo casado por nome — conferir</small>' : ''}</td><td><span class="dot" style="background:${SETORES[r.setor]?.cor || 'var(--ac)'}"></span>${escapeHtml(r.setor)}</td><td>${r.codigoTuss || '—'}</td>
+    $('cbody').innerHTML = rows.slice(0, lim).map(r => `<tr data-m="${r.mnemonico}" class="${r.foraAutolac ? 'fora' : ''}"><td>${mnemonicoHtml(r, { cor: SETORES[r.setor]?.cor || 'var(--ac)' })}</td><td><b>${escapeHtml(r.nome)}</b>${r.foraAutolac ? '<br><small style="color:var(--red);font-weight:800">fora do AutoLAC · sem valor</small>' : ''}${r.bancada ? `<br><small class="note">${escapeHtml(r.bancada)}${r.material ? ' · ' + escapeHtml(r.material) : ''}</small>` : ''}</td><td><span class="dot" style="background:${SETORES[r.setor]?.cor || 'var(--ac)'}"></span>${escapeHtml(r.setor)}</td><td>${r.codigoTuss || '—'}</td>
       <td><input class="in" type="number" min="0" value="${r.prazoDias ?? ''}" data-f="prazoDias" style="width:70px"></td><td class="num"><input class="in" type="number" step="0.01" min="0" value="${r.precos?.[conv] ?? ''}" placeholder="sem valor" data-f="valor" style="width:105px;text-align:right"></td>
       <td><label class="switch"><input type="checkbox" data-f="ativo" ${r.ativo !== false ? 'checked' : ''}><i></i></label></td><td><label class="switch"><input type="checkbox" data-f="renal" ${r.renal ? 'checked' : ''}><i></i></label></td><td><button class="btn blue sm" data-save="${r.mnemonico}">Salvar</button></td><td><button class="btn ghost sm" data-del="${r.mnemonico}" title="Excluir do catálogo" style="color:var(--red);border-color:var(--red-50)">Excluir</button></td></tr>`).join('');
   };
@@ -184,6 +192,8 @@ async function viewCat() {
     catch (err) { toast(err.message); } $('nSalvar').disabled = false;
   };
   $('cbody').addEventListener('click', async e => {
+    const cp = e.target.closest('[data-copy]'); if (cp) { copiar(cp.dataset.copy); return; }
+    const fi = e.target.closest('[data-ficha]'); if (fi) { const r = cat.find(x => x.mnemonico === fi.dataset.ficha); if (r) fichaExame(r); return; }
     // excluir (dois cliques: o primeiro pede confirmação)
     const d = e.target.closest('[data-del]');
     if (d) { const m = d.dataset.del;
@@ -201,7 +211,7 @@ async function viewCat() {
 async function viewUsr() {
   const us = await D.usuarios(); const rows = await D.orcamentosRecentes({ dias: 30 });
   const prod = {}; for (const r of rows) { prod[r.atendenteUid] ??= { o: 0, c: 0 }; prod[r.atendenteUid].o++; if (r.status === 'convertido') prod[r.atendenteUid].c++; }
-  root.innerHTML = `<div class="g-usr"><div class="card"><div class="card-h"><h2>Equipe</h2><span class="cnt">${us.length} usuários · ${us.filter(u => u.ativo !== false).length} ativos</span></div><div class="card-b"><div class="users" id="users">${us.map(u => { const p = prod[u.id] || { o: 0, c: 0 }; return `<div class="uc"><div class="hd"><span class="av">${u.fotoBase64 ? `<img src="${u.fotoBase64}">` : escapeHtml(iniciais(u.nome))}</span><div><b>${escapeHtml(u.nome)}</b><small>${u.papel === 'admin' ? 'Administrador(a)' : 'Atendente'} · ${escapeHtml(u.unidade || '')}</small></div><div style="flex:1"></div><span class="pill ${u.ativo !== false ? 'ok' : ''}"><i></i>${u.ativo !== false ? 'ativo' : 'inativo'}</span></div>
+  root.innerHTML = `<div class="g-usr"><div class="card"><div class="card-h"><h2>Equipe</h2><span class="cnt">${us.length} usuários · ${us.filter(u => u.ativo !== false).length} ativos</span></div><div class="card-b"><div class="users" id="users">${us.map(u => { const p = prod[u.id] || { o: 0, c: 0 }; return `<div class="uc"><div class="hd"><span class="av">${u.fotoBase64 ? `<img src="${u.fotoBase64}">` : escapeHtml(iniciais(u.nome))}</span><div><b>${escapeHtml(u.nome)}</b><small>${u.papel === 'admin' ? 'Administrador(a)' : 'Atendente'} · ${escapeHtml(u.unidade || '')}</small></div><div style="flex:1"></div>${u.papel !== 'admin' ? `<span class="pill" title="status informado pela atendente"><span class="st-dot ${u.status || 'online'}"></span>${u.status || 'online'}</span>` : ''}<span class="pill ${u.ativo !== false ? 'ok' : ''}"><i></i>${u.ativo !== false ? 'ativo' : 'inativo'}</span></div>
     <div class="stats"><span><b>${p.o}</b>orçamentos/30d</span><span><b>${p.o ? Math.round(p.c / p.o * 100) : 0}%</b>conversão</span></div>
     <div class="acts"><select class="in" data-papel="${u.id}" style="padding:5px 8px;font-size:.8rem"><option value="atendente" ${u.papel !== 'admin' ? 'selected' : ''}>Atendente</option><option value="admin" ${u.papel === 'admin' ? 'selected' : ''}>Admin</option></select><input class="in" data-un="${u.id}" value="${escapeHtml(u.unidade || '')}" placeholder="unidade" style="padding:5px 8px;font-size:.8rem;width:120px"><button class="btn blue sm" data-salvar="${u.id}">Salvar</button><button class="btn ghost sm" data-pw="${escapeHtml(u.email)}">Redefinir senha</button><button class="btn ghost sm" data-ativo="${u.id}" data-v="${u.ativo !== false ? 0 : 1}">${u.ativo !== false ? 'Desativar' : 'Reativar'}</button></div></div>`; }).join('')}</div></div></div>
   <div class="card"><div class="card-h"><h2>Novo usuário</h2></div><div class="card-b" style="display:flex;flex-direction:column;gap:10px">
@@ -264,6 +274,25 @@ async function viewCfg() {
     <label class="f full">Unidades (separe por vírgula)<input class="in" id="cUns" value="${escapeHtml((c.unidades || ['Coophavila', 'Matriz', 'Nova Lima', 'Guaicurus', 'Central de atendimento']).join(', '))}"></label>
     <label class="f full">E-mails que entram como administrador no primeiro acesso<input class="in" id="cAdm" value="${escapeHtml((c.admins || []).join(', '))}"></label>
     <div class="full"><button class="btn blue" id="cSalvar">Salvar</button></div></div></div>
-  <div class="card"><div class="card-h"><h2>Base de exames</h2></div><div class="card-b"><p class="note">Versão da base: <b>${escapeHtml(c.versaoBase || '')}</b> · origem: ${escapeHtml(c.origem || '')}</p><p class="note">Pacote renal (HIPERRIM): <b>${(c.pacoteRenal || []).length}</b> mnemônicos.</p><a class="btn ghost sm" href="conta.html">Minha conta (foto e senha)</a></div></div></div>`;
+  <div class="card"><div class="card-h"><h2>Base de exames</h2></div><div class="card-b"><p class="note">Versão da base: <b>${escapeHtml(c.versaoBase || '')}</b> · origem: ${escapeHtml(c.origem || '')}</p><p class="note">Pacote renal (HIPERRIM): <b>${(c.pacoteRenal || []).length}</b> mnemônicos.</p>
+    <p class="note">Cadastro AutoLAC: ${c.autolacAtualizadoEm ? `<b>${c.autolacExames}</b> exames atualizados em ${fmtData(c.autolacAtualizadoEm)} · <b>${c.autolacFora}</b> fora do AutoLAC` : '<b>ainda não importado</b>'}</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn blue sm" id="cImp">Importar cadastro do AutoLAC (data/autolac.json)</button><span class="note" id="cImpSt"></span></div>
+    <p class="note" style="margin-top:6px">Atualiza prazos de entrega, bancada, material, método, preparo e meios de coleta de todos os exames; os que não estão no AutoLAC ficam no fim do catálogo como “sem valor”.</p>
+    <hr style="border:none;border-top:1px solid var(--line);margin:14px 0">
+    <p class="note" id="cNum">Numeração dos orçamentos: carregando…</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn ghost sm" id="cZerar" style="color:var(--red)">Reiniciar numeração em #00001</button></div>
+    <hr style="border:none;border-top:1px solid var(--line);margin:14px 0"><a class="btn ghost sm" href="conta.html">Minha conta (foto e senha)</a></div></div></div>`;
+  D.contadores().then(k => { $('cNum').innerHTML = `Numeração dos orçamentos: próximo será <b>#${numOrc((k.orcamento || 0) + 1)}</b> (${k.orcamento || 0} emitidos nesta sequência)`; }).catch(() => {});
+  $('cImp').onclick = async () => {
+    if ($('cImp').dataset.arm !== '1') { $('cImp').dataset.arm = '1'; $('cImp').textContent = 'Confirmar importação? (clique de novo)'; setTimeout(() => { $('cImp').dataset.arm = ''; $('cImp').textContent = 'Importar cadastro do AutoLAC (data/autolac.json)'; }, 5000); return; }
+    $('cImp').disabled = true; $('cImpSt').textContent = 'Baixando data/autolac.json…';
+    try { const json = await (await fetch('data/autolac.json?v=' + Date.now())).json(); $('cImpSt').textContent = `${json.exames.length} exames no arquivo · gravando…`;
+      const n = await D.importarAutolac(json, (f, t) => $('cImpSt').textContent = `Gravando ${f} de ${t}…`); $('cImpSt').textContent = `Concluído: ${n} exames atualizados.`; toast('Cadastro AutoLAC importado', true); }
+    catch (e) { $('cImpSt').textContent = 'Erro: ' + e.message; toast('Erro na importação: ' + e.message); $('cImp').disabled = false; }
+  };
+  $('cZerar').onclick = async () => {
+    if ($('cZerar').dataset.arm !== '1') { $('cZerar').dataset.arm = '1'; $('cZerar').textContent = 'Confirmar: o próximo orçamento será #00001 (clique de novo)'; setTimeout(() => { $('cZerar').dataset.arm = ''; $('cZerar').textContent = 'Reiniciar numeração em #00001'; }, 5000); return; }
+    try { await D.zerarNumeracao(); toast('Numeração reiniciada: o próximo orçamento será #00001', true); viewCfg(); } catch (e) { toast('Erro: ' + e.message); }
+  };
   $('cSalvar').onclick = async () => { try { await D.salvarConfig({ prazoExtraDiasUteis: +$('cPrazo').value, confiancaMinima: +$('cConf').value, validadeDias: +$('cVal').value, unidadePadrao: $('cUn').value.trim(), unidades: $('cUns').value.split(',').map(x => x.trim()).filter(Boolean), admins: $('cAdm').value.split(',').map(x => x.trim().toLowerCase()).filter(Boolean) }); toast('Configurações salvas', true); } catch (e) { toast('Erro: ' + e.message); } };
 }

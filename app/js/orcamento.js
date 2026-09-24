@@ -3,6 +3,7 @@ import { exigirLogin, brl, norm, slug, toast, comprimirImagem, escapeHtml, SETOR
 import { montarShell } from './shell.js';
 import * as D from './dados.js';
 import { lerPedido } from './ia.js';
+import { mnemonicoHtml, copiar, fichaExame, fotoZoom, aviso, gerarPdf, numOrc, ICO, modal, fecharModal } from './ui.js';
 
 const { perfil } = await exigirLogin();
 const root = montarShell({ perfil, ativo: 'novo', titulo: 'Novo orçamento por IA', subtitulo: 'fotografe o pedido, confira e grave' });
@@ -55,6 +56,8 @@ root.innerHTML = `
       <div><span class="note">Total</span><br><b style="font-size:1.4rem;color:var(--blue-d)" id="fT">R$ 0,00</b></div>
       <div class="sp" style="flex:1"></div>
       <button class="btn ghost" id="btnLimpar">Limpar</button>
+      <button class="btn ghost" id="btnTransf" title="Passar este orçamento para outra atendente">Transferir</button>
+      <button class="btn ghost" id="btnPdf" title="Baixar em PDF">${ICO.pdf} PDF</button>
       <button class="btn ghost" id="btnZap">Enviar por WhatsApp</button>
       <button class="btn blue" id="btnSalvar">Gravar orçamento</button>
     </div></div>
@@ -72,7 +75,7 @@ $('fileCam').addEventListener('change', e => addFotos(e.target.files)); $('fileU
 ['dragover', 'dragleave', 'drop'].forEach(ev => $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.toggle('over', ev === 'dragover'); if (ev === 'drop') addFotos(e.dataTransfer.files); }));
 async function addFotos(files) {
   for (const f of [...files].slice(0, 3 - st.fotos.length)) { if (!f.type.startsWith('image/')) { toast('Envie uma imagem (JPG/PNG/HEIC).'); continue; } st.fotos.push(await comprimirImagem(f, 1600, .85)); }
-  $('prevWrap').hidden = !st.fotos.length; $('prev').innerHTML = st.fotos.map((u, i) => `<img src="${u}" alt="Pedido ${i + 1}">`).join('') + '<div class="scan" id="scan" hidden></div>';
+  $('prevWrap').hidden = !st.fotos.length; $('prev').innerHTML = st.fotos.map((u, i) => `<img src="${u}" alt="Pedido ${i + 1}">`).join('') + '<div class="scan" id="scan" hidden></div>'; fotoZoom($('prev'));
   $('btnRun').disabled = !st.fotos.length; if (st.fotos.length) toast(`${st.fotos.length} foto(s) pronta(s). Clique em Analisar.`);
 }
 
@@ -100,7 +103,12 @@ async function adicionarLido(e) {
     const best = cands[0]; it.ex = best.ex; it.conf = Math.min(e.confianca, best.confianca);
     it.status = (it.conf >= CONF_MIN_CFG && best.via !== 'busca') || best.via === 'apelido' ? 'ok' : 'flag';
     await precificar(it);
-  } else it.conf = e.confianca;
+  } else {
+    it.conf = e.confianca;
+    // existe no catálogo antigo mas está fora do AutoLAC → conferência como possível nova negociação
+    const cat = await D.catalogo(); const alvo = [norm(e.normalizado), norm(e.texto)].filter(Boolean);
+    const fora = cat.find(c => c.foraAutolac && alvo.includes(c.nomeBusca)); if (fora) { it.fora = fora; it.motivo = 'fora_autolac'; }
+  }
   st.itens.push(it);
 }
 async function precificar(it) {
@@ -130,14 +138,14 @@ function render() {
     for (const it of list) {
       const c = it.conf >= .85 ? 'g' : it.conf >= .7 ? 'w' : 'c';
       const tr = document.createElement('tr'); tr.className = it.status === 'flag' ? 'flag' : ['miss', 'semvalor', 'conferencia'].includes(it.status) ? 'miss' : '';
-      tr.innerHTML = `<td>${it.ex ? `<span class="mn sec" style="--c:${meta.cor}">${it.ex.mnemonico}</span>` : '<span class="pill crit">?</span>'}</td>
+      tr.innerHTML = `<td>${mnemonicoHtml(it.ex, { cor: meta.cor })}</td>
         <td class="nm"><b>${escapeHtml(it.ex ? it.ex.nome : it.normalizado || it.lido)}</b><small>${it.ex ? (it.ex.codigoTuss ? 'TUSS ' + it.ex.codigoTuss : 'sem TUSS') : 'não está no AutoLAC'}${it.origem === 'manual' ? ' · valor aprovado pela gestão' : ''}</small></td>
         <td>${it.lido ? `<span class="conf ${c}"><i><b style="width:${Math.round(it.conf * 100)}%"></b></i>${Math.round(it.conf * 100)}%</span><small class="note" style="display:block">leu “${escapeHtml(it.lido)}”</small>` : '<span class="note">digitado</span>'}</td>
         <td>${it.prazoDias != null ? `<span class="pz ${it.prazoDias > 5 ? 'long' : ''}">${it.prazoDias} ${it.prazoDias > 1 ? 'dias úteis' : 'dia útil'}</span>` : '<span class="pz long">—</span>'}</td>
         <td class="num">${it.valor != null ? brl(it.valor) : '<span style="color:var(--red)">sem valor</span>'}</td>
-        <td><button class="rm" title="Remover" data-rm="${it.uid}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M9 7V4h6v3m-7 0v13h8V7"/></svg></button></td>`;
+        <td style="white-space:nowrap">${it.status === 'ok' ? `<button class="ib" title="Editar / trocar exame" data-edit="${it.uid}">${ICO.lapis}</button>` : ''}<button class="ib red" title="Remover" data-rm="${it.uid}">${ICO.lixo}</button></td>`;
       tb.appendChild(tr);
-      if (it.status !== 'ok') { const ar = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 6; td.style.padding = '0'; td.innerHTML = askBox(it); ar.appendChild(td); tb.appendChild(ar); }
+      if (it.status !== 'ok' || it.editar) { const ar = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 6; td.style.padding = '0'; td.innerHTML = askBox(it); ar.appendChild(td); tb.appendChild(ar); }
     }
     g.appendChild(sec);
   }
@@ -146,6 +154,9 @@ function render() {
 function askBox(it) {
   const warn = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px;flex:none"><path d="M12 9v4m0 4h.01M10.3 3.9 2.5 17.5A2 2 0 0 0 4.2 20.5h15.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>';
   if (it.status === 'conferencia') return `<div class="ask crit"><span class="wait"><i></i>Aguardando conferência da gestão (solicitação enviada${it.solId ? '' : '…'}). A linha será preenchida automaticamente ao aprovar.</span></div>`;
+  if (it.editar) return `<div class="ask"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>Editar:</b> digite outro exame para substituir <b>${escapeHtml(it.ex.nome)}</b>, ou envie para conferência. <button class="btn ghost sm" data-manter="${it.uid}">Manter como está</button></div>
+    <div class="search" data-fixwrap="${it.uid}"><input class="in" placeholder="Digite o nome ou mnemônico do exame correto" data-fix="${it.uid}" autocomplete="off" value="${escapeHtml(it.buscaTxt || '')}"><div class="sug" hidden></div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn red sm" data-send="${it.uid}">Enviar para conferência</button></div>${it.abrirConf ? formConf(it) : ''}</div>`;
   // Barra de ações comum: digitar o nome correto (puxa do catálogo) · enviar para conferência (com campos abertos)
   const acoes = `
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -159,6 +170,7 @@ function askBox(it) {
     ${it.cands.length > 1 ? `<div class="cands">${it.cands.slice(1, 4).map(c => `<button data-pick="${it.uid}" data-m="${c.ex.mnemonico}"><span class="mn">${c.ex.mnemonico}</span> ${escapeHtml(c.ex.nome)}<small>${escapeHtml(c.ex.setor)}</small></button>`).join('')}</div>` : ''}</div>
     <div class="note">Não é nenhum desses? Digite o nome certo abaixo ou mande para a gestão conferir.</div>${acoes}</div>`;
   if (it.status === 'semvalor') return `<div class="ask crit"><div style="display:flex;gap:10px;align-items:flex-start;color:var(--red)">${warn}<div><b>${escapeHtml(it.ex.nome)}</b> não tem valor cadastrado para o convênio <b>${escapeHtml(st.convenio)}</b>. Envie para a gestão definir valor e prazo — o orçamento atualiza sozinho quando for aprovado.</div></div>${acoes}</div>`;
+  if (it.fora) return `<div class="ask crit"><div style="display:flex;gap:10px;align-items:flex-start;color:var(--red)">${warn}<div>A IA leu <span class="hand">${escapeHtml(it.lido)}</span> = <b>${escapeHtml(it.fora.nome)}</b> (${escapeHtml(it.fora.mnemonico)}), mas este exame <b>está fora do AutoLAC</b> (sem valor). Envie para conferência como <b>possível nova negociação</b>, ou digite outro exame.</div></div>${acoes}</div>`;
   return `<div class="ask crit"><div style="display:flex;gap:10px;align-items:flex-start;color:var(--red)">${warn}<div>A IA leu <span class="hand">${escapeHtml(it.lido)}</span> (${escapeHtml(it.normalizado || '')}) mas <b>não encontrou no catálogo</b>. Digite o nome correto ou envie para conferência preenchendo o que souber.</div></div>${acoes}</div>`;
 }
 /** Mini-formulário da conferência: a atendente preenche o que souber (nome, mnemônico, prazo, valor); a gestão só confirma. */
@@ -184,6 +196,10 @@ function stats() {
 // ---------- interações ----------
 $('groups').addEventListener('click', async e => {
   const b = e.target.closest('button'); if (!b) return; const find = u => st.itens.find(i => i.uid === u);
+  if (b.dataset.copy) { copiar(b.dataset.copy); return; }
+  if (b.dataset.ficha) { const cat = await D.catalogoMap(); if (cat[b.dataset.ficha]) fichaExame(cat[b.dataset.ficha]); return; }
+  if (b.dataset.edit) { const it = find(b.dataset.edit); it.editar = true; it.abrirBusca = true; render(); document.querySelector(`[data-fix="${it.uid}"]`)?.focus(); return; }
+  if (b.dataset.manter) { const it = find(b.dataset.manter); it.editar = false; it.abrirConf = false; render(); return; }
   if (b.dataset.rm) { st.itens = st.itens.filter(i => i.uid !== b.dataset.rm); render(); return; }
   if (b.dataset.ok) { const it = find(b.dataset.ok); it.status = 'ok'; it.conf = 1; await precificar(it); render(); D.ensinar(it.lido, it.ex.mnemonico, perfil.unidade); toast(`A IA aprendeu: “${it.lido}” = ${it.ex.mnemonico}`, true); return; }
   if (b.dataset.pick) { const it = find(b.dataset.pick); await escolher(it, b.dataset.m); return; }
@@ -204,7 +220,8 @@ function lerSugestao(it) {
 document.addEventListener('input', e => { const inp = e.target; if (inp.matches('[data-fix]')) { const it = st.itens.find(i => i.uid === inp.dataset.fix); if (it) it.buscaTxt = inp.value; } if (inp.matches('[data-sf]')) { const it = st.itens.find(i => i.uid === inp.closest('[data-confwrap]')?.dataset.confwrap); if (it) lerSugestao(it); } });
 async function escolher(it, mnemonico) {
   const cat = await D.catalogoMap(); const ex = cat[mnemonico]; if (!ex) return;
-  it.ex = ex; it.status = 'ok'; it.conf = 1; it.abrirBusca = false; it.abrirConf = false; it.buscaTxt = ''; await precificar(it); render();
+  it.ex = ex; it.status = 'ok'; it.conf = 1; it.abrirBusca = false; it.abrirConf = false; it.editar = false; it.fora = null; it.buscaTxt = ''; await precificar(it); render();
+
   if (it.lido) { D.ensinar(it.lido, mnemonico, perfil.unidade); toast(`Corrigido e aprendido: “${it.lido}” = ${mnemonico}`, true); }
 }
 // busca em linha (corrigir) e busca global (adicionar)
@@ -229,18 +246,26 @@ document.addEventListener('click', e => { if (!e.target.closest('.search')) docu
 async function garantirOrcamento(status) {
   const dados = montarDados(status || 'rascunho');
   st.id = await D.gravarOrcamento(dados, st.id);
-  if (!st.numero) { const d = await new Promise(r => { const off = D.ouvirOrcamento(st.id, x => { off(); r(x); }); }); st.numero = d.numero; $('numLbl').textContent = '#' + st.numero; }
+  if (!st.numero) { const d = await new Promise(r => { const off = D.ouvirOrcamento(st.id, x => { off(); r(x); }); }); st.numero = d.numero; $('numLbl').textContent = '#' + numOrc(st.numero); }
   if (!st.offSol) st.offSol = D.ouvirSolicitacoesDoOrcamento(st.id, onSolicitacoes);
   return st.id;
 }
 async function enviarConferencia(it) {
   try {
     await garantirOrcamento('aguardando_conferencia');
-    it.status = 'conferencia'; render();
+    it.status = 'conferencia'; it.editar = false; render();
     const sug = it.sug && Object.values(it.sug).some(v => v != null && v !== '') ? it.sug : null;
-    it.solId = await D.solicitar({ orcamentoId: st.id, orcamentoNumero: st.numero, textoLido: it.lido || sug?.nome || (it.ex?.nome) || '', normalizadoIA: sug?.nome || it.normalizado || it.ex?.nome || null, guiaDb: it.ex ? { mnemonico: it.ex.mnemonico, nome: it.ex.nome, setor: it.ex.setor, prazoDias: it.ex.prazoDias } : null, convenio: st.convSlug, setorSugerido: it.ex?.setor, sugestao: sug });
+    const fotos = await fotosReduzidas(); const guia = it.ex || it.fora;
+    it.solId = await D.solicitar({ orcamentoId: st.id, orcamentoNumero: st.numero, textoLido: it.lido || sug?.nome || (guia?.nome) || '', normalizadoIA: sug?.nome || it.normalizado || guia?.nome || null, guiaDb: guia ? { mnemonico: guia.mnemonico, nome: guia.nome, setor: guia.setor, prazoDias: guia.prazoDias } : null, convenio: st.convSlug, setorSugerido: guia?.setor, sugestao: sug, fotos,
+      motivo: it.fora ? 'fora_autolac' : it.ex ? 'sem_valor' : 'nao_encontrado' });
     render(); toast('Enviado para conferência — a gestão já vê na fila' + (sug ? ' com o que você preencheu' : '') + '.', true);
   } catch (e) { it.status = it.ex ? 'semvalor' : 'miss'; render(); toast('Não foi possível enviar: ' + e.message); }
+}
+/** Foto(s) do pedido reduzidas (~900 px, JPEG 0.7) para acompanhar a solicitação — a gestão confere a caligrafia. */
+async function fotosReduzidas() {
+  if (st._fotosSol) return st._fotosSol; const out = [];
+  for (const u of st.fotos.slice(0, 3)) out.push(await new Promise(r => { const im = new Image(); im.onload = () => { const k = Math.min(1, 900 / Math.max(im.width, im.height)); const c = document.createElement('canvas'); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); r(c.toDataURL('image/jpeg', .7)); }; im.onerror = () => r(null); im.src = u; }));
+  st._fotosSol = out.filter(Boolean); return st._fotosSol;
 }
 async function onSolicitacoes(sols) {
   let mudou = false;
@@ -249,9 +274,9 @@ async function onSolicitacoes(sols) {
     if (s.status === 'aprovada' && it.status === 'conferencia') {
       const cat = await D.catalogo(true); it.ex = cat.find(c => c.mnemonico === s.mnemonico) || it.ex; it.status = 'ok'; it.conf = 1;
       it.valor = s.precos?.[st.convSlug] ?? it.ex?.precos?.[st.convSlug] ?? null; it.prazoDias = s.prazoDias ?? it.ex?.prazoDias ?? null; it.origem = 'aprovado';
-      if (it.valor == null) it.status = 'semvalor'; mudou = true; toast(`${s.mnemonico} aprovado pela gestão — orçamento atualizado`, true);
+      if (it.valor == null) it.status = 'semvalor'; mudou = true; aviso('Conferência aprovada', `${s.mnemonico} · ${it.ex?.nome || ''} voltou para o orçamento${it.valor != null ? ' com ' + brl(it.valor) : ''}${it.prazoDias != null ? ' · ' + it.prazoDias + ' d.u.' : ''}`);
     }
-    if (s.status === 'recusada' && it.status === 'conferencia') { it.status = it.ex ? 'semvalor' : 'miss'; it.recusa = s.motivo; mudou = true; toast(`Solicitação recusada: ${s.motivo || 'sem motivo'}`); }
+    if (s.status === 'recusada' && it.status === 'conferencia') { it.status = it.ex ? 'semvalor' : 'miss'; it.recusa = s.motivo; mudou = true; aviso('Conferência recusada', `${it.lido || it.ex?.nome || ''}: ${s.motivo || 'sem motivo informado'}`); }
   }
   if (mudou) render();
 }
@@ -268,7 +293,31 @@ function montarDados(status) {
 $('btnSalvar').addEventListener('click', async () => {
   if (!st.itens.length) { toast('Adicione ao menos um exame.'); return; }
   const pend = st.itens.filter(i => ['flag', 'miss', 'semvalor'].includes(i.status)).length; if (pend) { toast(`Ainda há ${pend} exame(s) a confirmar ou sem valor.`); return; }
-  try { await garantirOrcamento(st.itens.some(i => i.status === 'conferencia') ? 'aguardando_conferencia' : 'gravado'); toast(`Orçamento #${st.numero} gravado`, true); } catch (e) { toast('Erro ao gravar: ' + e.message); }
+  try {
+    await garantirOrcamento(st.itens.some(i => i.status === 'conferencia') ? 'aguardando_conferencia' : 'gravado'); toast(`Orçamento #${numOrc(st.numero)} gravado — gerando PDF…`, true);
+    await baixarPdf();
+  } catch (e) { toast('Erro ao gravar: ' + e.message); }
+});
+async function baixarPdf() {
+  if (!st.itens.length) { toast('Adicione ao menos um exame.'); return; }
+  try { if (!st.id) await garantirOrcamento(); await gerarPdf({ ...montarDados(), numero: st.numero }, { validadeDias: cfg.validadeDias || 7 }); }
+  catch (e) { toast('Não consegui gerar o PDF: ' + e.message); }
+}
+$('btnPdf').addEventListener('click', baixarPdf);
+// ---------- transferir para outra atendente ----------
+$('btnTransf').addEventListener('click', async () => {
+  if (!st.itens.length) { toast('Nada para transferir ainda.'); return; }
+  const us = (await D.usuarios()).filter(u => u.ativo !== false && u.id !== perfil.uid);
+  if (!us.length) { toast('Nenhuma outra atendente cadastrada.'); return; }
+  const m = modal(`<h2 style="margin:0 0 6px;color:var(--blue-d)">Transferir orçamento${st.numero ? ' #' + numOrc(st.numero) : ''}</h2><p class="note">O orçamento passa para a atendente escolhida, que o abre em “Meus orçamentos” e continua de onde parou.</p>
+    <label class="f">Para quem<select class="in" id="trPara">${us.map(u => `<option value="${u.id}">${escapeHtml(u.nome || u.email)} · ${u.papel === 'admin' ? 'gestão' : 'atendente'}${u.status ? ' · ' + u.status : ''}</option>`).join('')}</select></label>
+    <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end"><button class="btn ghost" id="trNao">Cancelar</button><button class="btn blue" id="trSim">Transferir</button></div>`, { largura: 460 });
+  m.querySelector('#trNao').onclick = fecharModal;
+  m.querySelector('#trSim').onclick = async () => {
+    const uid = m.querySelector('#trPara').value; const u = us.find(x => x.id === uid);
+    try { await garantirOrcamento(); await D.transferirOrcamento(st.id, { uid, nome: u.nome || u.email }); fecharModal(); toast(`Orçamento #${numOrc(st.numero)} transferido para ${u.nome || u.email}`, true); $('btnLimpar').click(); }
+    catch (e) { toast('Não foi possível transferir: ' + e.message); }
+  };
 });
 $('btnZap').addEventListener('click', async () => {
   if (!st.itens.length) return; try { await garantirOrcamento(); } catch {}
@@ -277,5 +326,20 @@ $('btnZap').addEventListener('click', async () => {
   const tel = soDigitos($('tel').value); window.open(`https://wa.me/${tel ? '55' + tel : ''}?text=${encodeURIComponent(txt)}`, '_blank');
   if (st.id) D.mudarStatus(st.id, 'enviado').catch(() => {});
 });
-$('btnLimpar').addEventListener('click', () => { if (st.offSol) st.offSol(); Object.assign(st, { id: null, numero: null, itens: [], fotos: [], leitura: null, offSol: null }); $('prevWrap').hidden = true; $('prev').innerHTML = ''; $('btnRun').disabled = true; $('btnRun').textContent = 'Analisar pedido com a IA'; $('numLbl').textContent = 'novo'; $('leituraInfo').textContent = ''; $('pac').value = ''; $('tel').value = ''; render(); });
+$('btnLimpar').addEventListener('click', () => { if (st.offSol) st.offSol(); Object.assign(st, { id: null, numero: null, itens: [], fotos: [], leitura: null, offSol: null, _fotosSol: null }); history.replaceState(null, '', location.pathname); $('prevWrap').hidden = true; $('prev').innerHTML = ''; $('btnRun').disabled = true; $('btnRun').textContent = 'Analisar pedido com a IA'; $('numLbl').textContent = 'novo'; $('leituraInfo').textContent = ''; $('pac').value = ''; $('tel').value = ''; render(); });
 render();
+
+// ---------- abrir um orçamento existente para editar (orcamento.html?id=...) ----------
+const idEdit = new URLSearchParams(location.search).get('id');
+if (idEdit) (async () => {
+  try {
+    const o = await D.orcamento(idEdit); if (!o) { toast('Orçamento não encontrado.'); return; }
+    const cat = await D.catalogoMap(); st.id = o.id; st.numero = o.numero; $('numLbl').textContent = '#' + numOrc(o.numero);
+    if (o.convenio && convs.some(c => c.slug === o.convenio)) { $('conv').value = o.convenio; st.convSlug = o.convenio; st.convenio = o.convenioNome || convs.find(c => c.slug === o.convenio)?.nome; }
+    $('pac').value = o.paciente || ''; $('tel').value = o.telefone || ''; st.renal = !!o.renal; $('swRenal').checked = st.renal;
+    st.manuais = await D.precosManuais(st.convSlug);
+    st.itens = (o.itens || []).map(i => { const ex = i.mnemonico ? cat[i.mnemonico] : null; return { uid: Math.random().toString(36).slice(2), lido: i.lido || null, normalizado: i.nome, confIA: 1, conf: 1, cands: [], ex, status: i.status === 'conferencia' ? 'conferencia' : ex ? (i.valor != null ? 'ok' : 'semvalor') : 'miss', valor: i.valor ?? null, prazoDias: i.prazoDias ?? null, origem: null, solId: i.solicitacaoId || null }; });
+    st.offSol = D.ouvirSolicitacoesDoOrcamento(st.id, onSolicitacoes);
+    render(); $('leituraInfo').textContent = `Editando o orçamento #${numOrc(o.numero)} de ${o.atendenteNome || ''}`; toast(`Orçamento #${numOrc(o.numero)} carregado para edição`, true);
+  } catch (e) { toast('Erro ao abrir: ' + e.message); }
+})();

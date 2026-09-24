@@ -16,8 +16,8 @@ service cloud.firestore {
       allow read: if ativo();
       // só incremento de 1 no contador de orçamentos
       allow create: if ativo() && request.resource.data.keys().hasOnly(['orcamento']) && request.resource.data.orcamento == 1;
-      allow update: if ativo() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['orcamento'])
-                    && request.resource.data.orcamento == resource.data.orcamento + 1;
+      allow update: if (ativo() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['orcamento'])
+                    && request.resource.data.orcamento == resource.data.orcamento + 1) || admin(); // gestão pode reiniciar a numeração
     }
 
     // ---- catálogo: leitura para logados, escrita só admin ----
@@ -49,7 +49,7 @@ service cloud.firestore {
                         && request.resource.data.ativo == true) || admin();
       // o próprio: nome, foto, último acesso · admin: tudo
       allow update: if (logado() && request.auth.uid == uid
-                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nome', 'fotoBase64', 'ultimoAcesso', 'atualizadoEm'])) || admin();
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nome', 'fotoBase64', 'ultimoAcesso', 'atualizadoEm', 'status', 'statusEm'])) || admin();
       allow delete: if false;
     }
 
@@ -69,12 +69,14 @@ service cloud.firestore {
                     && request.resource.data.itens is list && request.resource.data.itens.size() <= 150
                     && request.resource.data.total is number && request.resource.data.total >= 0
                     && request.resource.data.status in ['rascunho', 'gravado', 'enviado', 'aguardando_conferencia', 'convertido', 'perdido'];
-      // qualquer atendente ativa pode atualizar (a coleta pode acontecer em outra unidade); admin também
+      // qualquer atendente ativa pode atualizar (a coleta pode acontecer em outra unidade); admin também.
+      // A dona do orçamento (ou a gestão) pode transferir para outra atendente (muda atendenteUid).
       allow update: if ativo()
                     && request.resource.data.status in ['rascunho', 'gravado', 'enviado', 'aguardando_conferencia', 'convertido', 'perdido']
-                    && request.resource.data.atendenteUid == resource.data.atendenteUid
+                    && (request.resource.data.atendenteUid == resource.data.atendenteUid || request.auth.uid == resource.data.atendenteUid || admin())
                     && request.resource.data.numero == resource.data.numero;
-      allow delete: if false;
+      // só a gestão exclui
+      allow delete: if admin();
     }
 
     match /{document=**} { allow read, write: if false; }
