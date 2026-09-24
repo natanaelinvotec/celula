@@ -4,7 +4,7 @@ import { norm } from './firebase.js';
 import { similar } from './dados.js';
 
 let _pdfjs;
-async function pdfjs() {
+export async function pdfjs() {
   if (_pdfjs) return _pdfjs;
   await new Promise((ok, err) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'; s.onload = ok; s.onerror = err; document.head.appendChild(s); });
   _pdfjs = window.pdfjsLib; _pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';

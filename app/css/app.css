@@ -236,3 +236,5 @@ label.f{display:flex;flex-direction:column;gap:5px;font-size:.72rem;font-weight:
 .sel-st{border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:999px;padding:6px 12px;font-weight:800;font-size:.8rem;cursor:pointer}
 .fora td{opacity:.6}.fora .mn{background:#e2e8f0;color:#475569}
 .foto-sol{max-width:420px}
+
+.docprev{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:.8rem}.docprev pre{white-space:pre-wrap;font-family:inherit;margin:6px 0 0;color:var(--muted);max-height:220px;overflow:auto}

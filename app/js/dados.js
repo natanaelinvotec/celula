@@ -83,6 +83,15 @@ export function similar(a, b) {
   return (2 * inter) / (a.length - 1 + b.length - 1);
 }
 
+/** Grafias mais confirmadas (apelidos) para orientar a leitura da IA: até 80, com o nome do exame. Cache de 10 min. */
+let _dicas = null, _dicasAt = 0;
+export async function dicasAprendidas() {
+  if (_dicas && Date.now() - _dicasAt < 600000) return _dicas;
+  const s = await getDocs(query(collection(db, 'apelidos'), where('confirmacoes', '>=', 2), orderBy('confirmacoes', 'desc'), limit(80)));
+  const cat = await catalogoMap();
+  _dicas = s.docs.map(d => d.data()).filter(a => a.texto && cat[a.mnemonico] && norm(a.texto) !== cat[a.mnemonico].nomeBusca).map(a => ({ texto: a.texto, nome: cat[a.mnemonico].nome }));
+  _dicasAt = Date.now(); return _dicas;
+}
 /** Aprendizado: a recepção confirmou que "textoLido" é "mnemonico". */
 export async function ensinar(textoLido, mnemonico, unidade) {
   const textoNorm = norm(textoLido); if (!textoNorm) return;
@@ -257,8 +266,26 @@ export async function importarAutolac(json, onProgress = () => {}) {
   _cat = null; return ops.length;
 }
 
+// ---------- usuários: senha e exclusão via Cloud Functions (Admin SDK) ----------
+let _fns;
+async function fn(nome) {
+  if (!_fns) { const m = await import('https://www.gstatic.com/firebasejs/12.3.0/firebase-functions.js'); const { app } = await import('./firebase.js'); _fns = { m, f: m.getFunctions(app, 'southamerica-east1') }; }
+  return _fns.m.httpsCallable(_fns.f, nome);
+}
+/** Gestão define a senha de outra usuária (precisa das Cloud Functions publicadas). */
+export async function definirSenha(uid, senha) { try { return (await (await fn('definirSenha'))({ uid, senha })).data; } catch (e) { throw traduzFn(e); } }
+/** Gestão exclui a conta de login + perfil (Cloud Function). Sem a função publicada, cai para desativar + marcar excluído. */
+export async function excluirUsuario(uid) {
+  try { return (await (await fn('excluirUsuario'))({ uid })).data; }
+  catch (e) { const err = traduzFn(e); if (err.semFuncao) { await editarUsuario(uid, { ativo: false, excluido: true, excluidoEm: serverTimestamp(), excluidoPor: auth.currentUser.uid }); return { ok: true, soft: true }; } throw err; }
+}
+function traduzFn(e) {
+  const c = String(e.code || ''); const err = new Error(c.includes('not-found') || c.includes('internal') && /not found|404/i.test(e.message) ? 'As Cloud Functions ainda não foram publicadas (veja celula-functions.zip).' : (e.message || 'Erro'));
+  err.semFuncao = c.includes('not-found') || /not found|404|Failed to fetch/i.test(e.message || ''); return err;
+}
+
 // ---------- usuários ----------
-export async function usuarios() { const s = await getDocs(collection(db, 'usuarios')); return s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.nome || '').localeCompare(b.nome || '')); }
+export async function usuarios() { const s = await getDocs(collection(db, 'usuarios')); return s.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => !u.excluido).sort((a, b) => (a.nome || '').localeCompare(b.nome || '')); }
 export const editarUsuario = (uid, m) => updateDoc(doc(db, 'usuarios', uid), { ...m, atualizadoEm: serverTimestamp() });
 export const meuPerfil = async () => (await getDoc(doc(db, 'usuarios', auth.currentUser.uid))).data();
 export const salvarConfig = m => updateDoc(doc(db, 'config', 'app'), { ...m, atualizadoEm: serverTimestamp() });

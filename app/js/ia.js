@@ -26,8 +26,15 @@ const dorme = ms => new Promise(r => setTimeout(r, ms));
  * Lê uma ou mais imagens (dataURL JPEG/PNG) e devolve { paciente, medico, exames:[...], modelo, ms }.
  * onStatus(texto) recebe mensagens de progresso para a tela.
  */
-export async function lerPedido(dataUrls, { onStatus = () => {}, tentativas = 4 } = {}) {
-  const parts = [{ text: PROMPT }, ...dataUrls.map(u => ({ inlineData: { mimeType: u.startsWith('data:image/png') ? 'image/png' : 'image/jpeg', data: u.split(',')[1] } }))];
+export async function lerPedido(entradas, { onStatus = () => {}, tentativas = 4, dicas = [] } = {}) {
+  // entradas: dataURLs de imagem (foto/PDF convertido) e/ou objetos { texto } (pedido em Word)
+  const partes = [{ text: PROMPT }];
+  if (dicas.length) partes.push({ text: 'Grafias já confirmadas pela recepção deste laboratório (use como referência quando a caligrafia parecer com alguma delas):\n' + dicas.map(d => `"${d.texto}" = ${d.nome}`).join('\n') });
+  for (const e of entradas) {
+    if (typeof e === 'string') partes.push({ inlineData: { mimeType: e.startsWith('data:image/png') ? 'image/png' : 'image/jpeg', data: e.split(',')[1] } });
+    else if (e?.texto) partes.push({ text: `Texto do pedido (arquivo ${e.nome || 'Word'}):\n${e.texto.slice(0, 6000)}` });
+  }
+  const parts = partes;
   let ultimoErro, quota = false;
   for (let i = 0; i < tentativas; i++) {
     quota = false;

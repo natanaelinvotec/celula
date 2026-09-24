@@ -34,8 +34,6 @@ root.innerHTML = `
       <label class="f">Convênio *<select class="in" id="conv">${convs.map(c => `<option value="${c.slug}" ${c.slug === 'particular' ? 'selected' : ''}>${escapeHtml(c.nome)}${norm(c.nome) === 'PARTICULAR' ? ' — preferencial' : ''}${ehPerfil(c) ? ' ★' : ''}</option>`).join('')}</select></label>
       <label class="f">Paciente *<input class="in" id="pac" placeholder="Nome do interessado (obrigatório)" autocomplete="off" required></label>
       <label class="f">Celular / WhatsApp *<input class="in" id="tel" placeholder="(67) 9 9999-9999 (obrigatório)" inputmode="tel" required></label>
-      <label class="switch"><input type="checkbox" id="swRenal"><i></i>Orçamento renal (pacote HIPERRIM)</label>
-      <span class="note">Ligado: a IA usa só os exames "-DB RENAL". Desligado: eles ficam ocultos.</span>
     </div></section>
     <section class="card"><div class="card-h"><h2>2 · Foto do pedido</h2></div><div class="card-b" style="display:flex;flex-direction:column;gap:10px">
       <div id="prevWrap" hidden><div class="preview" id="prev"></div></div>
@@ -43,9 +41,9 @@ root.innerHTML = `
         <button class="btn blue" id="btnCam" style="flex:1;justify-content:center">📷 Tirar foto</button>
         <button class="btn ghost" id="btnUp" style="flex:1;justify-content:center">Enviar arquivo</button>
         <input type="file" id="fileCam" accept="image/*" capture="environment" hidden>
-        <input type="file" id="fileUp" accept="image/*" multiple hidden>
+        <input type="file" id="fileUp" accept="image/*,.pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" multiple hidden>
       </div>
-      <div class="drop" id="drop">Arraste a foto aqui<br><small>JPG, PNG, HEIC · até 3 páginas</small></div>
+      <div class="drop" id="drop">Arraste aqui a foto ou o arquivo do pedido<br><small>JPG, PNG, HEIC, PDF ou Word (.docx) · até 3 páginas</small></div>
       <div class="progress" id="prog" hidden><div class="bar"><i></i></div><span id="progTxt">Preparando…</span></div>
       <button class="btn red" id="btnRun" style="justify-content:center" disabled>Analisar pedido com a IA</button>
     </div></section>
@@ -103,26 +101,51 @@ function validarPaciente() {
   else if (tel.length < 10) { toast('Informe o celular com DDD (ex.: 67 99999-9999).'); $('tel').focus(); ok = false; }
   return ok;
 }
-$('swRenal').addEventListener('change', async () => { st.renal = $('swRenal').checked; if ($('swRenal').checked && convs.some(c => c.slug === 'hiperrim')) { $('conv').value = 'hiperrim'; $('conv').dispatchEvent(new Event('change')); } await reresolver(); });
+// (pacote renal desativado a pedido da gestão — exames "-DB RENAL" ficam ocultos)
 
 // ---------- fotos ----------
 $('btnCam').onclick = () => $('fileCam').click(); $('btnUp').onclick = () => $('fileUp').click(); $('drop').onclick = () => $('fileUp').click();
 $('fileCam').addEventListener('change', e => addFotos(e.target.files)); $('fileUp').addEventListener('change', e => addFotos(e.target.files));
 ['dragover', 'dragleave', 'drop'].forEach(ev => $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.toggle('over', ev === 'dragover'); if (ev === 'drop') addFotos(e.dataTransfer.files); }));
 async function addFotos(files) {
-  for (const f of [...files].slice(0, 3 - st.fotos.length)) { if (!f.type.startsWith('image/')) { toast('Envie uma imagem (JPG/PNG/HEIC).'); continue; } st.fotos.push(await comprimirImagem(f, 1600, .85)); }
-  $('prevWrap').hidden = !st.fotos.length; $('prev').innerHTML = st.fotos.map((u, i) => `<img src="${u}" alt="Pedido ${i + 1}">`).join('') + '<div class="scan" id="scan" hidden></div>'; fotoZoom($('prev'));
-  $('btnRun').disabled = !st.fotos.length; if (st.fotos.length) toast(`${st.fotos.length} foto(s) pronta(s). Clique em Analisar.`);
+  for (const f of [...files]) {
+    if (st.fotos.length >= 3) { toast('Máximo de 3 páginas por pedido.'); break; }
+    const nome = (f.name || '').toLowerCase();
+    try {
+      if (f.type.startsWith('image/')) st.fotos.push(await comprimirImagem(f, 1600, .85));
+      else if (f.type === 'application/pdf' || nome.endsWith('.pdf')) { toast('Convertendo as páginas do PDF…'); for (const u of await pdfParaImagens(f, 3 - st.fotos.length)) st.fotos.push(u); }
+      else if (nome.endsWith('.docx') || f.type.includes('wordprocessingml')) { toast('Lendo o texto do Word…'); const t = await docxParaTexto(f); if (!t.trim()) { toast('O Word veio sem texto legível.'); continue; } st.fotos.push({ texto: t, nome: f.name }); }
+      else if (nome.endsWith('.doc')) toast('Arquivo .doc antigo: salve como .docx ou PDF no Word e envie de novo.');
+      else toast('Envie foto (JPG/PNG/HEIC), PDF ou Word (.docx).');
+    } catch (e) { toast('Não consegui ler ' + f.name + ': ' + e.message); }
+  }
+  $('prevWrap').hidden = !st.fotos.length;
+  $('prev').innerHTML = st.fotos.map((u, i) => typeof u === 'string' ? `<img src="${u}" alt="Pedido ${i + 1}">` : `<div class="docprev"><b>📄 ${escapeHtml(u.nome)}</b><pre>${escapeHtml(u.texto.slice(0, 900))}${u.texto.length > 900 ? '…' : ''}</pre></div>`).join('') + '<div class="scan" id="scan" hidden></div>'; fotoZoom($('prev'));
+  $('btnRun').disabled = !st.fotos.length; if (st.fotos.length) toast(`${st.fotos.length} página(s) pronta(s). Clique em Analisar.`, true);
+}
+/** PDF → imagens JPEG das primeiras páginas (pdf.js, no navegador). */
+async function pdfParaImagens(file, max = 3) {
+  const { pdfjs } = await import('./relatorio.js'); const lib = await pdfjs();
+  const pdf = await lib.getDocument({ data: await file.arrayBuffer() }).promise; const out = [];
+  for (let p = 1; p <= Math.min(pdf.numPages, max); p++) { const page = await pdf.getPage(p); const vp = page.getViewport({ scale: 1.6 }); const c = document.createElement('canvas'); c.width = vp.width; c.height = vp.height; await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise; out.push(c.toDataURL('image/jpeg', .85)); }
+  return out;
+}
+/** Word (.docx) → texto: o .docx é um zip; lê word/document.xml e tira as tags. */
+async function docxParaTexto(file) {
+  if (!window.JSZip) await new Promise((ok, err) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'; s.onload = ok; s.onerror = err; document.head.appendChild(s); });
+  const zip = await window.JSZip.loadAsync(await file.arrayBuffer()); const xml = await zip.file('word/document.xml')?.async('string');
+  if (!xml) return '';
+  return xml.replace(/<\/w:p>/g, '\n').replace(/<w:tab\/>/g, '\t').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 // ---------- IA ----------
 $('btnRun').addEventListener('click', async () => {
   $('btnRun').disabled = true; $('prog').hidden = false; $('scan')?.removeAttribute('hidden');
   try {
-    const r = await lerPedido(st.fotos, { onStatus: t => $('progTxt').textContent = t });
+    const dicas = await D.dicasAprendidas().catch(() => []);
+    const r = await lerPedido(st.fotos, { onStatus: t => $('progTxt').textContent = t, dicas });
     st.leitura = r;
     if (r.paciente && !$('pac').value) $('pac').value = r.paciente;
-    if (r.renal && !st.renal) { $('swRenal').checked = true; st.renal = true; if (convs.some(c => c.slug === 'hiperrim')) { $('conv').value = 'hiperrim'; st.convSlug = 'hiperrim'; st.convenio = 'HIPERRIM'; } toast('Pedido de nefrologia detectado: pacote renal ativado.'); }
     $('progTxt').textContent = 'Comparando com a base de exames…';
     st.manuais = await D.precosManuais(st.convSlug);
     for (const e of r.exames) await adicionarLido(e);
@@ -385,7 +408,7 @@ if (idEdit) (async () => {
     const o = await D.orcamento(idEdit); if (!o) { toast('Orçamento não encontrado.'); return; }
     const cat = await D.catalogoMap(); st.id = o.id; st.numero = o.numero; $('numLbl').textContent = '#' + numOrc(o.numero);
     if (o.convenio && convs.some(c => c.slug === o.convenio)) { $('conv').value = o.convenio; st.convSlug = o.convenio; st.convenio = o.convenioNome || convs.find(c => c.slug === o.convenio)?.nome; }
-    $('pac').value = o.paciente || ''; $('tel').value = o.telefone || ''; st.renal = !!o.renal; $('swRenal').checked = st.renal;
+    $('pac').value = o.paciente || ''; $('tel').value = o.telefone || ''; st.renal = false;
     st.manuais = await D.precosManuais(st.convSlug);
     st.itens = (o.itens || []).map(i => { const ex = i.mnemonico ? cat[i.mnemonico] : null; return { uid: Math.random().toString(36).slice(2), lido: i.lido || null, normalizado: i.nome, confIA: 1, conf: 1, cands: [], ex, status: i.status === 'conferencia' ? 'conferencia' : ex ? (i.valor != null ? 'ok' : 'semvalor') : 'miss', valor: i.valor ?? null, prazoDias: i.prazoDias ?? null, origem: null, solId: i.solicitacaoId || null }; });
     if (o.unitarioLiberado) marcarUnitarioLiberado();
