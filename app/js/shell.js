@@ -2,6 +2,9 @@
 import { sair, temaInit, iniciais, escapeHtml } from './firebase.js';
 
 const ICONS = {
+  cnv: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/></svg>',
+  crm: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.5"/><path d="M15 14.5a5 5 0 0 1 6.5 4.5"/></svg>',
+  conv: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h10l6 6v10H4z"/><path d="M14 4v6h6M8 15l2.5 2.5L16 12"/></svg>',
   novo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
   hist: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>',
   dash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></svg>',
@@ -21,7 +24,7 @@ const MOON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-
 export function montarShell({ perfil, ativo, titulo, subtitulo, painel = false }) {
   const admin = perfil.papel === 'admin';
   const links = painel
-    ? [['dash', 'Dashboard', '#dash'], ['sol', 'Solicitações', '#sol', 'badgeSol'], ['hist', 'Orçamentos', '#orc'], ['cat', 'Catálogo de exames', '#cat'], ['usr', 'Usuários', '#usr'], ['exp', 'Exportar atendimentos', '#exp']]
+    ? [['dash', 'Dashboard', '#dash'], ['sol', 'Solicitações', '#sol', 'badgeSol'], ['hist', 'Orçamentos', '#orc'], ['cat', 'Catálogo de exames', '#cat'], ['cnv', 'Convênios', '#cnv'], ['crm', 'CRM de pacientes', '#crm'], ['conv', 'Conversões (relatório)', '#conv'], ['usr', 'Usuários', '#usr'], ['exp', 'Exportar atendimentos', '#exp']]
     : [['novo', 'Novo orçamento (IA)', 'orcamento.html'], ['hist', 'Meus orçamentos', 'orcamentos.html', 'badgeSol']];
   const extra = painel ? [['novo', 'Novo orçamento (IA)', 'orcamento.html']] : (admin ? [['dash', 'Painel gerencial', 'painel.html']] : []);
   const nav = l => `<a class="nav ${l[0] === ativo ? 'on' : ''}" href="${l[2]}" data-k="${l[0]}">${ICONS[l[0]]}<span class="t">${l[1]}</span>${l[3] ? `<span class="badge" id="${l[3]}" hidden></span>` : ''}</a>`;
@@ -40,18 +43,27 @@ export function montarShell({ perfil, ativo, titulo, subtitulo, painel = false }
     <div class="top">
       <h1 id="pgTitulo">${escapeHtml(titulo)}<small id="pgSub">${escapeHtml(subtitulo || '')}</small></h1>
       <div class="sp"></div>
-      ${admin ? '' : `<select class="sel-st" id="selStatus" title="Seu status para a gestão"><option value="online">🟢 Online</option><option value="pausa">🟠 Pausa</option><option value="almoco">🍽️ Almoço</option><option value="finalizado">⚪ Finalizado</option></select>`}
+      <select class="sel-st" id="selStatus" title="Seu status para a equipe"><option value="online">🟢 Online</option><option value="ocupado">🔴 Ocupado(a)</option><option value="pausa">🟠 Pausa</option><option value="almoco">🍽️ Almoço</option><option value="finalizado">⚪ Finalizado</option></select>
       <div class="seg"><button data-tema="light" title="Tema claro">${SUN}</button><button data-tema="dark" title="Tema escuro">${MOON}</button></div>
-      <div class="user"><span class="av">${foto}</span><span>${escapeHtml(perfil.nome.split(' ')[0])}<small style="display:block;font-size:.72rem;color:var(--muted)">${admin ? 'Administrador(a)' : 'Atendente'}</small></span></div>
+      <div class="user"><span class="av">${foto}</span><span>${escapeHtml(primeiroNome(perfil.nome))}<small style="display:block;font-size:.72rem;color:var(--muted)">${admin ? 'Administrador(a)' : 'Atendente'}</small></span></div>
     </div>
     <div id="conteudo"></div>
   </main></div>`);
   document.getElementById('btnSair').addEventListener('click', sair);
   const sel = document.getElementById('selStatus');
-  if (sel) { sel.value = perfil.status || 'online'; sel.addEventListener('change', async () => { try { const D = await import('./dados.js'); await D.setStatusAtendente(sel.value); } catch (e) { console.warn(e); } }); if (!perfil.status) import('./dados.js').then(D => D.setStatusAtendente('online')).catch(() => {}); }
+  if (sel) {
+    // status escolhido + batimento a cada 60 s; ao fechar/sair do sistema vira offline automaticamente (a gestão também considera offline sem batimento há 3 min)
+    const st0 = !perfil.status || perfil.status === 'offline' ? 'online' : perfil.status; sel.value = st0;
+    import('./dados.js').then(D => { D.setStatusAtendente(st0).catch(() => {}); setInterval(() => D.ping().catch(() => {}), 60000);
+      sel.addEventListener('change', () => D.setStatusAtendente(sel.value).catch(e => console.warn(e)));
+      addEventListener('pagehide', () => { try { D.setStatusAtendente('offline'); } catch {} });
+    }).catch(() => {});
+  }
   temaInit();
   const cur = document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light');
   document.querySelectorAll('[data-tema]').forEach(b => b.classList.toggle('on', b.dataset.tema === cur));
   return document.getElementById('conteudo');
 }
+/** Primeiro nome para exibição: mantém título (Dr., Dra., Sr., Sra.) junto com o nome seguinte. */
+export function primeiroNome(nome) { const w = String(nome || '').trim().split(/\s+/); return /^(dr|dra|sr|sra|srta|prof|profa)\.?$/i.test(w[0] || '') && w[1] ? `${w[0]} ${w[1]}` : (w[0] || ''); }
 export function setTitulo(t, s) { document.getElementById('pgTitulo').firstChild.textContent = t; document.getElementById('pgSub').textContent = s || ''; }

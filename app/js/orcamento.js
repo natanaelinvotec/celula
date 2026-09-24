@@ -12,7 +12,7 @@ const CONF_MIN = 0.85;
 
 // ---------- estado ----------
 const st = { id: null, numero: null, itens: [], fotos: [], convenio: null, convSlug: null, renal: false, manuais: {}, leitura: null, offSol: null };
-const cfg = await D.config(); const convs = await D.convenios();
+const cfg = await D.config(); const convs = perfil.papel === 'admin' ? await D.conveniosTodos() : await D.convenios(); // atendentes só veem convênios visíveis
 const CONF_MIN_CFG = cfg.confiancaMinima ? cfg.confiancaMinima / 100 : CONF_MIN;
 
 root.innerHTML = `

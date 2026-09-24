@@ -232,7 +232,7 @@ label.f{display:flex;flex-direction:column;gap:5px;font-size:.72rem;font-weight:
 .aviso.on{opacity:1;transform:none}.aviso b{display:block;color:var(--ok);margin-bottom:2px}.aviso span{font-size:.86rem;font-weight:600}
 .aviso .modal-x{width:28px;height:28px;top:8px;right:8px}
 .st-dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#94a3b8;margin-right:6px;vertical-align:middle}
-.st-dot.online{background:#15803d}.st-dot.pausa{background:#b45309}.st-dot.almoco{background:#d97706}.st-dot.finalizado{background:#64748b}
+.st-dot.online{background:#15803d}.st-dot.ocupado{background:#d31a21}.st-dot.offline{background:#cbd5e1}.st-dot.pausa{background:#b45309}.st-dot.almoco{background:#d97706}.st-dot.finalizado{background:#64748b}
 .sel-st{border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:999px;padding:6px 12px;font-weight:800;font-size:.8rem;cursor:pointer}
 .fora td{opacity:.6}.fora .mn{background:#e2e8f0;color:#475569}
 .foto-sol{max-width:420px}

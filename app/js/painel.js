@@ -3,6 +3,7 @@ import { exigirLogin, brl, fmtData, fmtDia, toast, escapeHtml, iniciais, comprim
 import { montarShell, setTitulo } from './shell.js';
 import { montarHistorico, STATUS } from './historico.js';
 import { mnemonicoHtml, copiar, fichaExame, fotoZoom, numOrc, ICO } from './ui.js';
+import { linhasDoPdf, parseRelatorio, cruzar } from './relatorio.js';
 import * as D from './dados.js';
 
 const { perfil } = await exigirLogin({ papel: 'admin' });
@@ -16,7 +17,7 @@ let pendentes = [], solSel = null, renderSol = null;
 D.ouvirSolicitacoes('pendente', list => { pendentes = list; const b = $('badgeSol'); if (b) { b.textContent = list.length; b.hidden = !list.length; } if (location.hash === '#sol' && renderSol) renderSol(); });
 
 // ---------- roteamento por hash ----------
-const views = { dash: viewDash, sol: viewSol, orc: viewOrc, cat: viewCat, usr: viewUsr, exp: viewExp, cfg: viewCfg };
+const views = { dash: viewDash, sol: viewSol, orc: viewOrc, cat: viewCat, cnv: viewCnv, crm: viewCrm, conv: viewConv, usr: viewUsr, exp: viewExp, cfg: viewCfg };
 async function rota() {
   const k = (location.hash || '#dash').slice(1); const fn = views[k] || viewDash;
   document.querySelectorAll('.nav[data-k]').forEach(a => a.classList.toggle('on', a.dataset.k === (k === 'orc' ? 'hist' : k)));
@@ -58,8 +59,8 @@ async function viewDash() {
   </div>`;
   lineChart(sem); donut(top, mes.length); bars(rank); calendar(mes);
   // equipe: quem está online / pausa / almoço agora
-  D.usuarios().then(us => { const at = us.filter(u => u.ativo !== false && u.papel !== 'admin'); const on = at.filter(u => (u.status || 'online') === 'online'); const k = $('kOnline'); if (k) k.innerHTML = `aguardando aprovação · <b>${on.length}/${at.length}</b> atendentes online`;
-    const feed = root.querySelector('.feed'); if (feed) feed.insertAdjacentHTML('beforebegin', `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${at.map(u => `<span class="pill" title="${escapeHtml(u.nome)}"><span class="st-dot ${u.status || 'online'}"></span>${escapeHtml((u.nome || '').split(' ')[0])} · ${u.status || 'online'}</span>`).join('')}</div>`); }).catch(() => {});
+  D.usuarios().then(us => { const at = us.filter(u => u.ativo !== false); const on = at.filter(u => D.statusEfetivo(u) === 'online'); const k = $('kOnline'); if (k) k.innerHTML = `aguardando aprovação · <b>${on.length}/${at.length}</b> da equipe online`;
+    const feed = root.querySelector('.feed'); if (feed) feed.insertAdjacentHTML('beforebegin', `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${at.map(u => { const st = D.statusEfetivo(u); return `<span class="pill" title="${escapeHtml(u.nome)}"><span class="st-dot ${st}"></span>${escapeHtml((u.nome || '').split(' ')[0])} · ${D.STATUS_LABEL[st] || st}</span>`; }).join('')}</div>`); }).catch(() => {});
 }
 function lineChart(SEM) {
   const W = 640, H = 260, L = 44, R = 16, T = 16, B = 34, max = Math.max(5, ...SEM.map(s => s[1])) * 1.15;
@@ -145,7 +146,7 @@ async function viewOrc() { montarHistorico(root, { perfil, admin: true }); }
 
 // ===================== CATÁLOGO =====================
 async function viewCat() {
-  const convs = await D.convenios(); const cat = await D.catalogo(true);
+  const convs = await D.conveniosTodos(); const cat = await D.catalogo(true);
   root.innerHTML = `<div class="card" style="margin-bottom:14px"><div class="card-b"><div class="filters">
     <label class="f" style="grid-column:span 2">Buscar<input class="in" id="cq" placeholder="nome ou mnemônico"></label>
     <label class="f">Convênio (valor exibido)<select class="in" id="cconv">${convs.map(c => `<option value="${c.slug}" ${c.slug === 'particular' ? 'selected' : ''}>${escapeHtml(c.nome)}</option>`).join('')}</select></label>
@@ -207,11 +208,102 @@ async function viewCat() {
   });
 }
 
+// ===================== CONVÊNIOS =====================
+async function viewCnv() {
+  const convs = await D.conveniosTodos(); const cat = await D.catalogo();
+  const nExames = slug => cat.filter(c => c.precos?.[slug] != null).length;
+  root.innerHTML = `<div class="card"><div class="card-h"><h2>Catálogo de convênios</h2><span class="cnt">${convs.length} convênios · ${convs.filter(c => c.ativo !== false).length} visíveis</span><div class="sp"></div><span class="note">Oculto = não aparece para as atendentes (ex.: Tabela Custos); a gestão continua vendo tudo no catálogo</span></div>
+    <div class="card-b"><div class="filters" style="margin-bottom:10px"><label class="f" style="grid-column:span 2">Buscar<input class="in" id="vq" placeholder="nome do convênio"></label><label class="f">Situação<select class="in" id="vsit"><option value="">Todos</option><option value="on">Visíveis</option><option value="off">Ocultos</option></select></label></div>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Convênio</th><th>Código</th><th>Exames com valor</th><th>Visível para atendentes</th></tr></thead><tbody id="vbody"></tbody></table></div></div></div>`;
+  const render = () => {
+    const q = norm($('vq').value), sit = $('vsit').value;
+    const rows = convs.filter(c => (!q || norm(c.nome).includes(q)) && (!sit || (sit === 'on' ? c.ativo !== false : c.ativo === false)));
+    $('vbody').innerHTML = rows.map(c => `<tr class="${c.ativo === false ? 'fora' : ''}"><td><b>${escapeHtml(c.nome)}</b>${c.ativo === false ? ' <span class="pill crit">oculto</span>' : ''}</td><td><span class="mn">${escapeHtml(c.slug || c.id)}</span></td><td>${nExames(c.slug || c.id)}</td><td><label class="switch"><input type="checkbox" data-vis="${c.id}" ${c.ativo !== false ? 'checked' : ''}><i></i></label></td></tr>`).join('') || '<tr><td colspan="4" class="note">Nenhum convênio.</td></tr>';
+  };
+  ['vq', 'vsit'].forEach(id => $(id).addEventListener('input', render)); render();
+  $('vbody').addEventListener('change', async e => {
+    const i = e.target.closest('[data-vis]'); if (!i) return; const c = convs.find(x => x.id === i.dataset.vis);
+    try { await D.editarConvenio(c.id, { ativo: i.checked }); c.ativo = i.checked; render(); toast(`${c.nome}: ${i.checked ? 'visível' : 'oculto'} para as atendentes`, true); } catch (err) { i.checked = !i.checked; toast('Erro: ' + err.message); }
+  });
+}
+
+// ===================== CONVERSÕES (relatório de atendimento do AutoLAC) =====================
+async function viewConv() {
+  root.innerHTML = `<div class="card" style="margin-bottom:14px"><div class="card-h"><h2>Conversões pelo relatório de atendimento</h2><div class="sp"></div><span class="note">AutoLAC → Relatórios → “Atendimento por recepcionista” (PDF)</span></div>
+    <div class="card-b" style="display:flex;flex-direction:column;gap:10px">
+      <div class="drop" id="rdrop">Arraste aqui o PDF do relatório ou clique para escolher<br><small>O arquivo é lido só no seu navegador e não fica guardado no sistema — apenas o resumo da importação.</small><input type="file" id="rfile" accept="application/pdf" hidden></div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><label class="f">Cruzar com orçamentos dos últimos<select class="in" id="rdias"><option value="30">30 dias</option><option value="60">60 dias</option><option value="90" selected>90 dias</option><option value="180">180 dias</option></select></label><span class="note" id="rst"></span></div>
+    </div></div>
+    <div id="rres"></div>`;
+  $('rdrop').onclick = () => $('rfile').click();
+  ['dragover', 'dragleave', 'drop'].forEach(ev => $('rdrop').addEventListener(ev, e => { e.preventDefault(); $('rdrop').classList.toggle('over', ev === 'dragover'); if (ev === 'drop' && e.dataTransfer.files[0]) processar(e.dataTransfer.files[0]); }));
+  $('rfile').addEventListener('change', e => e.target.files[0] && processar(e.target.files[0]));
+  async function processar(file) {
+    $('rst').textContent = 'Lendo o PDF…'; $('rres').innerHTML = '';
+    try {
+      const { linhas, paginas } = await linhasDoPdf(file); const rel = parseRelatorio(linhas);
+      $('rst').textContent = `${paginas} página(s) · ${rel.registros.length} guias · ${rel.atendimentos.length} atendimentos · período ${rel.periodo || '—'} · cruzando…`;
+      const orcs = await D.orcamentosRecentes({ dias: +$('rdias').value, max: 2000 });
+      const { auto, quase } = cruzar(rel.atendimentos, orcs);
+      // marca automaticamente os que bateram nome + valor
+      let feitos = 0;
+      for (const m of auto) { try { await D.converterViaRelatorio(m.orc.id, { protocolo: m.at.protocolo, data: m.at.data, valor: m.valorRel, atendente: m.at.atendente, arquivo: file.name }); m.orc.status = 'convertido'; feitos++; } catch (e) { m.erro = e.message; } }
+      const somaRel = rel.registros.reduce((a, r) => a + r.valor, 0);
+      D.registrarImportacao({ arquivo: file.name, paginas, guias: rel.registros.length, atendimentos: rel.atendimentos.length, periodo: rel.periodo || null, valorTotal: somaRel, convertidos: feitos, quase: quase.length }).catch(() => {});
+      $('rst').textContent = `Pronto: ${feitos} orçamento(s) marcados como convertidos automaticamente · ${quase.length} para conferir.`;
+      const linha = (m, btn) => `<tr><td><b>#${numOrc(m.orc.numero)}</b><br><small class="note">${escapeHtml(m.orc.atendenteNome || '')} · ${fmtData(m.orc.criadoEm)}</small></td><td><b>${escapeHtml(m.orc.paciente)}</b><br><small class="note">relatório: ${escapeHtml(m.at.paciente)} · ${escapeHtml(m.at.atendente)} · prot. ${m.at.protocolo}</small></td><td class="num">${brl(m.orc.total)}<br><small class="note">relatório ${brl(m.valorRel)}</small></td><td>${escapeHtml(m.motivo)}</td><td>${btn}</td></tr>`;
+      $('rres').innerHTML = `<div class="card" style="margin-bottom:14px"><div class="card-h"><h2>Convertidos automaticamente</h2><span class="cnt">${auto.length}</span></div><div class="card-b tbl-wrap"><table class="tbl"><thead><tr><th>Orçamento</th><th>Paciente</th><th class="num">Valor</th><th>Critério</th><th></th></tr></thead><tbody>${auto.map(m => linha(m, m.erro ? `<span class="pill crit">erro: ${escapeHtml(m.erro)}</span>` : '<span class="pill ok">✓ convertido</span>')).join('') || '<tr><td colspan="5" class="note">Nenhum orçamento bateu nome e valor.</td></tr>'}</tbody></table></div></div>
+        <div class="card"><div class="card-h"><h2>Prováveis — confira e confirme</h2><span class="cnt">${quase.length}</span><div class="sp"></div><span class="note">nome parecido ou valor diferente (desconto, exame a mais/a menos)</span></div><div class="card-b tbl-wrap"><table class="tbl"><thead><tr><th>Orçamento</th><th>Paciente</th><th class="num">Valor</th><th>Critério</th><th></th></tr></thead><tbody id="rquase">${quase.map((m, i) => linha(m, `<button class="btn ok sm" data-conf="${i}">Marcar convertido</button>`)).join('') || '<tr><td colspan="5" class="note">Nada para conferir.</td></tr>'}</tbody></table></div></div>
+        <p class="note" style="margin-top:10px">Total do relatório: ${brl(somaRel)} em ${rel.registros.length} guias. Atendimentos sem orçamento no sistema não aparecem aqui (pacientes que vieram direto).</p>`;
+      $('rquase')?.addEventListener('click', async e => { const b = e.target.closest('[data-conf]'); if (!b) return; const m = quase[+b.dataset.conf]; b.disabled = true;
+        try { await D.converterViaRelatorio(m.orc.id, { protocolo: m.at.protocolo, data: m.at.data, valor: m.valorRel, atendente: m.at.atendente, arquivo: file.name, confirmadoManual: true }); b.replaceWith(Object.assign(document.createElement('span'), { className: 'pill ok', textContent: '✓ convertido' })); toast(`Orçamento #${numOrc(m.orc.numero)} — Convertido com sucesso!`, true); } catch (err) { toast('Erro: ' + err.message); b.disabled = false; } });
+    } catch (e) { $('rst').textContent = 'Erro ao ler o PDF: ' + e.message; }
+    $('rfile').value = '';
+  }
+}
+
+// ===================== CRM DE PACIENTES =====================
+async function viewCrm() {
+  const hoje = new Date(); const ini = new Date(hoje.getFullYear(), hoje.getMonth() - 2, 1);
+  root.innerHTML = `<div class="card" style="margin-bottom:14px"><div class="card-b"><div class="filters">
+    <label class="f">De<input class="in" type="date" id="cDe" value="${ini.toISOString().slice(0, 10)}"></label><label class="f">Até<input class="in" type="date" id="cAte" value="${hoje.toISOString().slice(0, 10)}"></label>
+    <label class="f">Convertido<select class="in" id="cConv"><option value="">Todos</option><option value="sim">Sim — veio coletar</option><option value="nao">Não — em aberto</option></select></label>
+    <label class="f">Buscar<input class="in" id="cQ" placeholder="nome ou telefone"></label>
+    <label class="f">&nbsp;<button class="btn blue" id="cGo" style="justify-content:center">Atualizar</button></label></div></div></div>
+  <div class="card"><div class="card-h"><h2>CRM de pacientes</h2><span class="cnt" id="cCnt"></span><div class="sp"></div><button class="btn ghost sm" id="cCsv">Exportar .csv</button></div>
+  <div class="card-b tbl-wrap"><table class="tbl"><thead><tr><th>Paciente</th><th>Telefone</th><th>Orçamentos</th><th>Último</th><th>Convênio</th><th>Atendente</th><th class="num">Total orçado</th><th>Convertido</th><th></th></tr></thead><tbody id="cBody"><tr><td colspan="9" class="note">Carregando…</td></tr></tbody></table></div></div>`;
+  let pacientes = [];
+  const montar = async () => {
+    const de = new Date($('cDe').value + 'T00:00:00'), ate = new Date($('cAte').value + 'T23:59:59'); const dias = Math.ceil((Date.now() - de) / 86400000) + 1;
+    const rows = (await D.orcamentosRecentes({ dias, max: 3000 })).filter(r => { const d = r.criadoEm?.toDate?.(); return d && d >= de && d <= ate && r.paciente; });
+    const map = new Map();
+    for (const r of rows) {
+      const k = r.telefoneDigitos || (r.pacienteBusca || norm(r.paciente)); if (!map.has(k)) map.set(k, { nome: r.paciente, tel: r.telefone || '', telD: r.telefoneDigitos || '', n: 0, total: 0, convertido: false, ultimo: null, ultimoNum: null, convenio: r.convenioNome || r.convenio, atendente: r.atendenteNome, orcs: [] });
+      const p = map.get(k); p.n++; p.total += r.total || 0; if (r.status === 'convertido') p.convertido = true; p.orcs.push(r);
+      const d = r.criadoEm?.toDate?.(); if (d && (!p.ultimo || d > p.ultimo)) { p.ultimo = d; p.ultimoNum = r.numero; p.convenio = r.convenioNome || r.convenio; p.atendente = r.atendenteNome; p.nome = r.paciente; if (r.telefone) { p.tel = r.telefone; } }
+    }
+    pacientes = [...map.values()].sort((a, b) => (b.ultimo || 0) - (a.ultimo || 0)); render();
+  };
+  const filtrados = () => { const q = norm($('cQ').value), qd = $('cQ').value.replace(/\D/g, ''), cv = $('cConv').value; return pacientes.filter(p => (!q || norm(p.nome).includes(q) || (qd && p.telD.includes(qd))) && (!cv || (cv === 'sim' ? p.convertido : !p.convertido))); };
+  const render = () => {
+    const list = filtrados(); $('cCnt').textContent = `${list.length} pacientes · ${list.filter(p => p.convertido).length} convertidos`;
+    $('cBody').innerHTML = list.map(p => `<tr><td><b>${escapeHtml(p.nome)}</b></td><td>${escapeHtml(p.tel || '—')}</td><td>${p.n}</td><td>${p.ultimo ? p.ultimo.toLocaleDateString('pt-BR') : '—'} <small class="note">#${numOrc(p.ultimoNum)}</small></td><td>${escapeHtml(p.convenio || '')}</td><td>${escapeHtml(p.atendente || '')}</td><td class="num">${brl(p.total)}</td><td>${p.convertido ? '<span class="pill ok">✓ sim</span>' : '<span class="pill warn">não</span>'}</td><td style="white-space:nowrap">${p.telD ? `<a class="btn ghost sm" target="_blank" href="https://wa.me/55${p.telD}?text=${encodeURIComponent('Olá ' + (p.nome.split(' ')[0]) + ', aqui é do Laboratório Célula. Seu orçamento #' + numOrc(p.ultimoNum) + ' continua válido — podemos agendar sua coleta?')}">WhatsApp</a>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="note">Nenhum paciente no filtro.</td></tr>';
+  };
+  $('cGo').onclick = montar; ['cQ', 'cConv'].forEach(id => $(id).addEventListener('input', render));
+  $('cCsv').onclick = () => {
+    const list = filtrados(); if (!list.length) return toast('Nada para exportar.');
+    const lin = [['Paciente', 'Telefone', 'Orçamentos', 'Último orçamento', 'Nº', 'Convênio', 'Atendente', 'Total orçado', 'Convertido'], ...list.map(p => [p.nome, p.tel, p.n, p.ultimo ? p.ultimo.toLocaleDateString('pt-BR') : '', numOrc(p.ultimoNum), p.convenio || '', p.atendente || '', p.total.toFixed(2).replace('.', ','), p.convertido ? 'SIM' : 'NÃO'])];
+    const csv = '﻿' + lin.map(l => l.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\r\n');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = `crm-pacientes_${$('cDe').value}_${$('cAte').value}.csv`; a.click();
+  };
+  montar();
+}
+
 // ===================== USUÁRIOS =====================
 async function viewUsr() {
   const us = await D.usuarios(); const rows = await D.orcamentosRecentes({ dias: 30 });
   const prod = {}; for (const r of rows) { prod[r.atendenteUid] ??= { o: 0, c: 0 }; prod[r.atendenteUid].o++; if (r.status === 'convertido') prod[r.atendenteUid].c++; }
-  root.innerHTML = `<div class="g-usr"><div class="card"><div class="card-h"><h2>Equipe</h2><span class="cnt">${us.length} usuários · ${us.filter(u => u.ativo !== false).length} ativos</span></div><div class="card-b"><div class="users" id="users">${us.map(u => { const p = prod[u.id] || { o: 0, c: 0 }; return `<div class="uc"><div class="hd"><span class="av">${u.fotoBase64 ? `<img src="${u.fotoBase64}">` : escapeHtml(iniciais(u.nome))}</span><div><b>${escapeHtml(u.nome)}</b><small>${u.papel === 'admin' ? 'Administrador(a)' : 'Atendente'} · ${escapeHtml(u.unidade || '')}</small></div><div style="flex:1"></div>${u.papel !== 'admin' ? `<span class="pill" title="status informado pela atendente"><span class="st-dot ${u.status || 'online'}"></span>${u.status || 'online'}</span>` : ''}<span class="pill ${u.ativo !== false ? 'ok' : ''}"><i></i>${u.ativo !== false ? 'ativo' : 'inativo'}</span></div>
+  root.innerHTML = `<div class="g-usr"><div class="card"><div class="card-h"><h2>Equipe</h2><span class="cnt">${us.length} usuários · ${us.filter(u => u.ativo !== false).length} ativos</span></div><div class="card-b"><div class="users" id="users">${us.map(u => { const p = prod[u.id] || { o: 0, c: 0 }; return `<div class="uc"><div class="hd"><span class="av">${u.fotoBase64 ? `<img src="${u.fotoBase64}">` : escapeHtml(iniciais(u.nome))}</span><div><b>${escapeHtml(u.nome)}</b><small>${u.papel === 'admin' ? 'Administrador(a)' : 'Atendente'} · ${escapeHtml(u.unidade || '')}</small></div><div style="flex:1"></div><span class="pill" data-st="${u.id}" title="status ao vivo (offline automático sem batimento há 3 min)"><span class="st-dot ${D.statusEfetivo(u)}"></span>${D.STATUS_LABEL[D.statusEfetivo(u)] || ''}</span><span class="pill ${u.ativo !== false ? 'ok' : ''}"><i></i>${u.ativo !== false ? 'ativo' : 'inativo'}</span></div>
     <div class="stats"><span><b>${p.o}</b>orçamentos/30d</span><span><b>${p.o ? Math.round(p.c / p.o * 100) : 0}%</b>conversão</span></div>
     <div class="acts"><select class="in" data-papel="${u.id}" style="padding:5px 8px;font-size:.8rem"><option value="atendente" ${u.papel !== 'admin' ? 'selected' : ''}>Atendente</option><option value="admin" ${u.papel === 'admin' ? 'selected' : ''}>Admin</option></select><input class="in" data-un="${u.id}" value="${escapeHtml(u.unidade || '')}" placeholder="unidade" style="padding:5px 8px;font-size:.8rem;width:120px"><button class="btn blue sm" data-salvar="${u.id}">Salvar</button><button class="btn ghost sm" data-pw="${escapeHtml(u.email)}">Redefinir senha</button><button class="btn ghost sm" data-ativo="${u.id}" data-v="${u.ativo !== false ? 0 : 1}">${u.ativo !== false ? 'Desativar' : 'Reativar'}</button></div></div>`; }).join('')}</div></div></div>
   <div class="card"><div class="card-h"><h2>Novo usuário</h2></div><div class="card-b" style="display:flex;flex-direction:column;gap:10px">
@@ -222,6 +314,8 @@ async function viewUsr() {
     <label class="f">Unidade<input class="in" id="nuUn" value="${escapeHtml(cfg.unidadePadrao || 'Coophavila')}" list="uns"><datalist id="uns">${(cfg.unidades || ['Coophavila', 'Matriz', 'Nova Lima', 'Guaicurus', 'Central de atendimento']).map(u => `<option value="${escapeHtml(u)}">`).join('')}</datalist></label>
     <label class="f">Senha inicial * (mín. 6)<input class="in" id="nuSenha" type="text" autocomplete="off"></label>
     <button class="btn blue" id="btnNU" style="justify-content:center">Criar usuário</button><span class="note">A pessoa pode trocar a senha em "Minha conta"; você pode enviar o link de redefinição a qualquer momento.</span></div></div></div>`;
+  // status ao vivo: atualiza as bolinhas a cada 45 s enquanto a aba estiver aberta
+  const iv = setInterval(async () => { if (location.hash !== '#usr') return clearInterval(iv); try { for (const u of await D.usuarios()) { const el = root.querySelector(`[data-st="${u.id}"]`); if (el) { const st = D.statusEfetivo(u); el.innerHTML = `<span class="st-dot ${st}"></span>${D.STATUS_LABEL[st] || ''}`; } } } catch {} }, 45000);
   let foto = null; $('uplAv').onclick = () => $('avFile').click();
   $('avFile').addEventListener('change', async e => { if (!e.target.files[0]) return; foto = await comprimirImagem(e.target.files[0], 200, .8); $('avPrev').innerHTML = `<img src="${foto}">`; });
   $('nuNome').addEventListener('input', e => { if (!foto) $('avPrev').textContent = iniciais(e.target.value) || '?'; });

@@ -6,9 +6,19 @@ let _cat = null, _catAt = 0, _cfg = null;
 
 export async function config(force) { if (!_cfg || force) _cfg = (await getDoc(doc(db, 'config', 'app'))).data() || {}; return _cfg; }
 
-export async function convenios() {
+/** Convênios visíveis para as atendentes (ativo != false). */
+export async function convenios() { return (await conveniosTodos()).filter(c => c.ativo !== false); }
+/** Todos os convênios (gestão), inclusive ocultos. */
+export async function conveniosTodos() {
   const s = await getDocs(collection(db, 'convenios'));
-  return s.docs.map(d => d.data()).filter(c => c.ativo !== false).sort((a, b) => a.nome.localeCompare(b.nome));
+  return s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+}
+/** Gestão mostra/oculta um convênio para as atendentes (com auditoria). */
+export async function editarConvenio(id, mudancas) {
+  const u = auth.currentUser; const b = writeBatch(db);
+  b.update(doc(db, 'convenios', id), { ...mudancas, atualizadoEm: serverTimestamp(), atualizadoPor: u.uid });
+  b.set(doc(db, 'auditoria', `${Date.now()}_conv_${id}`), { tipo: 'convenio', convenio: id, por: u.uid, em: serverTimestamp(), dados: mudancas });
+  await b.commit();
 }
 
 /** Catálogo inteiro em memória (≈1.4k docs, ~1 MB) com cache de 10 min. */
@@ -165,11 +175,18 @@ export async function converterOrcamento(id) {
   const u = auth.currentUser;
   return updateDoc(doc(db, 'orcamentos', id), { status: 'convertido', convertidoEm: serverTimestamp(), convertidoPor: u.uid, convertidoPorNome: u.displayName || u.email });
 }
+/** Conversão detectada no relatório de atendimento do AutoLAC (nome + valor batendo). */
+export async function converterViaRelatorio(id, info) {
+  const u = auth.currentUser;
+  return updateDoc(doc(db, 'orcamentos', id), { status: 'convertido', convertidoEm: serverTimestamp(), convertidoPor: u.uid, convertidoPorNome: 'Relatório AutoLAC', convertidoVia: 'relatorio', relatorio: info, atualizadoEm: serverTimestamp() });
+}
+/** Registro resumido de uma importação de relatório (o PDF em si nunca é guardado). */
+export const registrarImportacao = dados => addDoc(collection(db, 'importacoes'), { ...dados, por: auth.currentUser.uid, em: serverTimestamp() });
 export const mudarStatus = (id, status) => updateDoc(doc(db, 'orcamentos', id), { status, atualizadoEm: serverTimestamp() });
 /** Lista recente (até 300) — filtros de texto aplicados no cliente para não exigir índices. */
-export async function orcamentosRecentes({ dias = 30, unidade, atendenteUid, status } = {}) {
+export async function orcamentosRecentes({ dias = 30, unidade, atendenteUid, status, max = 400 } = {}) {
   const desde = new Date(Date.now() - dias * 86400000);
-  let q = query(collection(db, 'orcamentos'), where('criadoEm', '>=', desde), orderBy('criadoEm', 'desc'), limit(400));
+  let q = query(collection(db, 'orcamentos'), where('criadoEm', '>=', desde), orderBy('criadoEm', 'desc'), limit(max));
   const s = await getDocs(q); let rows = s.docs.map(d => ({ id: d.id, ...d.data() }));
   if (unidade) rows = rows.filter(r => r.unidade === unidade); if (atendenteUid) rows = rows.filter(r => r.atendenteUid === atendenteUid); if (status) rows = rows.filter(r => r.status === status);
   return rows;
@@ -189,7 +206,15 @@ export async function excluirOrcamento(id) {
 export const transferirOrcamento = (id, { uid, nome }) => updateDoc(doc(db, 'orcamentos', id), { atendenteUid: uid, atendenteNome: nome, transferidoDe: auth.currentUser.uid, transferidoEm: serverTimestamp(), atualizadoEm: serverTimestamp() });
 export const orcamento = async id => { const d = await getDoc(doc(db, 'orcamentos', id)); return d.exists() ? { id: d.id, ...d.data() } : null; };
 /** Status de presença da atendente: online | pausa | almoco | finalizado. */
-export const setStatusAtendente = status => updateDoc(doc(db, 'usuarios', auth.currentUser.uid), { status, statusEm: serverTimestamp() });
+export const setStatusAtendente = status => updateDoc(doc(db, 'usuarios', auth.currentUser.uid), { status, statusEm: serverTimestamp(), ultimoPing: serverTimestamp() });
+export const ping = () => updateDoc(doc(db, 'usuarios', auth.currentUser.uid), { ultimoPing: serverTimestamp() });
+/** Status efetivo para a gestão: sem batimento há mais de 3 min = offline. */
+export function statusEfetivo(u) {
+  const st = u.status || 'offline'; const t = u.ultimoPing?.toDate?.() || u.statusEm?.toDate?.();
+  if (st === 'offline' || !t || Date.now() - t.getTime() > 3 * 60000) return 'offline';
+  return st;
+}
+export const STATUS_LABEL = { online: 'online', ocupado: 'ocupado(a)', pausa: 'pausa', almoco: 'almoço', finalizado: 'finalizado', offline: 'offline' };
 export const ouvirUsuarios = cb => onSnapshot(collection(db, 'usuarios'), s => cb(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.nome || '').localeCompare(b.nome || ''))));
 
 /**

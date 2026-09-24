@@ -25,6 +25,7 @@ service cloud.firestore {
     match /exames/{id}    { allow read: if logado(); allow write: if admin(); }
     match /precos_manuais/{id} { allow read: if logado(); allow write: if admin(); }
     match /auditoria/{id} { allow read: if admin(); allow create: if admin(); allow update, delete: if false; }
+    match /importacoes/{id} { allow read: if admin(); allow create: if admin(); allow update, delete: if false; }
 
     // ---- aprendizado da IA ----
     match /apelidos/{id} {
@@ -49,7 +50,7 @@ service cloud.firestore {
                         && request.resource.data.ativo == true) || admin();
       // o próprio: nome, foto, último acesso · admin: tudo
       allow update: if (logado() && request.auth.uid == uid
-                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nome', 'fotoBase64', 'ultimoAcesso', 'atualizadoEm', 'status', 'statusEm'])) || admin();
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nome', 'fotoBase64', 'ultimoAcesso', 'atualizadoEm', 'status', 'statusEm', 'ultimoPing'])) || admin();
       allow delete: if false;
     }
 
