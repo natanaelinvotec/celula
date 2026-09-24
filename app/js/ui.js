@@ -116,7 +116,7 @@ async function logoDataUrl() {
 }
 const pad5 = n => n != null ? String(n).padStart(5, '0') : '—';
 export const numOrc = pad5;
-export const CENTRAL = { fone: '(67) 99212-2801', instagram: '@celula.ms', site: 'www.celulams.com.br', cnpj: '08.257.861/0001-61' };
+export const CENTRAL = { fone: '(67) 98124-0201', instagram: '@celula.ms', site: 'www.celulams.com.br', cnpj: '08.257.861/0001-61' };
 export const UNIDADES = [
   { nome: 'Matriz', end: 'Rua Abrão Júlio Rahe, 87 · Centro', atend: '06:15–18:00', coleta: 'até 17:30', sab: '06:15–11:00' },
   { nome: 'Coronel Antonino', end: 'Av. Castelo Branco, 630', atend: '06:15–12:00 | 13:00–16:15', coleta: 'até 15:00', sab: '06:15–10:15' },
@@ -125,7 +125,7 @@ export const UNIDADES = [
   { nome: 'Coophavila', end: 'Av. Marinha, 611 · Coophavila II', atend: '06:15–16:30', coleta: 'até 16:00', sab: '06:15–10:15' },
   { nome: 'Júlio de Castilhos', end: 'Av. Júlio de Castilho, 1925 · Lar do Trabalhador', atend: '06:15–12:00 | 13:00–16:15', coleta: 'até 15:00', sab: '06:15–10:15' },
   { nome: 'São Gabriel do Oeste', end: 'Rua João Evangelista Rosa, 72 · Centro', atend: '06:00–11:00 | 13:00–16:00', coleta: 'verificar na unidade', sab: '06:00–10:00' },
-  { nome: 'Coleta Externa', end: 'Residencial e empresarial', atend: 'agendamento 06:15–17:30', coleta: 'pedidos após o horário: dia seguinte', sab: 'agende: (67) 99212-2801', ext: true },
+  { nome: 'Coleta Externa', end: 'Residencial e empresarial', atend: 'agendamento 06:15–17:30', coleta: 'pedidos após o horário: dia seguinte', sab: 'agende: (67) 98124-0201', ext: true },
 ];
 /** Perfis de check-up do site (padrão; a gestão edita em Painel → Perfis, gravados em config/app.perfis). */
 export const PERFIS_PADRAO = [
