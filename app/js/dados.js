@@ -267,16 +267,18 @@ export async function importarAutolac(json, onProgress = () => {}) {
 }
 
 // ---------- usuários: senha e exclusão via Cloud Functions (Admin SDK) ----------
+// A função foi publicada como serviço Cloud Run (console), então tem endereço próprio *.run.app em vez de cloudfunctions.net.
+const FUNCOES_URL = 'https://adminusuarios-458712694272.southamerica-east1.run.app';
 let _fns;
 async function fn(nome) {
-  if (!_fns) { const m = await import('https://www.gstatic.com/firebasejs/12.3.0/firebase-functions.js'); const { app } = await import('./firebase.js'); _fns = { m, f: m.getFunctions(app, 'southamerica-east1') }; }
+  if (!_fns) { const m = await import('https://www.gstatic.com/firebasejs/12.3.0/firebase-functions.js'); const { app } = await import('./firebase.js'); _fns = { m, f: m.getFunctions(app, FUNCOES_URL) }; }
   return _fns.m.httpsCallable(_fns.f, nome);
 }
 /** Gestão define a senha de outra usuária (precisa das Cloud Functions publicadas). */
-export async function definirSenha(uid, senha) { try { return (await (await fn('definirSenha'))({ uid, senha })).data; } catch (e) { throw traduzFn(e); } }
+export async function definirSenha(uid, senha) { try { return (await (await fn('adminUsuarios'))({ acao: 'senha', uid, senha })).data; } catch (e) { throw traduzFn(e); } }
 /** Gestão exclui a conta de login + perfil (Cloud Function). Sem a função publicada, cai para desativar + marcar excluído. */
 export async function excluirUsuario(uid) {
-  try { return (await (await fn('excluirUsuario'))({ uid })).data; }
+  try { return (await (await fn('adminUsuarios'))({ acao: 'excluir', uid })).data; }
   catch (e) { const err = traduzFn(e); if (err.semFuncao) { await editarUsuario(uid, { ativo: false, excluido: true, excluidoEm: serverTimestamp(), excluidoPor: auth.currentUser.uid }); return { ok: true, soft: true }; } throw err; }
 }
 function traduzFn(e) {
