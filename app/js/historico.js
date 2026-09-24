@@ -47,7 +47,7 @@ export function montarHistorico(el, { perfil, admin }) {
     const b = e.target.closest('button');
     if (b?.dataset.copy1) { copiar(b.dataset.copy1); return; }
     if (b?.dataset.edit) { location.href = `orcamento.html?id=${b.dataset.edit}`; return; }
-    if (b?.dataset.pdf) { const o = rows.find(r => r.id === b.dataset.pdf); try { await gerarPdf(o); } catch (err) { toast('Não consegui gerar o PDF: ' + err.message); } return; }
+    if (b?.dataset.pdf) { const o = rows.find(r => r.id === b.dataset.pdf); try { await gerarPdf(o, { unitario: !!o.unitarioLiberado || admin }); } catch (err) { toast('Não consegui gerar o PDF: ' + err.message); } return; }
     if (b?.dataset.del) {
       const o = rows.find(r => r.id === b.dataset.del);
       if (b.dataset.armed !== '1') { b.dataset.armed = '1'; b.style.background = 'var(--crit-50)'; b.style.color = 'var(--red)'; toast(`Clique de novo na lixeira para EXCLUIR o orçamento #${numOrc(o.numero)} (não tem volta).`); setTimeout(() => { b.dataset.armed = ''; b.style.background = ''; b.style.color = ''; }, 5000); return; }

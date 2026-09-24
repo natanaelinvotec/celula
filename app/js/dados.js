@@ -106,6 +106,20 @@ export async function solicitar({ orcamentoId, orcamentoNumero, textoLido, norma
   });
   return ref.id;
 }
+/** Atendente pede à gestão para liberar a impressão do orçamento com valores unitários. */
+export async function solicitarLiberacaoUnitario({ orcamentoId, orcamentoNumero, paciente, motivo }) {
+  const u = auth.currentUser;
+  const ref = await addDoc(collection(db, 'solicitacoes'), { status: 'pendente', tipo: 'valor_unitario', orcamentoId, orcamentoNumero: orcamentoNumero || null, textoLido: `Liberar valores unitários — ${paciente || 'orçamento'} #${orcamentoNumero || ''}`.slice(0, 300), normalizadoIA: null, guiaDb: null, convenio: null, setorSugerido: 'Análises Clínicas', motivo: motivo || 'valor_unitario', obs: null, fotos: [], atendenteUid: u.uid, atendenteNome: u.displayName || u.email, criadoEm: serverTimestamp() });
+  return ref.id;
+}
+/** Gestão libera (ou nega) a impressão com valores unitários daquele orçamento. */
+export async function liberarUnitario(sol, liberar = true, motivo) {
+  const u = auth.currentUser; const b = writeBatch(db);
+  if (liberar) b.update(doc(db, 'orcamentos', sol.orcamentoId), { unitarioLiberado: true, unitarioPor: u.uid, unitarioEm: serverTimestamp(), atualizadoEm: serverTimestamp() });
+  b.update(doc(db, 'solicitacoes', sol.id), { status: liberar ? 'aprovada' : 'recusada', motivo: motivo || null, aprovadoPor: u.uid, aprovadoEm: serverTimestamp() });
+  b.set(doc(db, 'auditoria', `${Date.now()}_unit_${sol.orcamentoId}`), { tipo: 'valor_unitario', orcamentoId: sol.orcamentoId, liberado: liberar, por: u.uid, em: serverTimestamp() });
+  await b.commit();
+}
 export const ouvirSolicitacoes = (status, cb) => onSnapshot(query(collection(db, 'solicitacoes'), where('status', '==', status)), s => cb(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (b.criadoEm?.seconds || 0) - (a.criadoEm?.seconds || 0))));
 export const ouvirSolicitacoesDoOrcamento = (orcamentoId, cb) => onSnapshot(query(collection(db, 'solicitacoes'), where('orcamentoId', '==', orcamentoId)), s => cb(s.docs.map(d => ({ id: d.id, ...d.data() }))));
 

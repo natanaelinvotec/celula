@@ -114,6 +114,28 @@ export const UNIDADES = [
   { nome: 'São Gabriel do Oeste', end: 'Rua João Evangelista Rosa, 72 · Centro', atend: '06:00–11:00 | 13:00–16:00', coleta: 'verificar na unidade', sab: '06:00–10:00' },
   { nome: 'Coleta Externa', end: 'Residencial e empresarial', atend: 'agendamento 06:15–17:30', coleta: 'pedidos após o horário: dia seguinte', sab: 'agende: (67) 99212-2801', ext: true },
 ];
+/** Perfis de check-up do site (padrão; a gestão edita em Painel → Perfis, gravados em config/app.perfis). */
+export const PERFIS_PADRAO = [
+  { id: 'saude', nome: 'Perfil Saúde', categoria: 'Básico', cor: 'azul', descricao: 'Avalia anemia, infecções, glicose, colesterol e a função dos seus rins e fígado.', palavras: 'hemograma, glicose, glicemia, colesterol, hdl, ldl, triglicer, creatinina, ureia, tgo, tgp, gama, fosfatase, bilirrubina, urina, eas', ativo: true },
+  { id: 'prime', nome: 'Perfil Saúde Prime', categoria: 'Avançado', cor: 'azul', descricao: 'Visão mais profunda: tireoide, níveis de energia e vitaminas D e B12, essenciais para memória e foco. Inclui todo o Perfil Saúde.', palavras: 'tsh, t4, tireo, vitamina d, vitamina b12, b12, sodio, potassio, magnesio, ferritina, hemograma, glicose, colesterol', ativo: true },
+  { id: 'precaneta', nome: 'Perfil Pré-Caneta', categoria: 'Emagrecimento', cor: 'verde', descricao: 'Garante que o seu emagrecimento seja seguro e eficiente, avaliando pâncreas, insulina e fígado.', palavras: 'insulina, glicose, glicada, hba1c, amilase, lipase, tgo, tgp, gama, triglicer, colesterol, peptideo c, homa', ativo: true },
+  { id: 'biofit', nome: 'Perfil Biofit', categoria: 'Performance', cor: 'vermelho', descricao: 'Para quem quer superar limites: composição corporal, hipertrofia e mais energia no treino.', palavras: 'testosterona, ck, creatina, creatinina, proteina, albumina, ferritina, cortisol, vitamina d, magnesio, zinco, hemograma', ativo: true },
+  { id: 'infantil', nome: 'Perfil Infantil', categoria: 'Cuidado especial', cor: 'verde', descricao: 'Acompanha o ritmo intenso de crescimento e a saúde das crianças.', palavras: 'parasitolog, fezes, hemograma, ferritina, ferro, vitamina d, ige, urina, eas', ativo: true },
+  { id: 'vitamine', nome: 'Perfil Vitamine', categoria: 'Nutrição', cor: 'verde', descricao: 'Descubra se o seu corpo está realmente nutrido e protegido: vitaminas, ferro e minerais.', palavras: 'vitamina, b12, vitamina d, acido folico, folato, ferro, ferritina, zinco, magnesio, calcio, selenio, vitamina a, vitamina e', ativo: true },
+  { id: 'anemia', nome: 'Perfil Anemia', categoria: 'Investigação', cor: 'vermelho', descricao: 'Investiga a fundo as causas do cansaço excessivo e da fraqueza em adultos.', palavras: 'hemograma, ferritina, ferro, transferrina, b12, folato, acido folico, reticulocito, saturacao', ativo: true },
+  { id: 'imunochek', nome: 'Perfil Imunochek', categoria: 'Imunidade', cor: 'azul', descricao: 'Avalia detalhadamente sua resistência contra infecções e vírus.', palavras: 'igg, igm, iga, ige, imunoglobulina, pcr, vhs, hemograma, vitamina d, sorologia, anticorpos, hepatite, hiv', ativo: true },
+  { id: 'personalizado', nome: 'Perfil Personalizado', categoria: 'Sob medida', cor: 'vermelho', descricao: 'Montado conforme a sua necessidade, conversando com um de nossos bioquímicos.', palavras: '', ativo: true },
+];
+const semAcento = t => String(t || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+/** Escolhe até `n` perfis pelos exames do orçamento (pontua palavras-chave); completa com os primeiros ativos. */
+export function sugerirPerfis(perfis, nomesExames, n = 3) {
+  const ativos = (perfis || PERFIS_PADRAO).filter(p => p.ativo !== false);
+  const txt = ' ' + nomesExames.map(semAcento).join(' | ') + ' ';
+  const pont = ativos.map(p => { const ks = String(p.palavras || '').split(',').map(k => semAcento(k.trim())).filter(Boolean); const hits = ks.filter(k => txt.includes(k)); return { p, s: hits.length / Math.max(3, ks.length) + hits.length * 0.02, hits: hits.length }; });
+  const comHit = pont.filter(x => x.hits > 0).sort((a, b) => b.s - a.s).map(x => x.p);
+  const resto = ativos.filter(p => !comHit.includes(p) && p.id !== 'personalizado');
+  const esc = [...comHit, ...resto].slice(0, n); return { escolhidos: esc, indicado: comHit[0] || null, outros: ativos.filter(p => !esc.includes(p)) };
+}
 /** Maior jejum entre os exames (em horas) a partir do campo `jejum` do catálogo; null = nenhum exige. */
 export function maiorJejum(exames) {
   let max = 0, txt = '';
@@ -121,12 +143,13 @@ export function maiorJejum(exames) {
   return max ? { horas: max, texto: txt } : null;
 }
 /** Gera e baixa o PDF do orçamento no layout Célula (A4). `orc` = documento gravado (numero, paciente, itens, total…). */
-export async function gerarPdf(orc, { validadeDias = 7, baixar = true } = {}) {
+export async function gerarPdf(orc, { validadeDias = 7, baixar = true, unitario = false } = {}) {
   const JsPDF = await jspdf(); const d = new JsPDF({ unit: 'mm', format: 'a4' });
   const AZ = [30, 64, 175], AZ2 = [37, 99, 235], VM = [211, 26, 33], CZ = [100, 116, 139], TX = [27, 37, 64], F = [244, 246, 251], LN = [230, 233, 240];
   const W = 210, ML = 11, MR = 11, CW = W - ML - MR;
   // catálogo para jejum/setor
-  let cat = {}; try { const D = await import('./dados.js'); cat = await D.catalogoMap(); } catch {}
+  let cat = {}, cfgApp = {}; try { const D = await import('./dados.js'); cat = await D.catalogoMap(); cfgApp = await D.config(); } catch {}
+  const mostraValor = unitario || !!orc.unitarioLiberado; // padrão: só o total (valor unitário só com liberação da gestão)
   const itens = (orc.itens || []); const exs = itens.map(i => cat[i.mnemonico] || {});
   const jej = maiorJejum(exs);
   // ---- cabeçalho
@@ -148,8 +171,8 @@ export async function gerarPdf(orc, { validadeDias = 7, baixar = true } = {}) {
   for (const [k, v, f] of cards) { const cw = (CW - 4) * f / tot; d.setFillColor(...F); d.roundedRect(cx, y, cw, 11, 2, 2, 'F'); d.setTextColor(...CZ); d.setFont('helvetica', 'bold'); d.setFontSize(6.5); d.text(k, cx + 3, y + 4); d.setTextColor(...TX); d.setFontSize(10); d.text(d.splitTextToSize(String(v), cw - 6)[0], cx + 3, y + 8.8); cx += cw + 2; }
   y += 14;
   // ---- tabela de exames (sem mnemônico)
-  const body = itens.map((i, k) => [i.nome || '', i.setor || exs[k].setor || '', i.prazoDias != null ? `${i.prazoDias} ${i.prazoDias === 1 ? 'dia útil' : 'dias úteis'}` : '—', i.valor != null ? brl(i.valor) : 'sem valor']);
-  d.autoTable({ startY: y, margin: { left: ML, right: MR }, head: [['EXAME', 'SETOR', 'PRAZO', 'VALOR']], body,
+  const body = itens.map((i, k) => { const r = [i.nome || '', i.setor || exs[k].setor || '', i.prazoDias != null ? `${i.prazoDias} ${i.prazoDias === 1 ? 'dia útil' : 'dias úteis'}` : '—']; if (mostraValor) r.push(i.valor != null ? brl(i.valor) : 'sem valor'); return r; });
+  d.autoTable({ startY: y, margin: { left: ML, right: MR }, head: [mostraValor ? ['EXAME', 'SETOR', 'PRAZO', 'VALOR'] : ['EXAME', 'SETOR', 'PRAZO']], body,
     styles: { font: 'helvetica', fontSize: 9, cellPadding: { top: 2.4, bottom: 2.4, left: 2.5, right: 2.5 }, textColor: TX, lineColor: LN, lineWidth: { bottom: 0.2 } },
     headStyles: { fillColor: AZ, textColor: 255, fontSize: 7.5, fontStyle: 'bold' }, alternateRowStyles: { fillColor: [249, 250, 252] },
     columnStyles: { 0: { cellWidth: 'auto' }, 1: { cellWidth: 36 }, 2: { cellWidth: 26, textColor: AZ, fontStyle: 'bold' }, 3: { cellWidth: 26, halign: 'right', fontStyle: 'bold' } } });
@@ -157,8 +180,8 @@ export async function gerarPdf(orc, { validadeDias = 7, baixar = true } = {}) {
   // ---- faixa do total
   d.setFillColor(...AZ2); d.roundedRect(ML, y, CW, 15, 2.5, 2.5, 'F');
   d.setTextColor(255); d.setFont('helvetica', 'bold'); d.setFontSize(8.5); d.text(`${itens.length} exame${itens.length !== 1 ? 's' : ''}`, ML + 4, y + 5.5);
-  d.setFont('helvetica', 'normal'); d.text(' · prazos em dias úteis contados a partir da coleta · pagamento na coleta', ML + 4 + d.getTextWidth(`${itens.length} exame${itens.length !== 1 ? 's' : ''}`), y + 5.5);
-  d.setFontSize(7.5); d.text('Exames sem valor dependem de conferência da gestão e serão informados por WhatsApp.', ML + 4, y + 10.5);
+  d.setFont('helvetica', 'normal'); d.text(' · prazos em dias úteis contados a partir da coleta · atendimento por ordem de chegada', ML + 4 + d.getTextWidth(`${itens.length} exame${itens.length !== 1 ? 's' : ''}`), y + 5.5);
+  d.setFontSize(7.5); d.text('Para agilizar o atendimento, solicite o pré-cadastro deste orçamento: reduz o tempo com a atendente e agiliza a coleta.', ML + 4, y + 10.5);
   d.setFontSize(7); d.text('TOTAL DO ORÇAMENTO', W - MR - 4, y + 5, { align: 'right' }); d.setFont('helvetica', 'bold'); d.setFontSize(16); d.text(brl(orc.total || 0), W - MR - 4, y + 12, { align: 'right' });
   y += 19;
   // ---- preparo (maior jejum em negrito, mesmo tamanho)
@@ -169,9 +192,27 @@ export async function gerarPdf(orc, { validadeDias = 7, baixar = true } = {}) {
   partes.push(['Traga documento com foto e o pedido médico original. Este orçamento não substitui a solicitação médica e pode sofrer alteração após conferência do pedido na unidade.', 'normal']);
   let px = ML, py = y; const maxX = W - MR;
   for (const [t, st] of partes) { d.setFont('helvetica', st); for (const w of t.split(/(\s+)/)) { if (!w) continue; const ww = d.getTextWidth(w); if (px + ww > maxX && w.trim()) { px = ML; py += 4; } if (px === ML && !w.trim()) continue; d.text(w, px, py); px += ww; } }
-  y = py + 6;
+  y = py + 5;
+  // ---- perfis de check-up sugeridos pelos exames
+  const perfis = Array.isArray(cfgApp.perfis) && cfgApp.perfis.length ? cfgApp.perfis : PERFIS_PADRAO;
+  const sug = sugerirPerfis(perfis, itens.map(i => i.nome || ''), 3);
+  if (sug.escolhidos.length) {
+    d.setTextColor(...AZ); d.setFont('helvetica', 'bold'); d.setFontSize(9); d.text('CONHEÇA NOSSOS PERFIS DE CHECK-UP', ML, y);
+    d.setTextColor(...CZ); d.setFont('helvetica', 'normal'); d.setFontSize(7); d.text('sugeridos a partir dos exames deste orçamento · valores especiais', W - MR, y, { align: 'right' }); y += 3;
+    const pw = (CW - 4) / 3, ph = 19; const cores = { azul: [[30, 58, 138], [37, 99, 235]], verde: [[15, 118, 110], [20, 184, 166]], vermelho: [[127, 29, 29], [211, 26, 33]] };
+    sug.escolhidos.forEach((p, i) => {
+      const x = ML + i * (pw + 2); const c = cores[p.cor] || cores.azul;
+      d.setFillColor(...c[0]); d.roundedRect(x, y, pw, ph, 2, 2, 'F'); d.setFillColor(...c[1]); d.roundedRect(x + pw * 0.55, y, pw * 0.45, ph, 2, 2, 'F'); d.setFillColor(...c[0]); d.rect(x + pw * 0.55, y, 3, ph, 'F');
+      d.setTextColor(255); d.setFont('helvetica', 'bold'); d.setFontSize(5.8); d.text(String(p.categoria || '').toUpperCase(), x + 3, y + 4);
+      if (sug.indicado && sug.indicado.id === p.id) { const t = 'INDICADO PARA VOCÊ'; const tw = d.getTextWidth(t) + 5; d.setFillColor(255, 255, 255); d.roundedRect(x + pw - tw - 2.5, y + 1.8, tw, 4, 2, 2, 'F'); d.setTextColor(...c[0]); d.text(t, x + pw - tw, y + 4.6); d.setTextColor(255); }
+      d.setFontSize(9.5); d.text(p.nome, x + 3, y + 8.6);
+      d.setFont('helvetica', 'normal'); d.setFontSize(6.6); d.text(d.splitTextToSize(p.descricao || '', pw - 6).slice(0, 3), x + 3, y + 12);
+    });
+    y += ph + 3.5;
+    if (sug.outros.length) { d.setTextColor(71, 85, 105); d.setFontSize(7); d.setFont('helvetica', 'normal'); const linha = 'Também: ' + sug.outros.map(p => p.nome.replace(/^Perfil /, '')).join(' · ') + ` — peça na central ${CENTRAL.fone}`; d.text(d.splitTextToSize(linha, CW)[0], ML, y); y += 5; }
+  }
   // ---- unidades (no rodapé da página; se não couber, vai para a próxima)
-  const uh = 24.5, gap = 1.6, uw = (CW - gap * 3) / 4, blocoH = 6 + uh * 2 + gap + 10;
+  const uh = 24.5, gap = 1.6, uw = (CW - gap * 3) / 4, blocoH = 6 + uh * 2 + gap + 16;
   if (y > 297 - 8 - blocoH) { d.addPage(); y = 12; } else y = Math.max(y, 297 - 8 - blocoH);
   d.setTextColor(...AZ); d.setFont('helvetica', 'bold'); d.setFontSize(9); d.text('NOSSAS UNIDADES', ML, y);
   d.setTextColor(...CZ); d.setFont('helvetica', 'normal'); d.setFontSize(7); d.text(`colete em qualquer unidade · ${CENTRAL.site}`, W - MR, y, { align: 'right' });
@@ -192,6 +233,8 @@ export async function gerarPdf(orc, { validadeDias = 7, baixar = true } = {}) {
   d.setFont('helvetica', 'bold'); d.setFontSize(8);
   let fx = chip(ML, CENTRAL.instagram, [225, 48, 108]); fx = chip(fx, `Central de Atendimento ${CENTRAL.fone}`, [37, 211, 102]);
   d.setTextColor(...VM); d.text(CENTRAL.site, W - MR, y, { align: 'right' });
+  d.setTextColor(...CZ); d.setFont('helvetica', 'normal'); d.setFontSize(6.4);
+  d.text(d.splitTextToSize('LGPD (Lei 13.709/2018): seus dados pessoais são usados apenas para este orçamento e para o seu atendimento no Laboratório Célula, não são compartilhados com terceiros e você pode solicitar a exclusão a qualquer momento pela Central de Atendimento.', CW), ML, y + 5);
   const nome = `orcamento-${pad5(orc.numero)}${orc.paciente ? '-' + orc.paciente.replace(/[^\w]+/g, '_').slice(0, 30) : ''}.pdf`;
   if (baixar) d.save(nome); return d;
 }

@@ -2,7 +2,7 @@
 import { exigirLogin, brl, fmtData, fmtDia, toast, escapeHtml, iniciais, comprimirImagem, criarUsuario, resetSenha, norm, SETORES, SETOR_ORDEM } from './firebase.js';
 import { montarShell, setTitulo } from './shell.js';
 import { montarHistorico, STATUS } from './historico.js';
-import { mnemonicoHtml, copiar, fichaExame, fotoZoom, numOrc, ICO } from './ui.js';
+import { mnemonicoHtml, copiar, fichaExame, fotoZoom, numOrc, ICO, PERFIS_PADRAO, sugerirPerfis } from './ui.js';
 import { linhasDoPdf, parseRelatorio, cruzar } from './relatorio.js';
 import * as D from './dados.js';
 
@@ -17,7 +17,7 @@ let pendentes = [], solSel = null, renderSol = null;
 D.ouvirSolicitacoes('pendente', list => { pendentes = list; const b = $('badgeSol'); if (b) { b.textContent = list.length; b.hidden = !list.length; } if (location.hash === '#sol' && renderSol) renderSol(); });
 
 // ---------- roteamento por hash ----------
-const views = { dash: viewDash, sol: viewSol, orc: viewOrc, cat: viewCat, cnv: viewCnv, crm: viewCrm, conv: viewConv, usr: viewUsr, exp: viewExp, cfg: viewCfg };
+const views = { dash: viewDash, sol: viewSol, orc: viewOrc, cat: viewCat, cnv: viewCnv, perf: viewPerf, crm: viewCrm, conv: viewConv, usr: viewUsr, exp: viewExp, cfg: viewCfg };
 async function rota() {
   const k = (location.hash || '#dash').slice(1); const fn = views[k] || viewDash;
   document.querySelectorAll('.nav[data-k]').forEach(a => a.classList.toggle('on', a.dataset.k === (k === 'orc' ? 'hist' : k)));
@@ -102,13 +102,20 @@ async function viewSol() {
   renderSol = () => {
     if (tab === 'pendente') lista = pendentes;
     $('solN').innerHTML = `<i></i>${lista.length} ${tab === 'pendente' ? 'pendentes' : tab + 's'}`;
-    $('solq').innerHTML = lista.map(s => { const cor = SETORES[s.setorSugerido]?.cor || 'var(--warn)'; return `<div class="sq ${s.id === solSel ? 'on' : ''}" data-id="${s.id}"><span class="st" style="background:${cor}"></span><div><b>${escapeHtml(s.sugestao?.nome || s.guiaDb?.nome || s.normalizadoIA || s.textoLido)}</b>${s.sugestao ? ' <span class="pill warn" title="a atendente preencheu dados">✎</span>' : ''}<small>lido no pedido: <span class="hand">${escapeHtml(s.textoLido)}</span>${s.motivo === 'fora_autolac' ? ` · <b style="color:var(--red)">fora do AutoLAC — possível nova negociação</b>` : s.guiaDb ? ` · <span class="mn">${escapeHtml(s.guiaDb.mnemonico)}</span> sem valor em ${escapeHtml(s.convenio)}` : ' · não está no catálogo'}${s.fotos?.length ? ' · 📷' : ''}${s.status !== 'pendente' ? ` · <b>${s.status}</b> ${s.mnemonico || ''}` : ''}</small></div><div class="who"><span class="av s">${escapeHtml(iniciais(s.atendenteNome))}</span>${escapeHtml((s.atendenteNome || '').split(' ')[0])}<br>#${s.orcamentoNumero || '—'} · ${fmtData(s.criadoEm)}</div></div>`; }).join('') || '<div class="note" style="padding:20px;text-align:center">Nada aqui.</div>';
+    $('solq').innerHTML = lista.map(s => { const cor = SETORES[s.setorSugerido]?.cor || 'var(--warn)'; if (s.tipo === 'valor_unitario') return `<div class="sq ${s.id === solSel ? 'on' : ''}" data-id="${s.id}"><span class="st" style="background:var(--blue)"></span><div><b>Liberar valores unitários no PDF</b><small>orçamento #${numOrc(s.orcamentoNumero)}${s.status !== 'pendente' ? ` · <b>${s.status}</b>` : ''}</small></div><div class="who"><span class="av s">${escapeHtml(iniciais(s.atendenteNome))}</span>${escapeHtml((s.atendenteNome || '').split(' ')[0])}<br>${fmtData(s.criadoEm)}</div></div>`; return `<div class="sq ${s.id === solSel ? 'on' : ''}" data-id="${s.id}"><span class="st" style="background:${cor}"></span><div><b>${escapeHtml(s.sugestao?.nome || s.guiaDb?.nome || s.normalizadoIA || s.textoLido)}</b>${s.sugestao ? ' <span class="pill warn" title="a atendente preencheu dados">✎</span>' : ''}<small>lido no pedido: <span class="hand">${escapeHtml(s.textoLido)}</span>${s.motivo === 'fora_autolac' ? ` · <b style="color:var(--red)">fora do AutoLAC — possível nova negociação</b>` : s.guiaDb ? ` · <span class="mn">${escapeHtml(s.guiaDb.mnemonico)}</span> sem valor em ${escapeHtml(s.convenio)}` : ' · não está no catálogo'}${s.fotos?.length ? ' · 📷' : ''}${s.status !== 'pendente' ? ` · <b>${s.status}</b> ${s.mnemonico || ''}` : ''}</small></div><div class="who"><span class="av s">${escapeHtml(iniciais(s.atendenteNome))}</span>${escapeHtml((s.atendenteNome || '').split(' ')[0])}<br>#${s.orcamentoNumero || '—'} · ${fmtData(s.criadoEm)}</div></div>`; }).join('') || '<div class="note" style="padding:20px;text-align:center">Nada aqui.</div>';
   };
   renderSol();
   root.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', async () => { root.querySelectorAll('[data-tab]').forEach(x => x.classList.toggle('on', x === b)); tab = b.dataset.tab; if (offTab) { offTab(); offTab = null; } if (tab !== 'pendente') offTab = D.ouvirSolicitacoes(tab, l => { lista = l.slice(0, 100); renderSol(); }); else renderSol(); }));
   $('solq').addEventListener('click', e => { const c = e.target.closest('[data-id]'); if (!c) return; solSel = c.dataset.id; renderSol(); form(lista.find(s => s.id === solSel)); });
   async function form(s) {
     if (!s) return; $('solRef').textContent = `orçamento #${s.orcamentoNumero || '—'} · ${s.atendenteNome}`;
+    if (s.tipo === 'valor_unitario') {
+      $('solForm').innerHTML = s.status !== 'pendente' ? `<div class="note">Pedido ${s.status}.</div>` : `<div class="form"><div class="full note" style="background:var(--warn-50);border:1px solid var(--warn);border-radius:8px;padding:8px 10px">A atendente <b>${escapeHtml(s.atendenteNome || '')}</b> pede para imprimir o orçamento <b>#${numOrc(s.orcamentoNumero)}</b> com o valor exame por exame (o padrão do PDF é só o total).</div>
+        <div class="full" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn ok" id="unOk">✓ Liberar valores unitários</button><button class="btn ghost" id="unNo">Negar</button><input class="in" id="unMotivo" placeholder="motivo (opcional)" style="flex:1;min-width:160px"></div></div>`;
+      if (s.status === 'pendente') { $('unOk').onclick = async () => { try { await D.liberarUnitario(s, true); toast(`Liberado — orçamento #${numOrc(s.orcamentoNumero)}`, true); solSel = null; $('solForm').innerHTML = '<div class="note">Selecione um item na fila.</div>'; } catch (e) { toast('Erro: ' + e.message); } };
+        $('unNo').onclick = async () => { try { await D.liberarUnitario(s, false, $('unMotivo').value.trim()); toast('Pedido negado; a atendente foi avisada.'); solSel = null; $('solForm').innerHTML = '<div class="note">Selecione um item na fila.</div>'; } catch (e) { toast('Erro: ' + e.message); } }; }
+      return;
+    }
     if (s.status !== 'pendente') { $('solForm').innerHTML = `<div class="note">Solicitação ${s.status}${s.mnemonico ? ' como <b>' + s.mnemonico + '</b>' : ''}${s.motivo ? ' — motivo: ' + escapeHtml(s.motivo) : ''}.</div>`; return; }
     const g = s.guiaDb; const at = s.sugestao || {}; // at = o que a atendente preencheu
     const sug = at.mnemonico || g?.mnemonico || (norm(at.nome || s.normalizadoIA || s.textoLido).split(' ').map(w => w.slice(0, 3)).join('').slice(0, 8) + '-DB');
@@ -297,6 +304,37 @@ async function viewCrm() {
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = `crm-pacientes_${$('cDe').value}_${$('cAte').value}.csv`; a.click();
   };
   montar();
+}
+
+// ===================== PERFIS DE CHECK-UP =====================
+async function viewPerf() {
+  const c = await D.config(true); let perfis = Array.isArray(c.perfis) && c.perfis.length ? c.perfis.map(p => ({ ...p })) : PERFIS_PADRAO.map(p => ({ ...p }));
+  const cat = await D.catalogo();
+  root.innerHTML = `<div class="card"><div class="card-h"><h2>Perfis de check-up</h2><span class="cnt">${perfis.length} perfis</span><div class="sp"></div><span class="note">Aparecem no PDF do orçamento: os 3 mais ligados aos exames (pelas palavras-chave) + os demais numa linha</span><button class="btn blue sm" id="pfNovo">+ Novo perfil</button></div>
+    <div class="card-b" id="pfList"></div>
+    <div class="card-b" style="border-top:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn ok" id="pfSalvar">Salvar todos</button><button class="btn ghost sm" id="pfPadrao">Restaurar os do site</button><span class="note">Teste: <input class="in" id="pfTeste" placeholder="ex.: hemograma, vitamina d, ferritina" style="width:280px;display:inline-block"> <span id="pfRes"></span></span></div></div>`;
+  const cores = { azul: 'Azul', verde: 'Verde', vermelho: 'Vermelho' };
+  const render = () => {
+    $('pfList').innerHTML = perfis.map((p, i) => `<div class="form" data-i="${i}" style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;grid-template-columns:2fr 1fr 1fr auto auto;align-items:end">
+      <label class="f">Nome<input class="in" data-k="nome" value="${escapeHtml(p.nome || '')}"></label>
+      <label class="f">Categoria (etiqueta)<input class="in" data-k="categoria" value="${escapeHtml(p.categoria || '')}"></label>
+      <label class="f">Cor no PDF<select class="in" data-k="cor">${Object.entries(cores).map(([k, v]) => `<option value="${k}" ${p.cor === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+      <label class="f" style="justify-content:flex-end"><label class="switch"><input type="checkbox" data-k="ativo" ${p.ativo !== false ? 'checked' : ''}><i></i>Ativo</label></label>
+      <div style="display:flex;gap:4px"><button class="ib" title="Subir" data-up="${i}">↑</button><button class="ib" title="Descer" data-down="${i}">↓</button><button class="ib red" title="Excluir" data-del="${i}">${ICO.lixo}</button></div>
+      <label class="f full">Descrição (1 a 2 linhas, como no site)<input class="in" data-k="descricao" value="${escapeHtml(p.descricao || '')}"></label>
+      <label class="f full">Palavras-chave dos exames que puxam este perfil (separe por vírgula; sem acento; pode ser parte da palavra, ex.: "triglicer")<input class="in" data-k="palavras" value="${escapeHtml(p.palavras || '')}"></label></div>`).join('');
+  };
+  const ler = () => { root.querySelectorAll('[data-i]').forEach(box => { const p = perfis[+box.dataset.i]; box.querySelectorAll('[data-k]').forEach(inp => { p[inp.dataset.k] = inp.type === 'checkbox' ? inp.checked : inp.value.trim(); }); if (!p.id) p.id = norm(p.nome).toLowerCase().replace(/\s+/g, '-') || 'perfil' + Date.now(); }); };
+  render();
+  $('pfList').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; ler();
+    if (b.dataset.del != null) { perfis.splice(+b.dataset.del, 1); }
+    if (b.dataset.up != null) { const i = +b.dataset.up; if (i > 0) [perfis[i - 1], perfis[i]] = [perfis[i], perfis[i - 1]]; }
+    if (b.dataset.down != null) { const i = +b.dataset.down; if (i < perfis.length - 1) [perfis[i + 1], perfis[i]] = [perfis[i], perfis[i + 1]]; }
+    render(); });
+  $('pfNovo').onclick = () => { ler(); perfis.push({ id: 'perfil' + Date.now(), nome: 'Perfil Novo', categoria: '', cor: 'azul', descricao: '', palavras: '', ativo: true }); render(); };
+  $('pfPadrao').onclick = () => { perfis = PERFIS_PADRAO.map(p => ({ ...p })); render(); toast('Perfis do site restaurados — clique em Salvar todos'); };
+  $('pfSalvar').onclick = async () => { ler(); try { await D.salvarConfig({ perfis }); toast('Perfis salvos — já valem para os próximos PDFs', true); } catch (e) { toast('Erro: ' + e.message); } };
+  $('pfTeste').addEventListener('input', () => { ler(); const nomes = $('pfTeste').value.split(',').map(x => x.trim()).filter(Boolean); if (!nomes.length) { $('pfRes').textContent = ''; return; } const r = sugerirPerfis(perfis, nomes, 3); $('pfRes').innerHTML = r.escolhidos.map(p => `<span class="pill ${r.indicado?.id === p.id ? 'ok' : ''}">${escapeHtml(p.nome)}${r.indicado?.id === p.id ? ' ★' : ''}</span>`).join(' '); });
 }
 
 // ===================== USUÁRIOS =====================

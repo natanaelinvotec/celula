@@ -57,7 +57,8 @@ root.innerHTML = `
       <div class="sp" style="flex:1"></div>
       <button class="btn ghost" id="btnLimpar">Limpar</button>
       <button class="btn ghost" id="btnTransf" title="Passar este orçamento para outra atendente">Transferir</button>
-      <button class="btn ghost" id="btnPdf" title="Baixar em PDF">${ICO.pdf} PDF</button>
+      <button class="btn ghost" id="btnPdf" title="Baixar em PDF (só o total)">${ICO.pdf} PDF</button>
+      <button class="btn ghost" id="btnUnit" title="Pedir à gestão a liberação do PDF com valor exame por exame">Valores unitários</button>
       <button class="btn ghost" id="btnZap">Enviar por WhatsApp</button>
       <button class="btn blue" id="btnSalvar">Gravar orçamento</button>
     </div></div>
@@ -270,6 +271,7 @@ async function fotosReduzidas() {
 async function onSolicitacoes(sols) {
   let mudou = false;
   for (const s of sols) {
+    if (s.tipo === 'valor_unitario') { if (s.status === 'aprovada' && !st.unitario) { marcarUnitarioLiberado(); aviso('Valores unitários liberados', `A gestão liberou o PDF exame por exame do orçamento #${numOrc(st.numero)} — clique em PDF.`); } if (s.status === 'recusada' && st.unitPedido) { st.unitPedido = false; $('btnUnit').textContent = 'Valores unitários'; aviso('Liberação negada', s.motivo || 'A gestão não liberou os valores unitários.'); } continue; }
     const it = st.itens.find(i => i.solId === s.id); if (!it) continue;
     if (s.status === 'aprovada' && it.status === 'conferencia') {
       const cat = await D.catalogo(true); it.ex = cat.find(c => c.mnemonico === s.mnemonico) || it.ex; it.status = 'ok'; it.conf = 1;
@@ -300,10 +302,19 @@ $('btnSalvar').addEventListener('click', async () => {
 });
 async function baixarPdf() {
   if (!st.itens.length) { toast('Adicione ao menos um exame.'); return; }
-  try { if (!st.id) await garantirOrcamento(); await gerarPdf({ ...montarDados(), numero: st.numero }, { validadeDias: cfg.validadeDias || 7 }); }
+  try { if (!st.id) await garantirOrcamento(); await gerarPdf({ ...montarDados(), numero: st.numero, unitarioLiberado: !!st.unitario }, { validadeDias: cfg.validadeDias || 7, unitario: !!st.unitario }); }
   catch (e) { toast('Não consegui gerar o PDF: ' + e.message); }
 }
 $('btnPdf').addEventListener('click', baixarPdf);
+// ---------- valores unitários: pede liberação à gestão; quando aprovada, o PDF sai exame por exame ----------
+$('btnUnit').addEventListener('click', async () => {
+  if (!st.itens.length) { toast('Adicione ao menos um exame.'); return; }
+  if (st.unitario) { toast('Liberado pela gestão — o PDF já sai com os valores unitários.', true); baixarPdf(); return; }
+  if (st.unitPedido) { toast('Pedido já enviado — aguardando a gestão liberar.'); return; }
+  try { await garantirOrcamento(); await D.solicitarLiberacaoUnitario({ orcamentoId: st.id, orcamentoNumero: st.numero, paciente: $('pac').value.trim() }); st.unitPedido = true; $('btnUnit').textContent = 'Aguardando liberação…'; toast('Pedido enviado — a gestão já vê na fila de solicitações.', true); }
+  catch (e) { toast('Não foi possível pedir a liberação: ' + e.message); }
+});
+function marcarUnitarioLiberado() { st.unitario = true; st.unitPedido = false; $('btnUnit').textContent = '✓ Unitários liberados'; $('btnUnit').classList.add('blue'); $('btnUnit').classList.remove('ghost'); }
 // ---------- transferir para outra atendente ----------
 $('btnTransf').addEventListener('click', async () => {
   if (!st.itens.length) { toast('Nada para transferir ainda.'); return; }
@@ -326,7 +337,7 @@ $('btnZap').addEventListener('click', async () => {
   const tel = soDigitos($('tel').value); window.open(`https://wa.me/${tel ? '55' + tel : ''}?text=${encodeURIComponent(txt)}`, '_blank');
   if (st.id) D.mudarStatus(st.id, 'enviado').catch(() => {});
 });
-$('btnLimpar').addEventListener('click', () => { if (st.offSol) st.offSol(); Object.assign(st, { id: null, numero: null, itens: [], fotos: [], leitura: null, offSol: null, _fotosSol: null }); history.replaceState(null, '', location.pathname); $('prevWrap').hidden = true; $('prev').innerHTML = ''; $('btnRun').disabled = true; $('btnRun').textContent = 'Analisar pedido com a IA'; $('numLbl').textContent = 'novo'; $('leituraInfo').textContent = ''; $('pac').value = ''; $('tel').value = ''; render(); });
+$('btnLimpar').addEventListener('click', () => { if (st.offSol) st.offSol(); Object.assign(st, { id: null, numero: null, itens: [], fotos: [], leitura: null, offSol: null, _fotosSol: null, unitario: false, unitPedido: false }); $('btnUnit').textContent = 'Valores unitários'; $('btnUnit').classList.add('ghost'); $('btnUnit').classList.remove('blue'); history.replaceState(null, '', location.pathname); $('prevWrap').hidden = true; $('prev').innerHTML = ''; $('btnRun').disabled = true; $('btnRun').textContent = 'Analisar pedido com a IA'; $('numLbl').textContent = 'novo'; $('leituraInfo').textContent = ''; $('pac').value = ''; $('tel').value = ''; render(); });
 render();
 
 // ---------- abrir um orçamento existente para editar (orcamento.html?id=...) ----------
@@ -339,6 +350,7 @@ if (idEdit) (async () => {
     $('pac').value = o.paciente || ''; $('tel').value = o.telefone || ''; st.renal = !!o.renal; $('swRenal').checked = st.renal;
     st.manuais = await D.precosManuais(st.convSlug);
     st.itens = (o.itens || []).map(i => { const ex = i.mnemonico ? cat[i.mnemonico] : null; return { uid: Math.random().toString(36).slice(2), lido: i.lido || null, normalizado: i.nome, confIA: 1, conf: 1, cands: [], ex, status: i.status === 'conferencia' ? 'conferencia' : ex ? (i.valor != null ? 'ok' : 'semvalor') : 'miss', valor: i.valor ?? null, prazoDias: i.prazoDias ?? null, origem: null, solId: i.solicitacaoId || null }; });
+    if (o.unitarioLiberado) marcarUnitarioLiberado();
     st.offSol = D.ouvirSolicitacoesDoOrcamento(st.id, onSolicitacoes);
     render(); $('leituraInfo').textContent = `Editando o orçamento #${numOrc(o.numero)} de ${o.atendenteNome || ''}`; toast(`Orçamento #${numOrc(o.numero)} carregado para edição`, true);
   } catch (e) { toast('Erro ao abrir: ' + e.message); }
