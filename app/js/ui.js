@@ -88,35 +88,110 @@ export function aviso(titulo, texto, { som = true, ms = 9000 } = {}) {
 }
 
 // ---------- PDF do orçamento ----------
-let _jspdf;
+let _jspdf, _logo;
 async function jspdf() {
   if (_jspdf) return _jspdf;
   const load = src => new Promise((ok, err) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = err; document.head.appendChild(s); });
-  await load('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
-  await load('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
+  if (!window.jspdf) await load('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+  if (!window.jspdf.jsPDF.API.autoTable) await load('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
   _jspdf = window.jspdf.jsPDF; return _jspdf;
+}
+async function logoDataUrl() {
+  if (_logo) return _logo;
+  try { const b = await (await fetch('img/logo-pdf.png')).blob(); _logo = await new Promise(r => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(b); }); } catch { _logo = null; }
+  return _logo;
 }
 const pad5 = n => n != null ? String(n).padStart(5, '0') : '—';
 export const numOrc = pad5;
-/** Gera e baixa o PDF do orçamento. `orc` = documento gravado (numero, paciente, itens, total…). */
+export const CENTRAL = { fone: '(67) 99212-2801', instagram: '@celula.ms', site: 'www.celulams.com.br', cnpj: '08.257.861/0001-61' };
+export const UNIDADES = [
+  { nome: 'Matriz', end: 'Rua Abrão Júlio Rahe, 87 · Centro', atend: '06:15–18:00', coleta: 'até 17:30', sab: '06:15–11:00' },
+  { nome: 'Coronel Antonino', end: 'Av. Castelo Branco, 630', atend: '06:15–12:00 | 13:00–16:15', coleta: 'até 15:00', sab: '06:15–10:15' },
+  { nome: 'Nova Lima', end: 'Rua Zulmira Borba, 1192', atend: '06:15–11:00 | 13:00–16:15', coleta: 'até 15:00', sab: '06:15–10:15' },
+  { nome: 'Guaicurus', end: 'Av. Guaicurus, 4483 · Jd. Monumento', atend: '06:15–11:30 | 13:30–16:15', coleta: 'até 15:30', sab: '06:15–10:15' },
+  { nome: 'Coophavila', end: 'Av. Marinha, 611 · Coophavila II', atend: '06:15–16:30', coleta: 'até 16:00', sab: '06:15–10:15' },
+  { nome: 'Júlio de Castilhos', end: 'Av. Júlio de Castilho, 1925 · Lar do Trabalhador', atend: '06:15–12:00 | 13:00–16:15', coleta: 'até 15:00', sab: '06:15–10:15' },
+  { nome: 'São Gabriel do Oeste', end: 'Rua João Evangelista Rosa, 72 · Centro', atend: '06:00–11:00 | 13:00–16:00', coleta: 'verificar na unidade', sab: '06:00–10:00' },
+  { nome: 'Coleta Externa', end: 'Residencial e empresarial', atend: 'agendamento 06:15–17:30', coleta: 'pedidos após o horário: dia seguinte', sab: 'agende: (67) 99212-2801', ext: true },
+];
+/** Maior jejum entre os exames (em horas) a partir do campo `jejum` do catálogo; null = nenhum exige. */
+export function maiorJejum(exames) {
+  let max = 0, txt = '';
+  for (const e of exames) { const t = e?.jejum || e?.preparo || ''; const m = t.match(/(\d{1,2})\s*(?:h\b|hora)/i); if (m && +m[1] > max) { max = +m[1]; txt = t; } }
+  return max ? { horas: max, texto: txt } : null;
+}
+/** Gera e baixa o PDF do orçamento no layout Célula (A4). `orc` = documento gravado (numero, paciente, itens, total…). */
 export async function gerarPdf(orc, { validadeDias = 7, baixar = true } = {}) {
   const JsPDF = await jspdf(); const d = new JsPDF({ unit: 'mm', format: 'a4' });
-  const azul = [37, 99, 235], verm = [211, 26, 33], cinza = [100, 116, 139];
-  d.setFillColor(...azul); d.rect(0, 0, 210, 22, 'F'); d.setFillColor(...verm); d.rect(0, 22, 210, 1.5, 'F');
-  d.setTextColor(255); d.setFont('helvetica', 'bold'); d.setFontSize(16); d.text('Célula Diagnósticos', 14, 10);
-  d.setFontSize(10); d.setFont('helvetica', 'normal'); d.text('Central de Atendimento Célula MS · Campo Grande/MS', 14, 16);
-  d.setFontSize(13); d.setFont('helvetica', 'bold'); d.text(`ORÇAMENTO Nº ${pad5(orc.numero)}`, 196, 12, { align: 'right' });
-  d.setTextColor(30); d.setFontSize(10); d.setFont('helvetica', 'normal');
-  const data = orc.criadoEm?.toDate ? orc.criadoEm.toDate() : new Date();
-  const info = [[`Paciente: ${orc.paciente || '—'}`, `Data: ${data.toLocaleDateString('pt-BR')}`], [`Convênio: ${orc.convenioNome || orc.convenio || '—'}`, `Telefone: ${orc.telefone || '—'}`], [`Atendente: ${orc.atendenteNome || '—'}`, `Unidade: ${orc.unidade || '—'}`]];
-  info.forEach((l, i) => { d.text(l[0], 14, 32 + i * 5.5); d.text(l[1], 120, 32 + i * 5.5); });
-  const itens = (orc.itens || []).map(i => [i.mnemonico || '?', i.nome || '', i.setor || '', i.prazoDias != null ? `${i.prazoDias} d.u.` : '—', i.valor != null ? brl(i.valor) : 'sem valor']);
-  d.autoTable({ startY: 50, head: [['Mnemônico', 'Exame', 'Setor', 'Prazo', 'Valor']], body: itens, styles: { fontSize: 8.5, cellPadding: 2 }, headStyles: { fillColor: azul }, columnStyles: { 0: { fontStyle: 'bold', cellWidth: 26 }, 3: { cellWidth: 18 }, 4: { halign: 'right', cellWidth: 26 } }, alternateRowStyles: { fillColor: [244, 245, 249] } });
-  let y = d.lastAutoTable.finalY + 6;
-  d.setFont('helvetica', 'bold'); d.setFontSize(12); d.text(`TOTAL: ${brl(orc.total || 0)}`, 196, y, { align: 'right' });
-  d.setFont('helvetica', 'normal'); d.setFontSize(8.5); d.setTextColor(...cinza); y += 7;
-  [`Validade do orçamento: ${validadeDias} dias. Prazos em dias úteis contados a partir da coleta.`, `Exames sem valor dependem de conferência da gestão. Mnemônicos: ${(orc.mnemonicos || []).join(', ') || '—'}`, `Emitido em ${new Date().toLocaleString('pt-BR')} · Pedidos por IA`]
-    .forEach(t => { d.text(d.splitTextToSize(t, 180), 14, y); y += 5; });
+  const AZ = [30, 64, 175], AZ2 = [37, 99, 235], VM = [211, 26, 33], CZ = [100, 116, 139], TX = [27, 37, 64], F = [244, 246, 251], LN = [230, 233, 240];
+  const W = 210, ML = 11, MR = 11, CW = W - ML - MR;
+  // catálogo para jejum/setor
+  let cat = {}; try { const D = await import('./dados.js'); cat = await D.catalogoMap(); } catch {}
+  const itens = (orc.itens || []); const exs = itens.map(i => cat[i.mnemonico] || {});
+  const jej = maiorJejum(exs);
+  // ---- cabeçalho
+  const logo = await logoDataUrl(); let y = 10;
+  if (logo) d.addImage(logo, 'PNG', ML, y, 22, 21);
+  const tx = ML + (logo ? 26 : 0);
+  d.setTextColor(...AZ); d.setFont('helvetica', 'bold'); d.setFontSize(15); d.text('ORÇAMENTO DE EXAMES', tx, y + 6);
+  d.setTextColor(...CZ); d.setFont('helvetica', 'normal'); d.setFontSize(8.5);
+  d.text(`Central de Atendimento Célula MS · Campo Grande/MS · CNPJ ${CENTRAL.cnpj}`, tx, y + 11.5);
+  const emitido = new Date(); const criado = orc.criadoEm?.toDate ? orc.criadoEm.toDate() : emitido;
+  d.text(`Emitido em ${emitido.toLocaleDateString('pt-BR')} às ${emitido.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} · Atendente: ${orc.atendenteNome || '—'}${orc.unidade ? ' · ' + orc.unidade : ''}`, tx, y + 16);
+  d.setTextColor(...VM); d.setFont('helvetica', 'bold'); d.setFontSize(19); d.text(`Nº ${pad5(orc.numero)}`, W - MR, y + 7, { align: 'right' });
+  const val = new Date(criado.getTime() + validadeDias * 86400000);
+  d.setTextColor(...CZ); d.setFontSize(8.5); d.text(`Validade: ${validadeDias} dias (até ${val.toLocaleDateString('pt-BR')})`, W - MR, y + 13, { align: 'right' });
+  y += 24; d.setDrawColor(...VM); d.setLineWidth(0.9); d.line(ML, y, W - MR, y); y += 4;
+  // ---- cartões de informação
+  const cards = [['PACIENTE', orc.paciente || '—', 1.4], ['CONVÊNIO / TABELA', orc.convenioNome || orc.convenio || '—', 1], ['TELEFONE', orc.telefone || '—', 1]];
+  const tot = cards.reduce((a, c) => a + c[2], 0); let cx = ML;
+  for (const [k, v, f] of cards) { const cw = (CW - 4) * f / tot; d.setFillColor(...F); d.roundedRect(cx, y, cw, 11, 2, 2, 'F'); d.setTextColor(...CZ); d.setFont('helvetica', 'bold'); d.setFontSize(6.5); d.text(k, cx + 3, y + 4); d.setTextColor(...TX); d.setFontSize(10); d.text(d.splitTextToSize(String(v), cw - 6)[0], cx + 3, y + 8.8); cx += cw + 2; }
+  y += 14;
+  // ---- tabela de exames (sem mnemônico)
+  const body = itens.map((i, k) => [i.nome || '', i.setor || exs[k].setor || '', i.prazoDias != null ? `${i.prazoDias} ${i.prazoDias === 1 ? 'dia útil' : 'dias úteis'}` : '—', i.valor != null ? brl(i.valor) : 'sem valor']);
+  d.autoTable({ startY: y, margin: { left: ML, right: MR }, head: [['EXAME', 'SETOR', 'PRAZO', 'VALOR']], body,
+    styles: { font: 'helvetica', fontSize: 9, cellPadding: { top: 2.4, bottom: 2.4, left: 2.5, right: 2.5 }, textColor: TX, lineColor: LN, lineWidth: { bottom: 0.2 } },
+    headStyles: { fillColor: AZ, textColor: 255, fontSize: 7.5, fontStyle: 'bold' }, alternateRowStyles: { fillColor: [249, 250, 252] },
+    columnStyles: { 0: { cellWidth: 'auto' }, 1: { cellWidth: 36 }, 2: { cellWidth: 26, textColor: AZ, fontStyle: 'bold' }, 3: { cellWidth: 26, halign: 'right', fontStyle: 'bold' } } });
+  y = d.lastAutoTable.finalY + 4;
+  // ---- faixa do total
+  d.setFillColor(...AZ2); d.roundedRect(ML, y, CW, 15, 2.5, 2.5, 'F');
+  d.setTextColor(255); d.setFont('helvetica', 'bold'); d.setFontSize(8.5); d.text(`${itens.length} exame${itens.length !== 1 ? 's' : ''}`, ML + 4, y + 5.5);
+  d.setFont('helvetica', 'normal'); d.text(' · prazos em dias úteis contados a partir da coleta · pagamento na coleta', ML + 4 + d.getTextWidth(`${itens.length} exame${itens.length !== 1 ? 's' : ''}`), y + 5.5);
+  d.setFontSize(7.5); d.text('Exames sem valor dependem de conferência da gestão e serão informados por WhatsApp.', ML + 4, y + 10.5);
+  d.setFontSize(7); d.text('TOTAL DO ORÇAMENTO', W - MR - 4, y + 5, { align: 'right' }); d.setFont('helvetica', 'bold'); d.setFontSize(16); d.text(brl(orc.total || 0), W - MR - 4, y + 12, { align: 'right' });
+  y += 19;
+  // ---- preparo (maior jejum em negrito, mesmo tamanho)
+  d.setFontSize(8); d.setTextColor(...CZ);
+  const partes = jej
+    ? [['Preparo: ', 'normal'], [`JEJUM DE ${jej.horas} HORAS`, 'bold'], [` (maior jejum entre os exames deste orçamento; os demais exames podem ser coletados junto). `, 'normal']]
+    : [['Preparo: ', 'normal'], ['NÃO É NECESSÁRIO JEJUM', 'bold'], [' para os exames deste orçamento, salvo orientação médica. ', 'normal']];
+  partes.push(['Traga documento com foto e o pedido médico original. Este orçamento não substitui a solicitação médica e pode sofrer alteração após conferência do pedido na unidade.', 'normal']);
+  let px = ML, py = y; const maxX = W - MR;
+  for (const [t, st] of partes) { d.setFont('helvetica', st); for (const w of t.split(/(\s+)/)) { if (!w) continue; const ww = d.getTextWidth(w); if (px + ww > maxX && w.trim()) { px = ML; py += 4; } if (px === ML && !w.trim()) continue; d.text(w, px, py); px += ww; } }
+  y = py + 6;
+  // ---- unidades (no rodapé da página; se não couber, vai para a próxima)
+  const uh = 24.5, gap = 1.6, uw = (CW - gap * 3) / 4, blocoH = 6 + uh * 2 + gap + 10;
+  if (y > 297 - 8 - blocoH) { d.addPage(); y = 12; } else y = Math.max(y, 297 - 8 - blocoH);
+  d.setTextColor(...AZ); d.setFont('helvetica', 'bold'); d.setFontSize(9); d.text('NOSSAS UNIDADES', ML, y);
+  d.setTextColor(...CZ); d.setFont('helvetica', 'normal'); d.setFontSize(7); d.text(`colete em qualquer unidade · ${CENTRAL.site}`, W - MR, y, { align: 'right' });
+  d.setDrawColor(...LN); d.setLineWidth(0.2); d.line(ML + 34, y - 1, W - MR - 48, y - 1); y += 3;
+  UNIDADES.forEach((u, i) => {
+    const col = i % 4, row = Math.floor(i / 4); const x = ML + col * (uw + gap), yy = y + row * (uh + gap);
+    d.setFillColor(...(u.ext ? F : [255, 255, 255])); d.setDrawColor(...LN); d.setLineWidth(0.25); d.roundedRect(x, yy, uw, uh, 1.6, 1.6, 'FD');
+    d.setFillColor(...(u.ext ? AZ : VM)); d.rect(x + 1.6, yy, uw - 3.2, 0.9, 'F');
+    d.setTextColor(...AZ); d.setFont('helvetica', 'bold'); d.setFontSize(8); d.text(u.nome, x + 2.2, yy + 5);
+    d.setTextColor(71, 85, 105); d.setFont('helvetica', 'normal'); d.setFontSize(6.6); const endL = d.splitTextToSize(u.end, uw - 4.4); d.text(endL[0], x + 2.2, yy + 8.6);
+    const lin = [['Atend.: ', u.atend], ['Coleta: ', u.coleta], ['Sáb.: ', u.sab]]; let ly = yy + 12.6;
+    for (const [k, v] of lin) { d.setTextColor(...AZ); d.setFont('helvetica', 'bold'); d.text(k, x + 2.2, ly); d.setTextColor(51, 65, 85); d.setFont('helvetica', 'normal'); d.text(d.splitTextToSize(v, uw - 4.4 - d.getTextWidth(k))[0], x + 2.2 + d.getTextWidth(k), ly); ly += 3.6; }
+  });
+  y += uh * 2 + gap + 4;
+  // ---- rodapé: redes e central
+  d.setDrawColor(...AZ); d.setLineWidth(0.6); d.line(ML, y, W - MR, y); y += 5;
+  const chip = (x, txt, cor) => { const w = d.getTextWidth(txt) + 11; d.setFillColor(...F); d.roundedRect(x, y - 3.8, w, 5.6, 2.8, 2.8, 'F'); d.setFillColor(...cor); d.circle(x + 3.4, y - 1, 1.5, 'F'); d.setTextColor(...TX); d.text(txt, x + 6.6, y); return x + w + 3; };
+  d.setFont('helvetica', 'bold'); d.setFontSize(8);
+  let fx = chip(ML, CENTRAL.instagram, [225, 48, 108]); fx = chip(fx, `Central de Atendimento ${CENTRAL.fone}`, [37, 211, 102]);
+  d.setTextColor(...VM); d.text(CENTRAL.site, W - MR, y, { align: 'right' });
   const nome = `orcamento-${pad5(orc.numero)}${orc.paciente ? '-' + orc.paciente.replace(/[^\w]+/g, '_').slice(0, 30) : ''}.pdf`;
   if (baixar) d.save(nome); return d;
 }
