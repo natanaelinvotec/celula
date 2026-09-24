@@ -3,7 +3,7 @@
 export const V = '12.3.0';
 export const CDN = `https://www.gstatic.com/firebasejs/${V}/`;
 
-import { initializeApp, getApps } from 'https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js';
+import { initializeApp, getApps, deleteApp } from 'https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail, updatePassword, createUserWithEmailAndPassword, setPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/12.3.0/firebase-auth.js';
 import { getFirestore, doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js';
 
@@ -72,7 +72,7 @@ export async function criarUsuario({ email, senha, nome, papel, unidade, fotoBas
     await setDoc(doc(db, 'usuarios', cred.user.uid), { uid: cred.user.uid, nome, email, papel, unidade, fotoBase64: fotoBase64 || null, ativo: true, criadoEm: serverTimestamp(), criadoPor: auth.currentUser.uid });
     await signOut(secAuth);
     return cred.user.uid;
-  } finally { await sec.delete().catch(() => {}); }
+  } finally { try { await deleteApp(sec); } catch {} } // SDK modular: deleteApp(app), não app.delete()
 }
 
 // ---------- tema ----------

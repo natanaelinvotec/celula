@@ -12,9 +12,10 @@
 import { exigirLogin } from './js/firebase.js';
 import { montarShell } from './js/shell.js';
 import { montarHistorico } from './js/historico.js';
-const { perfil } = await exigirLogin();
+import { config } from './js/dados.js';
+const { perfil } = await exigirLogin(); const cfg = await config().catch(() => ({}));
 const root = montarShell({ perfil, ativo: 'hist', titulo: 'Meus orçamentos', subtitulo: 'busque por paciente, número ou telefone e marque quem veio coletar' });
-montarHistorico(root, { perfil, admin: false });
+montarHistorico(root, { perfil, admin: false, cfg });
 </script>
 </body>
 </html>

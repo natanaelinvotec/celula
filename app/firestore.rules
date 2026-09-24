@@ -80,6 +80,23 @@ service cloud.firestore {
       allow delete: if admin();
     }
 
+    // ---- pré-cadastro do paciente (página pública pre.html, sem login) ----
+    // O paciente só grava se apresentar o token que está impresso no QR/link do orçamento (orcamentos/{id}.preToken).
+    match /precadastros/{orcId} {
+      allow read: if ativo();
+      allow create, update: if request.resource.data.token is string && request.resource.data.token.size() >= 8
+                    && request.resource.data.token == get(/databases/$(database)/documents/orcamentos/$(orcId)).data.preToken
+                    && request.resource.data.keys().hasOnly(['token', 'nome', 'cpf', 'nascimento', 'telefone', 'lgpd', 'enviadoEm', 'orcamentoNumero', 'visto'])
+                    && request.resource.data.nome is string && request.resource.data.nome.size() >= 3 && request.resource.data.nome.size() <= 120
+                    && request.resource.data.cpf is string && request.resource.data.cpf.size() == 11
+                    && request.resource.data.nascimento is string && request.resource.data.nascimento.size() == 10
+                    && request.resource.data.telefone is string && request.resource.data.telefone.size() >= 10 && request.resource.data.telefone.size() <= 13
+                    && request.resource.data.lgpd == true;
+      // recepção marca como visto
+      allow update: if ativo() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['visto', 'vistoPor', 'vistoEm']);
+      allow delete: if admin();
+    }
+
     match /{document=**} { allow read, write: if false; }
   }
 }

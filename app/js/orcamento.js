@@ -11,7 +11,7 @@ const $ = id => document.getElementById(id);
 const CONF_MIN = 0.85;
 
 // ---------- estado ----------
-const st = { id: null, numero: null, itens: [], fotos: [], convenio: null, convSlug: null, renal: false, manuais: {}, leitura: null, offSol: null };
+const st = { id: null, numero: null, itens: [], fotos: [], convenio: null, convSlug: null, renal: false, manuais: {}, leitura: null, offSol: null, descartados: [] };
 const cfg = await D.config(); const convs = ordenarConvenios(perfil.papel === 'admin' ? await D.conveniosTodos() : await D.convenios()); // atendentes só veem convênios visíveis
 // Ordem do seletor: PARTICULAR (preferencial) → TABELA SOCIAL → PAX → PERFIS (A–Z) → demais (A–Z)
 function ordenarConvenios(list) {
@@ -161,8 +161,10 @@ async function adicionarLido(e) {
   if (cands.length) {
     const best = cands[0]; it.ex = best.ex; it.conf = Math.min(e.confianca, best.confianca);
     it.status = (it.conf >= CONF_MIN_CFG && best.via !== 'busca') || best.via === 'apelido' ? 'ok' : 'flag';
+    it.iaMn = best.ex.mnemonico; it.iaVia = best.via || null; it.iaStatus = it.status; // o que a IA sugeriu (acurácia)
     await precificar(it);
   } else {
+    it.iaMn = null; it.iaStatus = 'miss';
     it.conf = e.confianca;
     // existe no catálogo antigo mas está fora do AutoLAC → conferência como possível nova negociação
     const cat = await D.catalogo(); const alvo = [norm(e.normalizado), norm(e.texto)].filter(Boolean);
@@ -259,8 +261,8 @@ $('groups').addEventListener('click', async e => {
   if (b.dataset.ficha) { const cat = await D.catalogoMap(); if (cat[b.dataset.ficha]) fichaExame(cat[b.dataset.ficha]); return; }
   if (b.dataset.edit) { const it = find(b.dataset.edit); it.editar = true; it.abrirBusca = true; render(); document.querySelector(`[data-fix="${it.uid}"]`)?.focus(); return; }
   if (b.dataset.manter) { const it = find(b.dataset.manter); it.editar = false; it.abrirConf = false; render(); return; }
-  if (b.dataset.rm) { st.itens = st.itens.filter(i => i.uid !== b.dataset.rm); render(); return; }
-  if (b.dataset.ok) { const it = find(b.dataset.ok); it.status = 'ok'; it.conf = 1; await precificar(it); render(); D.ensinar(it.lido, it.ex.mnemonico, perfil.unidade); toast(`A IA aprendeu: “${it.lido}” = ${it.ex.mnemonico}`, true); return; }
+  if (b.dataset.rm) { const it = find(b.dataset.rm); if (it?.lido) st.descartados.push({ lido: it.lido, iaMn: it.iaMn || null }); st.itens = st.itens.filter(i => i.uid !== b.dataset.rm); render(); return; }
+  if (b.dataset.ok) { const it = find(b.dataset.ok); it.status = 'ok'; it.conf = 1; it.confirmado = true; await precificar(it); render(); D.ensinar(it.lido, it.ex.mnemonico, perfil.unidade); toast(`A IA aprendeu: “${it.lido}” = ${it.ex.mnemonico}`, true); return; }
   if (b.dataset.pick) { const it = find(b.dataset.pick); await escolher(it, b.dataset.m); return; }
   if (b.dataset.add) { const it = find(b.dataset.add); await escolher(it, b.dataset.m); return; }
   if (b.dataset.digitar) { const it = find(b.dataset.digitar); it.abrirBusca = !it.abrirBusca; render(); if (it.abrirBusca) document.querySelector(`[data-fix="${it.uid}"]`)?.focus(); return; }
@@ -279,6 +281,7 @@ function lerSugestao(it) {
 document.addEventListener('input', e => { const inp = e.target; if (inp.matches('[data-fix]')) { const it = st.itens.find(i => i.uid === inp.dataset.fix); if (it) it.buscaTxt = inp.value; } if (inp.matches('[data-sf]')) { const it = st.itens.find(i => i.uid === inp.closest('[data-confwrap]')?.dataset.confwrap); if (it) lerSugestao(it); } });
 async function escolher(it, mnemonico) {
   const cat = await D.catalogoMap(); const ex = cat[mnemonico]; if (!ex) return;
+  if (it.lido && it.iaMn !== mnemonico) it.corrigido = true; // a atendente trocou o que a IA sugeriu (ou a IA não achou)
   it.ex = ex; it.status = 'ok'; it.conf = 1; it.abrirBusca = false; it.abrirConf = false; it.editar = false; it.fora = null; it.buscaTxt = ''; await precificar(it); render();
 
   if (it.lido) { D.ensinar(it.lido, mnemonico, perfil.unidade); toast(`Corrigido e aprendido: “${it.lido}” = ${mnemonico}`, true); }
@@ -305,7 +308,7 @@ document.addEventListener('click', e => { if (!e.target.closest('.search')) docu
 async function garantirOrcamento(status) {
   const dados = montarDados(status || 'rascunho');
   st.id = await D.gravarOrcamento(dados, st.id);
-  if (!st.numero) { const d = await new Promise(r => { const off = D.ouvirOrcamento(st.id, x => { off(); r(x); }); }); st.numero = d.numero; $('numLbl').textContent = '#' + numOrc(st.numero); }
+  if (!st.numero) { const d = await new Promise(r => { const off = D.ouvirOrcamento(st.id, x => { off(); r(x); }); }); st.numero = d.numero; st.preToken = d.preToken || null; $('numLbl').textContent = '#' + numOrc(st.numero); }
   if (!st.offSol) st.offSol = D.ouvirSolicitacoesDoOrcamento(st.id, onSolicitacoes);
   return st.id;
 }
@@ -343,12 +346,23 @@ async function onSolicitacoes(sols) {
 
 // ---------- gravar / whatsapp / limpar ----------
 function montarDados(status) {
-  const itens = st.itens.map(i => ({ mnemonico: i.ex?.mnemonico || null, nome: i.ex?.nome || i.normalizado || i.lido, setor: i.ex?.setor || null, valor: i.valor ?? null, prazoDias: i.prazoDias ?? null, lido: i.lido || null, status: i.status, solicitacaoId: i.solId || null }));
+  const itens = st.itens.map(i => ({ mnemonico: i.ex?.mnemonico || null, nome: i.ex?.nome || i.normalizado || i.lido, setor: i.ex?.setor || null, valor: i.valor ?? null, prazoDias: i.prazoDias ?? null, lido: i.lido || null, status: i.status, solicitacaoId: i.solId || null, iaMn: i.iaMn ?? null, resultado: resultadoLeitura(i) }));
   const pend = st.itens.some(i => i.status !== 'ok');
   return { status: status || (pend ? 'aguardando_conferencia' : 'gravado'), unidade: perfil.unidade, atendenteNome: perfil.nome, convenio: st.convSlug, convenioNome: st.convenio, renal: st.renal,
     paciente: $('pac').value.trim() || null, pacienteBusca: norm($('pac').value), telefone: $('tel').value.trim() || null, telefoneDigitos: soDigitos($('tel').value),
     itens, total: st.itens.reduce((a, i) => a + (i.valor || 0), 0), qtd: itens.length, mnemonicos: itens.map(i => i.mnemonico).filter(Boolean),
-    leituraIA: st.leitura ? { modelo: st.leitura.modelo, ms: st.leitura.ms, exames: st.leitura.exames.length, medico: st.leitura.medico || null, crm: st.leitura.crm || null } : null };
+    leituraIA: st.leitura ? { modelo: st.leitura.modelo, ms: st.leitura.ms, exames: st.leitura.exames.length, medico: st.leitura.medico || null, crm: st.leitura.crm || null, descartados: st.descartados } : null };
+}
+/** Como terminou cada leitura da IA (para o painel de acurácia): auto = IA acertou sozinha; confirmado = estava em dúvida e a atendente confirmou;
+ *  corrigido = a atendente trocou o exame; conferencia = foi para a gestão; null = item adicionado à mão (não é leitura). */
+function resultadoLeitura(i) {
+  if (!i.lido) return null;
+  if (i.corrigido) return 'corrigido';
+  if (i.status === 'conferencia') return 'conferencia';
+  if (i.resultado) return i.resultado;            // orçamento reaberto: mantém o que já foi apurado
+  if (i.confirmado) return 'confirmado';
+  if (i.status === 'ok' && i.iaStatus === 'ok') return 'auto';
+  return i.status === 'ok' ? 'confirmado' : 'pendente';
 }
 $('btnSalvar').addEventListener('click', async () => {
   if (!st.itens.length) { toast('Adicione ao menos um exame.'); return; }
@@ -362,7 +376,7 @@ $('btnSalvar').addEventListener('click', async () => {
 async function baixarPdf() {
   if (!st.itens.length) { toast('Adicione ao menos um exame.'); return; }
   if (!validarPaciente()) return;
-  try { if (!st.id) await garantirOrcamento(); await gerarPdf({ ...montarDados(), numero: st.numero, unitarioLiberado: !!st.unitario }, { validadeDias: cfg.validadeDias || 7, unitario: !!st.unitario }); }
+  try { if (!st.id) await garantirOrcamento(); if (!st.preToken) st.preToken = await D.garantirPreToken(st.id, { preToken: st.preToken }); await gerarPdf({ ...montarDados(), id: st.id, preToken: st.preToken, numero: st.numero, unitarioLiberado: !!st.unitario }, { validadeDias: cfg.validadeDias || 7, unitario: !!st.unitario }); }
   catch (e) { toast('Não consegui gerar o PDF: ' + e.message); }
 }
 $('btnPdf').addEventListener('click', baixarPdf);
@@ -398,7 +412,7 @@ $('btnZap').addEventListener('click', async () => {
   const tel = soDigitos($('tel').value); window.open(`https://wa.me/${tel ? '55' + tel : ''}?text=${encodeURIComponent(txt)}`, '_blank');
   if (st.id) D.mudarStatus(st.id, 'enviado').catch(() => {});
 });
-$('btnLimpar').addEventListener('click', () => { if (st.offSol) st.offSol(); Object.assign(st, { id: null, numero: null, itens: [], fotos: [], leitura: null, offSol: null, _fotosSol: null, unitario: false, unitPedido: false }); $('btnUnit').textContent = 'Valores unitários'; $('btnUnit').classList.add('ghost'); $('btnUnit').classList.remove('blue'); history.replaceState(null, '', location.pathname); $('prevWrap').hidden = true; $('prev').innerHTML = ''; $('btnRun').disabled = true; $('btnRun').textContent = 'Analisar pedido com a IA'; $('numLbl').textContent = 'novo'; $('leituraInfo').textContent = ''; $('pac').value = ''; $('tel').value = ''; $('pac').style.borderColor = ''; $('tel').style.borderColor = ''; render(); });
+$('btnLimpar').addEventListener('click', () => { if (st.offSol) st.offSol(); Object.assign(st, { id: null, numero: null, itens: [], fotos: [], leitura: null, offSol: null, _fotosSol: null, unitario: false, unitPedido: false, preToken: null, descartados: [] }); $('btnUnit').textContent = 'Valores unitários'; $('btnUnit').classList.add('ghost'); $('btnUnit').classList.remove('blue'); history.replaceState(null, '', location.pathname); $('prevWrap').hidden = true; $('prev').innerHTML = ''; $('btnRun').disabled = true; $('btnRun').textContent = 'Analisar pedido com a IA'; $('numLbl').textContent = 'novo'; $('leituraInfo').textContent = ''; $('pac').value = ''; $('tel').value = ''; $('pac').style.borderColor = ''; $('tel').style.borderColor = ''; render(); });
 render();
 
 // ---------- abrir um orçamento existente para editar (orcamento.html?id=...) ----------
@@ -406,11 +420,11 @@ const idEdit = new URLSearchParams(location.search).get('id');
 if (idEdit) (async () => {
   try {
     const o = await D.orcamento(idEdit); if (!o) { toast('Orçamento não encontrado.'); return; }
-    const cat = await D.catalogoMap(); st.id = o.id; st.numero = o.numero; $('numLbl').textContent = '#' + numOrc(o.numero);
+    const cat = await D.catalogoMap(); st.id = o.id; st.numero = o.numero; st.preToken = o.preToken || null; $('numLbl').textContent = '#' + numOrc(o.numero);
     if (o.convenio && convs.some(c => c.slug === o.convenio)) { $('conv').value = o.convenio; st.convSlug = o.convenio; st.convenio = o.convenioNome || convs.find(c => c.slug === o.convenio)?.nome; }
     $('pac').value = o.paciente || ''; $('tel').value = o.telefone || ''; st.renal = false;
     st.manuais = await D.precosManuais(st.convSlug);
-    st.itens = (o.itens || []).map(i => { const ex = i.mnemonico ? cat[i.mnemonico] : null; return { uid: Math.random().toString(36).slice(2), lido: i.lido || null, normalizado: i.nome, confIA: 1, conf: 1, cands: [], ex, status: i.status === 'conferencia' ? 'conferencia' : ex ? (i.valor != null ? 'ok' : 'semvalor') : 'miss', valor: i.valor ?? null, prazoDias: i.prazoDias ?? null, origem: null, solId: i.solicitacaoId || null }; });
+    st.itens = (o.itens || []).map(i => { const ex = i.mnemonico ? cat[i.mnemonico] : null; return { uid: Math.random().toString(36).slice(2), lido: i.lido || null, normalizado: i.nome, confIA: 1, conf: 1, cands: [], ex, status: i.status === 'conferencia' ? 'conferencia' : ex ? (i.valor != null ? 'ok' : 'semvalor') : 'miss', valor: i.valor ?? null, prazoDias: i.prazoDias ?? null, origem: null, solId: i.solicitacaoId || null, iaMn: i.iaMn ?? null, resultado: i.resultado || null }; });
     if (o.unitarioLiberado) marcarUnitarioLiberado();
     st.offSol = D.ouvirSolicitacoesDoOrcamento(st.id, onSolicitacoes);
     render(); $('leituraInfo').textContent = `Editando o orçamento #${numOrc(o.numero)} de ${o.atendenteNome || ''}`; toast(`Orçamento #${numOrc(o.numero)} carregado para edição`, true);

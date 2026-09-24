@@ -1,7 +1,7 @@
 // painel.js — Painel Gerencial (admin): dashboard, solicitações, orçamentos, catálogo, usuários, exportar, configurações.
 import { exigirLogin, brl, fmtData, fmtDia, toast, escapeHtml, iniciais, comprimirImagem, criarUsuario, resetSenha, norm, SETORES, SETOR_ORDEM } from './firebase.js';
 import { montarShell, setTitulo } from './shell.js';
-import { montarHistorico, STATUS } from './historico.js';
+import { montarHistorico, montarLembretes, STATUS } from './historico.js';
 import { mnemonicoHtml, copiar, fichaExame, fotoZoom, numOrc, ICO, PERFIS_PADRAO, sugerirPerfis } from './ui.js';
 import { linhasDoPdf, parseRelatorio, cruzar } from './relatorio.js';
 import * as D from './dados.js';
@@ -10,14 +10,15 @@ const { perfil } = await exigirLogin({ papel: 'admin' });
 const root = montarShell({ perfil, ativo: 'dash', titulo: 'Dashboard', painel: true });
 const $ = id => document.getElementById(id);
 const cfg = await D.config();
-const TITLES = { dash: ['Dashboard', 'produção da central de atendimento'], sol: ['Solicitações de exames', 'exames lidos nos pedidos que ainda não existem no AutoLAC'], orc: ['Orçamentos', 'histórico de todas as atendentes'], cat: ['Catálogo de exames', 'valores por convênio, prazos e visibilidade'], usr: ['Usuários', 'equipe, papéis e senhas'], exp: ['Exportar atendimentos', 'quem veio coletar, por período e atendente'], cfg: ['Configurações', 'regras do sistema e sua conta'] };
+const TITLES = { dash: ['Dashboard', 'produção da central de atendimento'], sol: ['Solicitações de exames', 'exames lidos nos pedidos que ainda não existem no AutoLAC'], orc: ['Orçamentos', 'histórico de todas as atendentes'], cat: ['Catálogo de exames', 'valores por convênio, prazos e visibilidade'], usr: ['Usuários', 'equipe, papéis e senhas'], exp: ['Exportar atendimentos', 'quem veio coletar, por período e atendente'], cfg: ['Configurações', 'regras do sistema e sua conta'], ia: ['Acurácia da IA', 'quanto a leitura automática acerta e o que a memória já aprendeu'] };
 
 // fila de solicitações em tempo real (badge + tela)
 let pendentes = [], solSel = null, renderSol = null;
+D.orcamentosParaLembrete({ dias: Number(cfg.lembreteDias) || 3 }).then(l => { const b = $('badgeLem'); if (b) { b.textContent = l.length; b.hidden = !l.length; } }).catch(() => {});
 D.ouvirSolicitacoes('pendente', list => { pendentes = list; const b = $('badgeSol'); if (b) { b.textContent = list.length; b.hidden = !list.length; } if (location.hash === '#sol' && renderSol) renderSol(); });
 
 // ---------- roteamento por hash ----------
-const views = { dash: viewDash, sol: viewSol, orc: viewOrc, cat: viewCat, cnv: viewCnv, perf: viewPerf, crm: viewCrm, conv: viewConv, usr: viewUsr, exp: viewExp, cfg: viewCfg };
+const views = { dash: viewDash, sol: viewSol, orc: viewOrc, cat: viewCat, cnv: viewCnv, perf: viewPerf, crm: viewCrm, conv: viewConv, ia: viewIA, usr: viewUsr, exp: viewExp, cfg: viewCfg };
 async function rota() {
   const k = (location.hash || '#dash').slice(1); const fn = views[k] || viewDash;
   document.querySelectorAll('.nav[data-k]').forEach(a => a.classList.toggle('on', a.dataset.k === (k === 'orc' ? 'hist' : k)));
@@ -55,9 +56,11 @@ async function viewDash() {
     <div class="cal"><div class="h"><span>${mesNome}</span></div><div class="g" id="calGrid"></div><div class="note" style="color:#fff;opacity:.85;margin-top:10px">Número = orçamentos no dia · vermelho: hoje</div></div>
     <div class="card"><div class="card-h"><h2>Quem produz mais</h2><span class="cnt">orçamentos no mês</span></div><div class="card-b"><div class="rank" id="rank">${rank.map((a, i) => `<div class="row"><span class="av s">${escapeHtml(iniciais(a.nome))}</span><div><div class="nm"><span>${i + 1}º ${escapeHtml(a.nome)} <small style="color:var(--muted)">· ${escapeHtml(a.un || '')}</small></span><b>${a.orc}</b></div><div class="bar"><i style="width:${a.orc / (rank[0]?.orc || 1) * 100}%;${i === 0 ? 'background:var(--c3)' : ''}"></i></div></div><span class="pill ok">${a.orc ? Math.round(a.conv / a.orc * 100) : 0}%</span></div>`).join('') || '<span class="note">Sem orçamentos neste mês ainda.</span>'}</div></div></div>
     <div class="card"><div class="card-h"><h2>Conversão por atendente</h2><span class="cnt">coletas ÷ orçamentos</span></div><div class="card-b"><svg class="chart" id="chBars" viewBox="0 0 320 ${Math.max(60, 24 + rank.length * 30)}"></svg></div></div>
+    <div class="card" id="cardIA"><div class="card-h"><h2>Acurácia da IA</h2><span class="cnt">últimos 30 dias · <a href="#ia" style="color:var(--blue)">ver detalhes</a></span></div><div class="card-b"><span class="note">Calculando…</span></div></div>
     <div class="card"><div class="card-h"><h2>Atividade recente</h2></div><div class="card-b"><div class="feed">${rows.slice(0, 8).map(r => `<div class="it"><span class="av s">${escapeHtml(iniciais(r.atendenteNome))}</span><div><b>${escapeHtml(r.atendenteNome)} ${r.status === 'convertido' ? 'converteu' : 'gravou'} o orçamento #${numOrc(r.numero)} ${r.paciente ? '· ' + escapeHtml(r.paciente) : ''}</b><small>${fmtData(r.criadoEm)} · ${escapeHtml(r.unidade || '')} · ${brl(r.total)}</small></div></div>`).join('') || '<span class="note">Nada ainda.</span>'}</div></div></div>
   </div>`;
   lineChart(sem); donut(top, mes.length); bars(rank); calendar(mes);
+  D.acuraciaIA({ dias: 30 }).then(a => { const c = $('cardIA')?.querySelector('.card-b'); if (c) c.innerHTML = resumoIA(a); }).catch(e => { const c = $('cardIA')?.querySelector('.card-b'); if (c) c.innerHTML = `<span class="note">${escapeHtml(e.message)}</span>`; });
   // equipe: quem está online / pausa / almoço agora
   D.usuarios().then(us => { const at = us.filter(u => u.ativo !== false); const on = at.filter(u => D.statusEfetivo(u) === 'online'); const k = $('kOnline'); if (k) k.innerHTML = `aguardando aprovação · <b>${on.length}/${at.length}</b> da equipe online`;
     const feed = root.querySelector('.feed'); if (feed) feed.insertAdjacentHTML('beforebegin', `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${at.map(u => { const st = D.statusEfetivo(u); return `<span class="pill" title="${escapeHtml(u.nome)}"><span class="st-dot ${st}"></span>${escapeHtml((u.nome || '').split(' ')[0])} · ${D.STATUS_LABEL[st] || st}</span>`; }).join('')}</div>`); }).catch(() => {});
@@ -91,6 +94,40 @@ function calendar(mes) {
   let s = ['DO', 'SE', 'TE', 'QA', 'QI', 'SX', 'SA'].map(d => `<div class="wd">${d}</div>`).join(''); for (let i = 0; i < first; i++) s += '<div></div>';
   for (let d = 1; d <= nd; d++) s += `<div class="${d === hoje.getDate() ? 'tod' : ''} ${porDia[d] ? 'mk' : ''}" title="${porDia[d] || 0} orçamentos">${d}${porDia[d] ? `<small style="display:block;font-size:.6rem;opacity:.8">${porDia[d]}</small>` : ''}</div>`;
   $('calGrid').innerHTML = s;
+}
+
+// ===================== ACURÁCIA DA IA =====================
+const RES_LABEL = { auto: 'Acertou sozinha', confirmado: 'Em dúvida, confirmada', corrigido: 'Corrigida pela atendente', conferencia: 'Foi para conferência', pendente: 'Ainda pendente', descartado: 'Removida (leu a mais)' };
+const RES_COR = { auto: 'var(--c3)', confirmado: 'var(--c1)', corrigido: 'var(--c2)', conferencia: 'var(--c4)', pendente: 'var(--faint)', descartado: 'var(--c5)' };
+function resumoIA(a) {
+  if (!a.leituras) return '<span class="note">Ainda não há leituras gravadas com este acompanhamento. A partir desta versão, cada exame lido pela IA registra se acertou, foi confirmado ou corrigido.</span>';
+  const tot = a.leituras + a.tot.descartado;
+  const barra = Object.keys(RES_LABEL).filter(k => a.tot[k]).map(k => `<i title="${RES_LABEL[k]}: ${a.tot[k]}" style="width:${a.tot[k] / tot * 100}%;background:${RES_COR[k]}"></i>`).join('');
+  return `<div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap"><b style="font-size:2rem;font-weight:900;color:${a.acerto >= 85 ? 'var(--ok)' : a.acerto >= 65 ? 'var(--warn)' : 'var(--crit)'}">${a.acerto}%</b><span class="note">de acerto em <b>${a.leituras}</b> exames lidos · ${a.orcamentos} pedidos · memória com <b>${a.memoria?.toLocaleString('pt-BR') ?? '—'}</b> grafias</span></div>
+  <div class="stack" style="margin:10px 0 6px">${barra}</div>
+  <div class="legend">${Object.keys(RES_LABEL).filter(k => a.tot[k]).map(k => `<span><i style="background:${RES_COR[k]}"></i>${RES_LABEL[k]} <b style="color:var(--text)">${a.tot[k]}</b></span>`).join('')}</div>`;
+}
+async function viewIA() {
+  let dias = 30;
+  const desenhar = async () => {
+    root.innerHTML = '<div class="note" style="padding:30px">Calculando…</div>';
+    const a = await D.acuraciaIA({ dias });
+    const maxSem = Math.max(1, ...a.semanas.map(s => s.leituras));
+    root.innerHTML = `
+    <div class="card"><div class="card-h"><h2>Leitura automática dos pedidos</h2><span class="cnt"><select id="iaDias" class="in" style="width:auto;padding:6px 10px">${[7, 30, 90, 180].map(d => `<option value="${d}" ${d === dias ? 'selected' : ''}>últimos ${d} dias</option>`).join('')}</select></span></div>
+      <div class="card-b">${resumoIA(a)}
+      <p class="note" style="margin-top:12px">Como ler: <b>acertou sozinha</b> = a IA leu e casou o exame certo sem ninguém mexer; <b>em dúvida, confirmada</b> = ficou em amarelo e a atendente confirmou que estava certo (conta como acerto); <b>corrigida</b> = a atendente trocou o exame (a memória aprende na hora e não repete); <b>conferência</b> = o exame não existe no AutoLAC ou não tem valor — não é erro de leitura.${a.msMedio ? ` Tempo médio de leitura: <b>${(a.msMedio / 1000).toFixed(1)} s</b>.` : ''}${Object.keys(a.modelos).length ? ' Modelos: ' + Object.entries(a.modelos).map(([m, n]) => `${m} (${n})`).join(', ') + '.' : ''}</p></div></div>
+    <div class="grid g2" style="margin-top:16px">
+      <div class="card"><div class="card-h"><h2>Evolução por semana</h2><span class="cnt">% de acerto e volume</span></div><div class="card-b">
+        ${a.semanas.length ? `<div class="wk">${a.semanas.map(s => { const p = s.leituras ? Math.round(s.certas / s.leituras * 100) : 0; return `<div class="col" title="semana de ${s.rotulo}: ${s.certas}/${s.leituras} certas"><b>${s.leituras ? p + '%' : ''}</b><i style="height:${Math.max(4, s.leituras / maxSem * 120)}px;background:${p >= 85 ? 'var(--c3)' : p >= 65 ? 'var(--c4)' : 'var(--c2)'}"></i><small>${s.rotulo}</small><small style="color:var(--faint)">${s.leituras}</small></div>`; }).join('')}</div>` : '<span class="note">Sem leituras no período.</span>'}</div></div>
+      <div class="card"><div class="card-h"><h2>Por atendente</h2><span class="cnt">quem mais confere e corrige</span></div><div class="card-b">
+        ${a.atendentes.length ? `<table class="tbl"><thead><tr><th>Atendente</th><th>Leituras</th><th>Acerto</th><th>Corrigiu</th><th>Conferência</th></tr></thead><tbody>${a.atendentes.map(t => `<tr><td><b>${escapeHtml(t.nome)}</b><br><small class="note">${t.orcamentos} pedidos</small></td><td>${t.leituras}</td><td><span class="pill ${t.acerto >= 85 ? 'ok' : t.acerto >= 65 ? 'warn' : 'crit'}">${t.acerto}%</span></td><td>${t.corrigido}</td><td>${t.conferencia}</td></tr>`).join('')}</tbody></table>` : '<span class="note">Sem dados.</span>'}</div></div>
+    </div>
+    <div class="card" style="margin-top:16px"><div class="card-h"><h2>Grafias que a IA mais erra</h2><span class="cnt">o que foi lido → o que a atendente escolheu</span></div><div class="card-b">
+      ${a.erros.length ? `<table class="tbl"><thead><tr><th>Lido no pedido</th><th>IA sugeriu</th><th>Correto</th><th>Vezes</th></tr></thead><tbody>${a.erros.map(e => `<tr><td>“${escapeHtml(e.lido || '')}”</td><td>${e.iaMn ? mnemonicoHtml(e.iaMn) : '<small class="note">não achou</small>'}</td><td><b>${escapeHtml(e.virou)}</b></td><td>${e.n}</td></tr>`).join('')}</tbody></table><p class="note" style="margin-top:10px">Cada correção já entra na memória (apelidos) e vira exemplo no prompt da IA quando se repete; se uma grafia continua aqui depois de várias vezes, vale conferir no Catálogo se o exame está com o nome/sinonímia certos.</p>` : '<span class="note">Nenhuma correção registrada no período — ótimo sinal.</span>'}</div></div>`;
+    $('iaDias').onchange = e => { dias = +e.target.value; desenhar(); };
+  };
+  await desenhar();
 }
 
 // ===================== SOLICITAÇÕES =====================
@@ -149,7 +186,7 @@ async function viewSol() {
 }
 
 // ===================== ORÇAMENTOS =====================
-async function viewOrc() { montarHistorico(root, { perfil, admin: true }); }
+async function viewOrc() { montarHistorico(root, { perfil, admin: true, cfg }); }
 
 // ===================== CATÁLOGO =====================
 async function viewCat() {
@@ -272,7 +309,7 @@ async function viewConv() {
 // ===================== CRM DE PACIENTES =====================
 async function viewCrm() {
   const hoje = new Date(); const ini = new Date(hoje.getFullYear(), hoje.getMonth() - 2, 1);
-  root.innerHTML = `<div class="card" style="margin-bottom:14px"><div class="card-b"><div class="filters">
+  root.innerHTML = `<div id="cLem"></div><div class="card" style="margin-bottom:14px"><div class="card-b"><div class="filters">
     <label class="f">De<input class="in" type="date" id="cDe" value="${ini.toISOString().slice(0, 10)}"></label><label class="f">Até<input class="in" type="date" id="cAte" value="${hoje.toISOString().slice(0, 10)}"></label>
     <label class="f">Convertido<select class="in" id="cConv"><option value="">Todos</option><option value="sim">Sim — veio coletar</option><option value="nao">Não — em aberto</option></select></label>
     <label class="f">Buscar<input class="in" id="cQ" placeholder="nome ou telefone"></label>
@@ -280,6 +317,7 @@ async function viewCrm() {
   <div class="card"><div class="card-h"><h2>CRM de pacientes</h2><span class="cnt" id="cCnt"></span><div class="sp"></div><button class="btn ghost sm" id="cCsv">Exportar .csv</button></div>
   <div class="card-b tbl-wrap"><table class="tbl"><thead><tr><th>Paciente</th><th>Telefone</th><th>Orçamentos</th><th>Último</th><th>Convênio</th><th>Atendente</th><th class="num">Total orçado</th><th>Convertido</th><th></th></tr></thead><tbody id="cBody"><tr><td colspan="9" class="note">Carregando…</td></tr></tbody></table></div></div>`;
   let pacientes = [];
+  montarLembretes($('cLem'), { perfil, cfg }).then(n => { const b = $('badgeLem'); if (b) { b.textContent = n; b.hidden = !n; } });
   const montar = async () => {
     const de = new Date($('cDe').value + 'T00:00:00'), ate = new Date($('cAte').value + 'T23:59:59'); const dias = Math.ceil((Date.now() - de) / 86400000) + 1;
     const rows = (await D.orcamentosRecentes({ dias, max: 3000 })).filter(r => { const d = r.criadoEm?.toDate?.(); return d && d >= de && d <= ate && r.paciente; });
@@ -408,6 +446,7 @@ async function viewCfg() {
     <label class="f">Dias úteis somados ao prazo DB<input class="in" id="cPrazo" type="number" value="${c.prazoExtraDiasUteis ?? 2}"></label>
     <label class="f">Confiança mínima da IA (%)<input class="in" id="cConf" type="number" value="${c.confiancaMinima ?? 85}"></label>
     <label class="f">Validade do orçamento (dias)<input class="in" id="cVal" type="number" value="${c.validadeDias ?? 7}"></label>
+    <label class="f">Lembrar paciente após (dias sem coleta)<input class="in" id="cLemD" type="number" min="1" value="${c.lembreteDias ?? 3}"></label>
     <label class="f">Unidade padrão<input class="in" id="cUn" value="${escapeHtml(c.unidadePadrao || 'Coophavila')}"></label>
     <label class="f full">Unidades (separe por vírgula)<input class="in" id="cUns" value="${escapeHtml((c.unidades || ['Coophavila', 'Matriz', 'Nova Lima', 'Guaicurus', 'Central de atendimento']).join(', '))}"></label>
     <label class="f full">E-mails que entram como administrador no primeiro acesso<input class="in" id="cAdm" value="${escapeHtml((c.admins || []).join(', '))}"></label>
@@ -432,5 +471,5 @@ async function viewCfg() {
     if ($('cZerar').dataset.arm !== '1') { $('cZerar').dataset.arm = '1'; $('cZerar').textContent = 'Confirmar: o próximo orçamento será #00001 (clique de novo)'; setTimeout(() => { $('cZerar').dataset.arm = ''; $('cZerar').textContent = 'Reiniciar numeração em #00001'; }, 5000); return; }
     try { await D.zerarNumeracao(); toast('Numeração reiniciada: o próximo orçamento será #00001', true); viewCfg(); } catch (e) { toast('Erro: ' + e.message); }
   };
-  $('cSalvar').onclick = async () => { try { await D.salvarConfig({ prazoExtraDiasUteis: +$('cPrazo').value, confiancaMinima: +$('cConf').value, validadeDias: +$('cVal').value, unidadePadrao: $('cUn').value.trim(), unidades: $('cUns').value.split(',').map(x => x.trim()).filter(Boolean), admins: $('cAdm').value.split(',').map(x => x.trim().toLowerCase()).filter(Boolean) }); toast('Configurações salvas', true); } catch (e) { toast('Erro: ' + e.message); } };
+  $('cSalvar').onclick = async () => { try { await D.salvarConfig({ prazoExtraDiasUteis: +$('cPrazo').value, confiancaMinima: +$('cConf').value, validadeDias: +$('cVal').value, lembreteDias: Math.max(1, +$('cLemD').value || 3), unidadePadrao: $('cUn').value.trim(), unidades: $('cUns').value.split(',').map(x => x.trim()).filter(Boolean), admins: $('cAdm').value.split(',').map(x => x.trim().toLowerCase()).filter(Boolean) }); toast('Configurações salvas', true); } catch (e) { toast('Erro: ' + e.message); } };
 }

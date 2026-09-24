@@ -9,6 +9,7 @@ const SVG = {
   pdf: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h8l5 5v13H6z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>',
   expand: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>',
   x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+  zap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20l1.3-4A8 8 0 1 1 8.5 19z"/><path d="M9 10c0 3 2 5 5 5l1-1.5-1.5-1-1 .5c-1-.5-1.5-1-2-2l.5-1L10 8.5z"/></svg>',
   lixo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M9 7V4h6v3m-7 0v13h8V7"/></svg>',
 };
 export const ICO = SVG;
@@ -96,6 +97,18 @@ async function jspdf() {
   if (!window.jspdf.jsPDF.API.autoTable) await load('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
   _jspdf = window.jspdf.jsPDF; return _jspdf;
 }
+let _qr;
+/** Biblioteca de QR code (qrcode-generator, cdnjs). Devolve função qrcode(tipo, nivel). */
+async function qrLib() {
+  if (_qr) return _qr; if (!window.qrcode) await new Promise((ok, err) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js'; s.onload = ok; s.onerror = err; document.head.appendChild(s); });
+  _qr = window.qrcode; return _qr;
+}
+/** Desenha um QR code no jsPDF como quadradinhos (sem imagem). */
+function desenharQr(d, texto, x, y, tam) {
+  const qr = window.qrcode(0, 'M'); qr.addData(texto); qr.make(); const n = qr.getModuleCount(); const m = tam / n;
+  d.setFillColor(255, 255, 255); d.rect(x - 1, y - 1, tam + 2, tam + 2, 'F'); d.setFillColor(27, 37, 64);
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) d.rect(x + c * m, y + r * m, m + 0.02, m + 0.02, 'F');
+}
 async function logoDataUrl() {
   if (_logo) return _logo;
   try { const b = await (await fetch('img/logo-pdf.png')).blob(); _logo = await new Promise(r => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(b); }); } catch { _logo = null; }
@@ -152,6 +165,7 @@ export async function gerarPdf(orc, { validadeDias = 7, baixar = true, unitario 
   const mostraValor = unitario || !!orc.unitarioLiberado; // padrão: só o total (valor unitário só com liberação da gestão)
   const itens = (orc.itens || []); const exs = itens.map(i => cat[i.mnemonico] || {});
   const jej = maiorJejum(exs);
+  const linkPre = orc.id && orc.preToken ? `https://celulams.com.br/app/pre.html?o=${orc.id}&t=${orc.preToken}${orc.numero ? '&n=' + orc.numero : ''}` : null;
   // ---- cabeçalho
   const logo = await logoDataUrl(); let y = 10;
   if (logo) d.addImage(logo, 'PNG', ML, y, 22, 21);
@@ -181,9 +195,23 @@ export async function gerarPdf(orc, { validadeDias = 7, baixar = true, unitario 
   d.setFillColor(...AZ2); d.roundedRect(ML, y, CW, 15, 2.5, 2.5, 'F');
   d.setTextColor(255); d.setFont('helvetica', 'bold'); d.setFontSize(8.5); d.text(`${itens.length} exame${itens.length !== 1 ? 's' : ''}`, ML + 4, y + 5.5);
   d.setFont('helvetica', 'normal'); d.text(' · prazos em dias úteis contados a partir da coleta · atendimento por ordem de chegada', ML + 4 + d.getTextWidth(`${itens.length} exame${itens.length !== 1 ? 's' : ''}`), y + 5.5);
-  d.setFontSize(7.5); d.text('Para agilizar o atendimento, solicite o pré-cadastro deste orçamento: reduz o tempo com a atendente e agiliza a coleta.', ML + 4, y + 10.5);
+  d.setFontSize(7.5); d.text(linkPre ? 'Para agilizar o atendimento, faça o pré-cadastro pelo QR code abaixo: reduz o tempo com a atendente e agiliza a coleta.' : 'Para agilizar o atendimento, solicite o pré-cadastro deste orçamento: reduz o tempo com a atendente e agiliza a coleta.', ML + 4, y + 10.5);
   d.setFontSize(7); d.text('TOTAL DO ORÇAMENTO', W - MR - 4, y + 5, { align: 'right' }); d.setFont('helvetica', 'bold'); d.setFontSize(16); d.text(brl(orc.total || 0), W - MR - 4, y + 12, { align: 'right' });
   y += 19;
+  // ---- pré-cadastro pelo celular (QR + link), quando o orçamento tem token
+  if (linkPre) {
+    try {
+      await qrLib(); const qh = 21;
+      d.setFillColor(...F); d.setDrawColor(...LN); d.setLineWidth(0.25); d.roundedRect(ML, y, CW, qh, 2.5, 2.5, 'FD');
+      desenharQr(d, linkPre, ML + 2.5, y + 2, qh - 4);
+      const tx0 = ML + qh + 2;
+      d.setTextColor(...AZ); d.setFont('helvetica', 'bold'); d.setFontSize(9.5); d.text('PRÉ-CADASTRO PELO CELULAR — 1 minuto', tx0, y + 5.5);
+      d.setTextColor(...TX); d.setFont('helvetica', 'normal'); d.setFontSize(7.6);
+      d.text(d.splitTextToSize('Aponte a câmera do celular para o QR code e preencha nome, CPF, data de nascimento e celular. Quando chegar à unidade, é só informar seu nome: o cadastro já estará pronto e a coleta sai mais rápido.', CW - qh - 6), tx0, y + 9.5);
+      d.setTextColor(...AZ2); d.setFontSize(6.6); d.text('ou acesse: ' + linkPre.replace(/^https?:\/\//, ''), tx0, y + qh - 2.5);
+      y += qh + 4;
+    } catch { /* sem QR (biblioteca indisponível): segue sem o bloco */ }
+  }
   // ---- preparo (maior jejum em negrito, mesmo tamanho)
   d.setFontSize(8); d.setTextColor(...CZ);
   const partes = jej

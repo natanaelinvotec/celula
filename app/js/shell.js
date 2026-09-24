@@ -4,6 +4,7 @@ import { sair, temaInit, iniciais, escapeHtml } from './firebase.js';
 const ICONS = {
   perf: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l2.6 5.4 5.9.8-4.3 4.1 1.1 5.9L12 16.4 6.7 19.2l1.1-5.9L3.5 9.2l5.9-.8z"/></svg>',
   cnv: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/></svg>',
+  ia: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19l5-7 4 4 7-9"/><path d="M15 7h5v5"/></svg>',
   crm: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.5"/><path d="M15 14.5a5 5 0 0 1 6.5 4.5"/></svg>',
   conv: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h10l6 6v10H4z"/><path d="M14 4v6h6M8 15l2.5 2.5L16 12"/></svg>',
   novo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
@@ -25,7 +26,7 @@ const MOON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-
 export function montarShell({ perfil, ativo, titulo, subtitulo, painel = false }) {
   const admin = perfil.papel === 'admin';
   const links = painel
-    ? [['dash', 'Dashboard', '#dash'], ['sol', 'Solicitações', '#sol', 'badgeSol'], ['hist', 'Orçamentos', '#orc'], ['cat', 'Catálogo de exames', '#cat'], ['cnv', 'Convênios', '#cnv'], ['perf', 'Perfis de check-up', '#perf'], ['crm', 'CRM de pacientes', '#crm'], ['conv', 'Conversões (relatório)', '#conv'], ['usr', 'Usuários', '#usr'], ['exp', 'Exportar atendimentos', '#exp']]
+    ? [['dash', 'Dashboard', '#dash'], ['sol', 'Solicitações', '#sol', 'badgeSol'], ['hist', 'Orçamentos', '#orc'], ['cat', 'Catálogo de exames', '#cat'], ['cnv', 'Convênios', '#cnv'], ['perf', 'Perfis de check-up', '#perf'], ['crm', 'CRM de pacientes', '#crm', 'badgeLem'], ['conv', 'Conversões (relatório)', '#conv'], ['ia', 'Acurácia da IA', '#ia'], ['usr', 'Usuários', '#usr'], ['exp', 'Exportar atendimentos', '#exp']]
     : [['novo', 'Novo orçamento (IA)', 'orcamento.html'], ['hist', 'Meus orçamentos', 'orcamentos.html', 'badgeSol']];
   const extra = painel ? [['novo', 'Novo orçamento (IA)', 'orcamento.html']] : (admin ? [['dash', 'Painel gerencial', 'painel.html']] : []);
   const nav = l => `<a class="nav ${l[0] === ativo ? 'on' : ''}" href="${l[2]}" data-k="${l[0]}">${ICONS[l[0]]}<span class="t">${l[1]}</span>${l[3] ? `<span class="badge" id="${l[3]}" hidden></span>` : ''}</a>`;
@@ -58,6 +59,12 @@ export function montarShell({ perfil, ativo, titulo, subtitulo, painel = false }
     import('./dados.js').then(D => { D.setStatusAtendente(st0).catch(() => {}); setInterval(() => D.ping().catch(() => {}), 60000);
       sel.addEventListener('change', () => D.setStatusAtendente(sel.value).catch(e => console.warn(e)));
       addEventListener('pagehide', () => { try { D.setStatusAtendente('offline'); } catch {} });
+      // pré-cadastro chegando pela página pública: aviso + campainha para quem estiver logado
+      let vistos = null;
+      D.ouvirPreCadastros((map, lista) => {
+        if (!vistos) { vistos = new Set(lista.map(p => p.id)); return; }
+        import('./ui.js').then(U => { for (const p of lista) { if (vistos.has(p.id)) continue; vistos.add(p.id); U.aviso('Pré-cadastro recebido', `${p.nome}${p.orcamentoNumero ? ' · orçamento #' + String(p.orcamentoNumero).padStart(5, '0') : ''} — já pode cadastrar no AutoLAC.`); } });
+      }, 50);
     }).catch(() => {});
   }
   temaInit();

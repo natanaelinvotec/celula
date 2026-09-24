@@ -92,6 +92,34 @@ export async function dicasAprendidas() {
   _dicas = s.docs.map(d => d.data()).filter(a => a.texto && cat[a.mnemonico] && norm(a.texto) !== cat[a.mnemonico].nomeBusca).map(a => ({ texto: a.texto, nome: cat[a.mnemonico].nome }));
   _dicasAt = Date.now(); return _dicas;
 }
+/** Acurácia da IA: agrega o resultado de cada leitura gravada nos orçamentos (campo itens[].resultado) num período.
+ *  Devolve totais, série por semana, ranking por atendente e as grafias mais corrigidas. */
+export async function acuraciaIA({ dias = 30 } = {}) {
+  const rows = (await orcamentosRecentes({ dias, max: 1500 })).filter(r => r.leituraIA);
+  const tot = { auto: 0, confirmado: 0, corrigido: 0, conferencia: 0, pendente: 0, descartado: 0 };
+  const porAt = {}, erros = {}, modelos = {}, semanas = {}; let ms = 0, nMs = 0;
+  const conta = (bucket, k) => { bucket[k] = (bucket[k] || 0) + 1; };
+  for (const r of rows) {
+    const at = porAt[r.atendenteUid] ??= { nome: r.atendenteNome, leituras: 0, auto: 0, confirmado: 0, corrigido: 0, conferencia: 0, orcamentos: 0 }; at.orcamentos++;
+    if (r.leituraIA.modelo) conta(modelos, r.leituraIA.modelo); if (r.leituraIA.ms) { ms += r.leituraIA.ms; nMs++; }
+    const d = r.criadoEm?.toDate?.(); const wk = d ? `${d.getDate()}/${d.getMonth() + 1}` : '?';
+    const w0 = d ? new Date(d.getFullYear(), d.getMonth(), d.getDate() - d.getDay()) : null; const wkKey = w0 ? w0.toISOString().slice(0, 10) : '?';
+    const sem = semanas[wkKey] ??= { rotulo: w0 ? `${w0.getDate()}/${w0.getMonth() + 1}` : wk, leituras: 0, certas: 0 };
+    for (const i of r.itens || []) {
+      if (!i.resultado) continue; const k = tot[i.resultado] != null ? i.resultado : 'pendente';
+      tot[k]++; at.leituras++; if (at[k] != null) at[k]++; sem.leituras++; if (k === 'auto' || k === 'confirmado') sem.certas++;
+      if (k === 'corrigido') { const key = `${(i.lido || '').trim()} → ${i.mnemonico || i.nome}`; erros[key] ??= { lido: i.lido, virou: i.mnemonico || i.nome, iaMn: i.iaMn || null, n: 0 }; erros[key].n++; }
+    }
+    for (const dsc of r.leituraIA.descartados || []) { tot.descartado++; const key = `${(dsc.lido || '').trim()} → (removido)`; erros[key] ??= { lido: dsc.lido, virou: 'removido pela atendente', iaMn: dsc.iaMn || null, n: 0 }; erros[key].n++; }
+  }
+  const leituras = tot.auto + tot.confirmado + tot.corrigido + tot.conferencia + tot.pendente;
+  const certas = tot.auto + tot.confirmado;
+  const atendentes = Object.values(porAt).filter(a => a.leituras).map(a => ({ ...a, acerto: Math.round((a.auto + a.confirmado) / a.leituras * 100) })).sort((a, b) => b.leituras - a.leituras);
+  const memoria = await contar('apelidos').catch(() => null);
+  return { dias, orcamentos: rows.length, leituras, certas, acerto: leituras ? Math.round(certas / leituras * 100) : null, tot, atendentes,
+    erros: Object.values(erros).sort((a, b) => b.n - a.n).slice(0, 25), modelos, msMedio: nMs ? Math.round(ms / nMs) : null,
+    semanas: Object.entries(semanas).sort((a, b) => a[0].localeCompare(b[0])).map(([, v]) => v), memoria };
+}
 /** Aprendizado: a recepção confirmou que "textoLido" é "mnemonico". */
 export async function ensinar(textoLido, mnemonico, unidade) {
   const textoNorm = norm(textoLido); if (!textoNorm) return;
@@ -190,9 +218,25 @@ export async function gravarOrcamento(dados, id) {
   // ao editar, a dona do orçamento não muda (transferência é só por transferirOrcamento)
   if (id) { const { atendenteUid, atendenteNome, ...resto } = base; await updateDoc(doc(db, 'orcamentos', id), resto); return id; }
   const numero = await proximoNumero();
-  const ref = await addDoc(collection(db, 'orcamentos'), { ...base, numero, status: dados.status || 'gravado', criadoEm: serverTimestamp() });
+  const ref = await addDoc(collection(db, 'orcamentos'), { ...base, numero, status: dados.status || 'gravado', criadoEm: serverTimestamp(), preToken: novoToken() });
   return ref.id;
 }
+/** Token aleatório (16 chars) impresso no QR do PDF: é a "senha" que autoriza o paciente a mandar o pré-cadastro deste orçamento. */
+export function novoToken() { const a = new Uint8Array(12); crypto.getRandomValues(a); return [...a].map(b => 'abcdefghjkmnpqrstuvwxyz23456789'[b % 31]).join('').slice(0, 16); }
+/** Garante que um orçamento antigo (anterior ao pré-cadastro) tenha token. */
+export async function garantirPreToken(id, orc) {
+  if (orc?.preToken) return orc.preToken; const t = novoToken(); await updateDoc(doc(db, 'orcamentos', id), { preToken: t }); return t;
+}
+export const PRE_URL = 'https://celulams.com.br/app/pre.html';
+export const linkPreCadastro = (id, token, numero) => `${PRE_URL}?o=${id}&t=${token}${numero ? '&n=' + numero : ''}`;
+
+// ---------- pré-cadastro (enviado pelo paciente pela página pública) ----------
+/** Escuta os pré-cadastros mais recentes (recepção). cb(map id→dados, lista). */
+export function ouvirPreCadastros(cb, max = 300) {
+  return onSnapshot(query(collection(db, 'precadastros'), orderBy('enviadoEm', 'desc'), limit(max)), s => { const lista = s.docs.map(d => ({ id: d.id, ...d.data() })); cb(Object.fromEntries(lista.map(p => [p.id, p])), lista); }, () => cb({}, []));
+}
+export async function preCadastro(orcId) { const d = await getDoc(doc(db, 'precadastros', orcId)); return d.exists() ? { id: d.id, ...d.data() } : null; }
+export const marcarPreVisto = orcId => updateDoc(doc(db, 'precadastros', orcId), { visto: true, vistoPor: auth.currentUser.uid, vistoEm: serverTimestamp() });
 export const ouvirOrcamento = (id, cb) => onSnapshot(doc(db, 'orcamentos', id), d => cb({ id: d.id, ...d.data() }));
 export async function converterOrcamento(id) {
   const u = auth.currentUser;
@@ -282,7 +326,7 @@ export async function excluirUsuario(uid) {
   catch (e) { const err = traduzFn(e); if (err.semFuncao) { await editarUsuario(uid, { ativo: false, excluido: true, excluidoEm: serverTimestamp(), excluidoPor: auth.currentUser.uid }); return { ok: true, soft: true }; } throw err; }
 }
 function traduzFn(e) {
-  const c = String(e.code || ''); const err = new Error(c.includes('not-found') || c.includes('internal') && /not found|404/i.test(e.message) ? 'As Cloud Functions ainda não foram publicadas (veja celula-functions.zip).' : (e.message || 'Erro'));
+  const c = String(e.code || ''); const err = new Error(c.includes('not-found') || c.includes('internal') && /not found|404/i.test(e.message) ? 'As Cloud Functions ainda não foram publicadas (veja celula-functions.zip).' : e.message === 'internal' ? 'Não foi possível falar com o servidor de funções (rede ou endereço). Tente de novo em instantes.' : (e.message || 'Erro'));
   err.semFuncao = c.includes('not-found') || /not found|404|Failed to fetch/i.test(e.message || ''); return err;
 }
 
@@ -300,3 +344,25 @@ export async function zerarNumeracao() {
   await b.commit();
 }
 export const contar = async (col) => (await getCountFromServer(collection(db, col))).data().count;
+
+// ---------- lembretes do CRM: orçamentos abertos há X dias sem retorno do paciente ----------
+const ABERTOS = ['gravado', 'enviado', 'aguardando_conferencia', 'rascunho'];
+/** Orçamentos abertos criados entre `dias` e `janela` dias atrás, com telefone, que ainda não receberam lembrete (ou receberam há mais de `dias`). */
+export async function orcamentosParaLembrete({ dias = 3, janela = 30 } = {}) {
+  const rows = await orcamentosRecentes({ dias: janela, max: 1500 }); const limite = Date.now() - dias * 86400000;
+  return rows.filter(r => ABERTOS.includes(r.status) && r.telefoneDigitos && r.telefoneDigitos.length >= 10 && r.paciente
+    && (r.criadoEm?.toDate?.()?.getTime() || Infinity) <= limite
+    && (!r.lembreteEm || (r.lembreteEm.toDate?.()?.getTime() || 0) <= limite))
+    .sort((a, b) => (a.criadoEm?.toDate?.() || 0) - (b.criadoEm?.toDate?.() || 0));
+}
+export async function marcarLembrete(id) {
+  const u = auth.currentUser;
+  return updateDoc(doc(db, 'orcamentos', id), { lembreteEm: serverTimestamp(), lembretePor: u.uid, lembretePorNome: u.displayName || u.email, lembretes: increment(1) });
+}
+/** Texto do lembrete pelo WhatsApp (o envio é manual: abre a conversa já com a mensagem). */
+export function mensagemLembrete(o, { atendente, validadeDias = 7 } = {}) {
+  const criado = o.criadoEm?.toDate?.() || new Date(); const val = new Date(criado.getTime() + validadeDias * 86400000);
+  const primeiro = (o.paciente || '').split(' ')[0]; const tot = Number(o.total || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  return `Olá, ${primeiro}! Aqui é ${(atendente || 'a equipe').split(' ')[0]}, da Célula Diagnósticos. 😊\nSeu orçamento nº ${String(o.numero).padStart(5, '0')} (${o.qtd || o.itens?.length || 0} exames · ${tot}) continua válido até ${val.toLocaleDateString('pt-BR')}.\nPosso te ajudar a agendar a coleta? Atendemos por ordem de chegada em 8 unidades em Campo Grande — é só responder por aqui.`;
+}
+export const linkWhatsApp = (tel, texto) => `https://wa.me/55${String(tel).replace(/\D/g, '').replace(/^55/, '')}?text=${encodeURIComponent(texto)}`;
