@@ -191,7 +191,17 @@ async function adicionarLido(e) {
   }
   st.itens.push(it);
   // "EPF 3 amostras": se o catálogo tem a série (EPF, EPF2, EPF3 / "2ª AMOSTRA"), vira uma linha por amostra; senão fica 1 linha com quantidade
+  // "curva glicêmica 5 dosagens": se existe o exame específico (CURVA GLICÊMICA - 5 DOSAGENS), usa ele em vez de multiplicar
+  if (qtd > 1 && it.ex) { const v = await varianteComQuantidade(it.ex, qtd); if (v) { it.ex = v; it.iaMn = v.mnemonico; it.qtd = 1; await precificar(it); return; }
+    // o exame casado já traz outra quantidade no nome (ex.: "[3 DOSAGENS]" e o pedido diz 4): não multiplica, pede confirmação
+    if (/\d+\s*(DOSAGENS?|PONTOS?|AMOSTRAS?)/.test(it.ex.nomeBusca)) { it.qtd = 1; it.status = 'flag'; it.conf = Math.min(it.conf, 0.6); return; } }
   if (qtd > 1 && it.ex) { const serie = await serieDoExame(it.ex, qtd); if (serie.length === qtd - 1) { it.qtd = 1; for (const ex of serie) { const s2 = { uid: Math.random().toString(36).slice(2), lido: e.texto, normalizado: e.normalizado, confIA: e.confianca, cands: [], ex, status: it.status === 'flag' ? 'flag' : 'ok', conf: it.conf, iaMn: ex.mnemonico, iaStatus: it.status, valor: null, prazoDias: null, origem: null, qtd: 1, serieDe: it.uid }; await precificar(s2); st.itens.push(s2); } } }
+}
+/** Exame do catálogo que já embute a quantidade no nome (ex.: "CURVA GLICEMICA 5 DOSAGENS", "LACTOSE 4 PONTOS"). */
+async function varianteComQuantidade(ex, n) {
+  const cat = await D.catalogo(); const pref = ex.nomeBusca.split(' ').slice(0, 2).join(' ');
+  const re = new RegExp(`(^|[^0-9])${n}\\s*(DOSAGENS?|PONTOS?|AMOSTRAS?|COLETAS?)\\b`);
+  return cat.filter(c => c.ativo !== false && !c.renal && c.nomeBusca.startsWith(pref) && re.test(c.nomeBusca)).sort((a, b) => a.nomeBusca.length - b.nomeBusca.length)[0] || null;
 }
 /** Exames "irmãos" numerados de um exame base (EPF → EPF2, EPF3…; ou nome com "2ª AMOSTRA"/"3A AMOSTRA"). */
 async function serieDoExame(ex, n) {
