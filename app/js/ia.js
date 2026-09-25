@@ -16,9 +16,10 @@ Regras:
 - "confianca": 0 a 1 — quanto você tem certeza da LEITURA da caligrafia (não da existência do exame). Caligrafia difícil: dê a leitura mais provável com confianca baixa (0.3 a 0.6) em vez de omitir o exame.
 - Em guias impressas com caixinhas, inclua SÓ os itens marcados (X, ✓, risco) e TODAS as linhas manuscritas nos campos "OUTROS", "OBS" ou nas margens — cada linha manuscrita costuma ser um exame (ex.: "Vit B12", "Vit D", "Insulina basal", "Ferritina"). Nunca deixe uma linha manuscrita de fora.
 - Um exame por item; "perfil lipídico" vira 4 itens (COLESTEROL TOTAL, HDL, LDL, TRIGLICERIDEOS); "função renal" vira UREIA e CREATININA; "eletrólitos" vira SODIO e POTASSIO.
+- "quantidade": número de amostras/dosagens/pontos quando o pedido indicar (ex.: "EPF 3 amostras" -> 3, "curva glicêmica 5 dosagens" -> 5, "lactose 4 pontos" -> 4, "parasitológico 3x" -> 3); caso contrário 1. O "normalizado" fica com o nome base sem a quantidade (ex.: "PARASITOLOGICO DE FEZES", "CURVA GLICEMICA", "TESTE DE TOLERANCIA A LACTOSE").
 - Ignore medicamentos, diagnósticos, CID e orientações. Não invente exames.
 - Se o pedido indicar contexto de nefrologia/hemodiálise/renal, marque "renal": true.
-Responda SOMENTE o JSON: {"paciente":string|null,"medico":string|null,"crm":string|null,"data":string|null,"renal":boolean,"exames":[{"texto":string,"normalizado":string,"confianca":number}]}`;
+Responda SOMENTE o JSON: {"paciente":string|null,"medico":string|null,"crm":string|null,"data":string|null,"renal":boolean,"exames":[{"texto":string,"normalizado":string,"confianca":number,"quantidade":number}]}`;
 
 const dorme = ms => new Promise(r => setTimeout(r, ms));
 
@@ -47,7 +48,7 @@ export async function lerPedido(entradas, { onStatus = () => {}, tentativas = 4,
         const r = await model.generateContent(parts);
         const json = extrairJson(r.response.text());
         if (!json || !Array.isArray(json.exames)) throw new Error('Resposta da IA sem lista de exames');
-        json.exames = json.exames.filter(e => e && e.texto).map(e => ({ texto: String(e.texto).trim(), normalizado: String(e.normalizado || e.texto).trim().toUpperCase(), confianca: Math.max(0, Math.min(1, Number(e.confianca) || 0.5)) }));
+        json.exames = json.exames.filter(e => e && e.texto).map(e => ({ texto: String(e.texto).trim(), normalizado: String(e.normalizado || e.texto).trim().toUpperCase(), confianca: Math.max(0, Math.min(1, Number(e.confianca) || 0.5)), quantidade: Math.max(1, Math.min(12, parseInt(e.quantidade) || 1)) }));
         return { ...json, modelo: nome, ms: Date.now() - t0, tokens: r.response.usageMetadata?.totalTokenCount };
       } catch (e) {
         ultimoErro = e; const msg = String(e.message || e);
