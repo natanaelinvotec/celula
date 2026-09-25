@@ -300,16 +300,23 @@ async function viewCat() {
 async function viewCnv() {
   const convs = await D.conveniosTodos(); const cat = await D.catalogo();
   const nExames = slug => cat.filter(c => c.precos?.[slug] != null).length;
-  root.innerHTML = `<div class="card"><div class="card-h"><h2>Catálogo de convênios</h2><span class="cnt">${convs.length} convênios · ${convs.filter(c => c.ativo !== false).length} visíveis</span><div class="sp"></div><span class="note">Oculto = não aparece para as atendentes (ex.: Tabela Custos); a gestão continua vendo tudo no catálogo</span></div>
+  root.innerHTML = `<div class="card"><div class="card-h"><h2>Catálogo de convênios</h2><span class="cnt">${convs.length} convênios · ${convs.filter(c => c.ativo !== false).length} visíveis</span><div class="sp"></div><span class="note">Oculto = não aparece para as atendentes (ex.: Tabela Custos); a gestão continua vendo tudo no catálogo. <b>Paciente paga (%)</b>: convênios com cobertura (ex.: IMPCG e UFMS cobrem 70% → paciente paga 30%) — a tabela fica intacta, só o valor do orçamento é reduzido.</span></div>
     <div class="card-b"><div class="filters" style="margin-bottom:10px"><label class="f" style="grid-column:span 2">Buscar<input class="in" id="vq" placeholder="nome do convênio"></label><label class="f">Situação<select class="in" id="vsit"><option value="">Todos</option><option value="on">Visíveis</option><option value="off">Ocultos</option></select></label></div>
-    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Convênio</th><th>Código</th><th>Exames com valor</th><th>Visível para atendentes</th></tr></thead><tbody id="vbody"></tbody></table></div></div></div>`;
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Convênio</th><th>Código</th><th>Exames com valor</th><th title="Percentual da tabela que o paciente paga. 100 = tabela inteira">Paciente paga (%)</th><th>Visível para atendentes</th></tr></thead><tbody id="vbody"></tbody></table></div></div></div>`;
   const render = () => {
     const q = norm($('vq').value), sit = $('vsit').value;
     const rows = convs.filter(c => (!q || norm(c.nome).includes(q)) && (!sit || (sit === 'on' ? c.ativo !== false : c.ativo === false)));
-    $('vbody').innerHTML = rows.map(c => `<tr class="${c.ativo === false ? 'fora' : ''}"><td><b>${escapeHtml(c.nome)}</b>${c.ativo === false ? ' <span class="pill crit">oculto</span>' : ''}</td><td><span class="mn">${escapeHtml(c.slug || c.id)}</span></td><td>${nExames(c.slug || c.id)}</td><td><label class="switch"><input type="checkbox" data-vis="${c.id}" ${c.ativo !== false ? 'checked' : ''}><i></i></label></td></tr>`).join('') || '<tr><td colspan="4" class="note">Nenhum convênio.</td></tr>';
+    $('vbody').innerHTML = rows.map(c => `<tr class="${c.ativo === false ? 'fora' : ''}"><td><b>${escapeHtml(c.nome)}</b>${c.ativo === false ? ' <span class="pill crit">oculto</span>' : ''}</td><td><span class="mn">${escapeHtml(c.slug || c.id)}</span></td><td>${nExames(c.slug || c.id)}</td><td><input class="in" type="number" min="1" max="100" step="1" style="width:72px;text-align:center;font-weight:800" data-rep="${c.id}" value="${repDe(c)}" title="Percentual da tabela que o paciente paga">${repDe(c) < 100 ? `<small class="note" style="display:block">convênio cobre ${100 - repDe(c)}%</small>` : ''}</td><td><label class="switch"><input type="checkbox" data-vis="${c.id}" ${c.ativo !== false ? 'checked' : ''}><i></i></label></td></tr>`).join('') || '<tr><td colspan="5" class="note">Nenhum convênio.</td></tr>';
   };
+  function repDe(c) { const p = Number(c.repassePct); return p > 0 && p < 100 ? p : 100; }
   ['vq', 'vsit'].forEach(id => $(id).addEventListener('input', render)); render();
   $('vbody').addEventListener('change', async e => {
+    const r = e.target.closest('[data-rep]');
+    if (r) { // repasse ao paciente (%)
+      const c = convs.find(x => x.id === r.dataset.rep); const p = Math.max(1, Math.min(100, Math.round(Number(r.value) || 100)));
+      try { await D.editarConvenio(c.id, { repassePct: p }); c.repassePct = p; render(); toast(p === 100 ? `${c.nome}: paciente paga a tabela inteira` : `${c.nome}: convênio cobre ${100 - p}% — paciente paga ${p}% da tabela`, true); } catch (err) { r.value = repDe(c); toast('Erro: ' + err.message); }
+      return;
+    }
     const i = e.target.closest('[data-vis]'); if (!i) return; const c = convs.find(x => x.id === i.dataset.vis);
     try { await D.editarConvenio(c.id, { ativo: i.checked }); c.ativo = i.checked; render(); toast(`${c.nome}: ${i.checked ? 'visível' : 'oculto'} para as atendentes`, true); } catch (err) { i.checked = !i.checked; toast('Erro: ' + err.message); }
   });
