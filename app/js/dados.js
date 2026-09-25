@@ -52,7 +52,8 @@ export async function precosManuais(convSlug) {
 export async function resolver(textoLido, { renal = false, normalizadoIA } = {}) {
   const t = norm(textoLido); if (!t) return [];
   const cat = await catalogo();
-  const ok = c => c.ativo !== false && !c.foraAutolac && (renal ? !!c.renal : !c.renal);
+  // "fora do AutoLAC" só bloqueia quando o exame não tem valor em nenhuma tabela (se tem preço, ele é orçável)
+  const ok = c => c.ativo !== false && (!c.foraAutolac || (c.precos && Object.values(c.precos).some(v => v != null))) && (renal ? !!c.renal : !c.renal);
   const out = [];
   const ap = await getDocs(query(collection(db, 'apelidos'), where('textoNorm', '==', t), limit(5)));
   for (const a of ap.docs.map(d => d.data()).sort((a, b) => (b.confirmacoes || 0) - (a.confirmacoes || 0))) {
