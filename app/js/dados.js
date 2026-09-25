@@ -371,7 +371,8 @@ export const linkWhatsApp = (tel, texto) => `https://wa.me/55${String(tel).repla
 // ---------- grupos de pedido: um termo do pedido ("Ferrograma") abre vários exames do catálogo ----------
 export const GRUPOS_PADRAO = [
   { id: 'ferrograma', nome: 'Ferrograma', termos: ['FERROGRAMA', 'PERFIL DE FERRO', 'PERFIL DO FERRO', 'CINETICA DO FERRO', 'CINETICA DE FERRO', 'METABOLISMO DO FERRO'], mnemonicos: ['FE', 'FERRI-DB', 'CAPATINT'] },
-  { id: 'lipidograma', nome: 'Lipidograma', termos: ['LIPIDOGRAMA', 'PERFIL LIPIDICO', 'LIPIDIOS', 'LIPIDES', 'COLESTEROL TOTAL E FRACOES', 'COLESTEROL E FRACOES', 'COLESTEROL FRACIONADO'], mnemonicos: ['COL', 'HDL', 'LDL', 'VLDL', 'TRIG'] },
+  { id: 'lipidograma', nome: 'Lipidograma', termos: ['LIPIDOGRAMA', 'PERFIL LIPIDICO', 'LIPIDIOS', 'LIPIDES'], mnemonicos: ['COL', 'HDL', 'LDL', 'VLDL', 'TRIG'] },
+  { id: 'colesterol_fracoes', nome: 'Colesterol total e frações', termos: ['COLESTEROL TOTAL E FRACOES', 'COLESTEROL E FRACOES', 'COLESTEROL FRACIONADO', 'COLESTEROL TOTAL E FRACAO', 'COLESTEROL COM FRACOES'], mnemonicos: ['COL', 'HDL', 'LDL', 'VLDL'] },
   { id: 'hepatograma', nome: 'Hepatograma', termos: ['HEPATOGRAMA', 'FUNCAO HEPATICA', 'PROVAS HEPATICAS', 'PROVAS DE FUNCAO HEPATICA', 'ENZIMAS HEPATICAS', 'PERFIL HEPATICO'], mnemonicos: ['TGO', 'TGP', 'GGT', 'FAL', 'BTF'] },
   { id: 'ionograma', nome: 'Ionograma', termos: ['IONOGRAMA', 'ELETROLITOS', 'IONS'], mnemonicos: ['NA', 'K', 'CL'] },
   { id: 'proteinograma', nome: 'Proteinograma', termos: ['PROTEINOGRAMA', 'ELETROFORESE DE PROTEINAS COM PROTEINAS TOTAIS'], mnemonicos: ['PRT', 'ALB', 'EFP-HP'] },
