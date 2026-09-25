@@ -253,3 +253,7 @@ label.f{display:flex;flex-direction:column;gap:5px;font-size:.72rem;font-weight:
 .lem-it a.btn{text-decoration:none}
 .pre-box{width:100%;margin-top:6px;padding:10px 12px;border-radius:12px;background:var(--blue-50);display:flex;flex-direction:column;gap:8px}
 .pre-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 14px}.pre-grid span{display:flex;flex-direction:column;font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}.pre-grid b{font-size:.9rem;color:var(--text);text-transform:none;letter-spacing:0}
+/* dois convênios */
+.tabsw{border:2px solid var(--blue-100);background:var(--blue-50);color:var(--blue-d);border-radius:999px;padding:3px 10px;font-size:.72rem;font-weight:800;white-space:nowrap;max-width:120px;overflow:hidden;text-overflow:ellipsis}
+.tabsw.t2{border-color:color-mix(in srgb,var(--c3) 40%,transparent);background:color-mix(in srgb,var(--c3) 14%,transparent);color:var(--c3)}
+.chk input{width:18px;height:18px;accent-color:var(--blue)}
