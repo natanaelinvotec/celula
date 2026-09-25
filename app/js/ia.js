@@ -43,11 +43,13 @@ export async function lerPedido(entradas, { onStatus = () => {}, tentativas = 4,
       try {
         onStatus(`Lendo o pedido com ${nome}${i ? ` (tentativa ${i + 1})` : ''}…`);
         // No backend Vertex o modo JSON estruturado funciona com imagens: resposta já vem em JSON puro.
-        const model = getGenerativeModel(ai, { model: nome, generationConfig: { temperature: 0.1, maxOutputTokens: 4096, responseMimeType: 'application/json' } });
+        // Os modelos gemini-3.x "pensam" antes de responder e esses tokens contam no limite de saída: 4096 estourava em pedidos grandes e cortava o JSON.
+        const model = getGenerativeModel(ai, { model: nome, generationConfig: { temperature: 0.1, maxOutputTokens: 32768, responseMimeType: 'application/json' } });
         const t0 = Date.now();
         const r = await model.generateContent(parts);
-        const json = extrairJson(r.response.text());
-        if (!json || !Array.isArray(json.exames)) throw new Error('Resposta da IA sem lista de exames');
+        const fim = r.response.candidates?.[0]?.finishReason; const texto = r.response.text();
+        const json = extrairJson(texto);
+        if (!json || !Array.isArray(json.exames)) { console.warn('IA: resposta inválida', { modelo: nome, fim, uso: r.response.usageMetadata, inicio: String(texto).slice(0, 200) }); throw new Error(fim === 'MAX_TOKENS' ? 'RESPOSTA_CORTADA' : 'Resposta da IA sem lista de exames'); }
         json.exames = json.exames.filter(e => e && e.texto).map(e => ({ texto: String(e.texto).trim(), normalizado: String(e.normalizado || e.texto).trim().toUpperCase(), confianca: Math.max(0, Math.min(1, Number(e.confianca) || 0.5)), quantidade: Math.max(1, Math.min(12, parseInt(e.quantidade) || 1)) }));
         return { ...json, modelo: nome, ms: Date.now() - t0, tokens: r.response.usageMetadata?.totalTokenCount };
       } catch (e) {
@@ -55,7 +57,7 @@ export async function lerPedido(entradas, { onStatus = () => {}, tentativas = 4,
         if (/404|not found|no longer available/i.test(msg)) continue;          // modelo indisponível: próximo
         // 429 no Vertex é "Resource exhausted" momentâneo (capacidade compartilhada): passa pro reserva e repete em seguida
         if (/429|quota|RESOURCE_EXHAUSTED|resource exhausted/i.test(msg)) { quota = true; onStatus(`Modelo ${nome} ocupado — tentando o modelo reserva…`); continue; }
-        if (/500|503|high demand|overloaded|fetch/i.test(msg)) continue;      // instável: tenta o reserva
+        if (/500|503|high demand|overloaded|fetch|RESPOSTA_CORTADA|sem lista de exames/i.test(msg)) continue; // instável ou resposta cortada/inválida: tenta o reserva e depois repete
         throw e;
       }
     }
@@ -69,5 +71,7 @@ function extrairJson(txt) {
   txt = String(txt || '').replace(/```(?:json)?/gi, '').trim();
   try { return JSON.parse(txt); } catch {}
   const m = txt.match(/\{[\s\S]*\}/); if (m) { try { return JSON.parse(m[0]); } catch {} }
+  // resposta cortada no meio: aproveita os exames completos que já vieram
+  const i = txt.indexOf('"exames"'); if (i >= 0) { const arr = txt.slice(txt.indexOf('[', i)); const fim = arr.lastIndexOf('}'); if (fim > 0) { try { const exames = JSON.parse(arr.slice(0, fim + 1) + ']'); if (Array.isArray(exames) && exames.length) return { exames, cortado: true }; } catch {} } }
   return null;
 }
