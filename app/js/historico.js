@@ -90,6 +90,6 @@ export function montarHistorico(el, { perfil, admin, cfg = {} }) {
   return { recarregar: carregar, getRows: () => rows };
 }
 
-const fmtCpf = c => String(c || '').replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
-const fmtNasc = n => n && /^\d{4}-\d{2}-\d{2}$/.test(n) ? n.split('-').reverse().join('/') : (n || '—');
-const fmtTel = t => String(t || '').replace(/^(\d{2})(\d{4,5})(\d{4})$/, '($1) $2-$3');
+export const fmtCpf = c => String(c || '').replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+export const fmtNasc = n => n && /^\d{4}-\d{2}-\d{2}$/.test(n) ? n.split('-').reverse().join('/') : (n || '—');
+export const fmtTel = t => String(t || '').replace(/^(\d{2})(\d{4,5})(\d{4})$/, '($1) $2-$3');
