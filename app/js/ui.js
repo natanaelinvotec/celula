@@ -180,16 +180,20 @@ export async function gerarPdf(orc, { validadeDias = 7, baixar = true, unitario 
   d.setTextColor(...CZ); d.setFontSize(8.5); d.text(`Validade: ${validadeDias} dias (até ${val.toLocaleDateString('pt-BR')})`, W - MR, y + 13, { align: 'right' });
   y += 24; d.setDrawColor(...VM); d.setLineWidth(0.9); d.line(ML, y, W - MR, y); y += 4;
   // ---- cartões de informação
-  const cards = [['PACIENTE', orc.paciente || '—', 1.4], ['CONVÊNIO / TABELA', orc.convenioNome || orc.convenio || '—', 1], ['TELEFONE', orc.telefone || '—', 1]];
+  const duplo = !!orc.duplo && !!orc.convenio2; const curto = n => String(n || '').replace(/^tabela\s+/i, '');
+  const cards = [['PACIENTE', orc.paciente || '—', 1.4], [duplo ? 'CONVÊNIOS / TABELAS' : 'CONVÊNIO / TABELA', duplo ? `${orc.convenioNome || orc.convenio} + ${orc.convenio2Nome || orc.convenio2}` : (orc.convenioNome || orc.convenio || '—'), duplo ? 1.3 : 1], ['TELEFONE', orc.telefone || '—', duplo ? 0.8 : 1]];
   const tot = cards.reduce((a, c) => a + c[2], 0); let cx = ML;
   for (const [k, v, f] of cards) { const cw = (CW - 4) * f / tot; d.setFillColor(...F); d.roundedRect(cx, y, cw, 11, 2, 2, 'F'); d.setTextColor(...CZ); d.setFont('helvetica', 'bold'); d.setFontSize(6.5); d.text(k, cx + 3, y + 4); d.setTextColor(...TX); d.setFontSize(10); d.text(d.splitTextToSize(String(v), cw - 6)[0], cx + 3, y + 8.8); cx += cw + 2; }
   y += 14;
   // ---- tabela de exames (sem mnemônico)
-  const body = itens.map((i, k) => { const r = [i.nome || '', i.setor || exs[k].setor || '', i.prazoDias != null ? `${i.prazoDias} ${i.prazoDias === 1 ? 'dia útil' : 'dias úteis'}` : '—']; if (mostraValor) r.push(i.valor != null ? brl(i.valor) : 'sem valor'); return r; });
-  d.autoTable({ startY: y, margin: { left: ML, right: MR }, head: [mostraValor ? ['EXAME', 'SETOR', 'PRAZO', 'VALOR'] : ['EXAME', 'SETOR', 'PRAZO']], body,
+  const body = itens.map((i, k) => { const r = [i.nome || '', i.setor || exs[k].setor || '']; if (duplo) r.push(curto(i.tabelaNome || (i.tabela === orc.convenio2 ? orc.convenio2Nome : orc.convenioNome) || '')); r.push(i.prazoDias != null ? `${i.prazoDias} ${i.prazoDias === 1 ? 'dia útil' : 'dias úteis'}` : '—'); if (mostraValor) r.push(i.valor != null ? brl(i.valor) : 'sem valor'); return r; });
+  const head = ['EXAME', 'SETOR']; if (duplo) head.push('TABELA'); head.push('PRAZO'); if (mostraValor) head.push('VALOR');
+  const cs = duplo ? { 0: { cellWidth: 'auto' }, 1: { cellWidth: 30 }, 2: { cellWidth: 28, textColor: CZ, fontStyle: 'bold' }, 3: { cellWidth: 24, textColor: AZ, fontStyle: 'bold' }, 4: { cellWidth: 26, halign: 'right', fontStyle: 'bold' } }
+                   : { 0: { cellWidth: 'auto' }, 1: { cellWidth: 36 }, 2: { cellWidth: 26, textColor: AZ, fontStyle: 'bold' }, 3: { cellWidth: 26, halign: 'right', fontStyle: 'bold' } };
+  d.autoTable({ startY: y, margin: { left: ML, right: MR }, head: [head], body,
     styles: { font: 'helvetica', fontSize: 9, cellPadding: { top: 2.4, bottom: 2.4, left: 2.5, right: 2.5 }, textColor: TX, lineColor: LN, lineWidth: { bottom: 0.2 } },
     headStyles: { fillColor: AZ, textColor: 255, fontSize: 7.5, fontStyle: 'bold' }, alternateRowStyles: { fillColor: [249, 250, 252] },
-    columnStyles: { 0: { cellWidth: 'auto' }, 1: { cellWidth: 36 }, 2: { cellWidth: 26, textColor: AZ, fontStyle: 'bold' }, 3: { cellWidth: 26, halign: 'right', fontStyle: 'bold' } } });
+    columnStyles: cs });
   y = d.lastAutoTable.finalY + 4;
   // ---- faixa do total
   d.setFillColor(...AZ2); d.roundedRect(ML, y, CW, 15, 2.5, 2.5, 'F');
@@ -198,6 +202,13 @@ export async function gerarPdf(orc, { validadeDias = 7, baixar = true, unitario 
   d.setFontSize(7.5); d.text(linkPre ? 'Para agilizar o atendimento, faça o pré-cadastro pelo QR code abaixo: reduz o tempo com a atendente e agiliza a coleta.' : 'Para agilizar o atendimento, solicite o pré-cadastro deste orçamento: reduz o tempo com a atendente e agiliza a coleta.', ML + 4, y + 10.5);
   d.setFontSize(7); d.text('TOTAL DO ORÇAMENTO', W - MR - 4, y + 5, { align: 'right' }); d.setFont('helvetica', 'bold'); d.setFontSize(16); d.text(brl(orc.total || 0), W - MR - 4, y + 12, { align: 'right' });
   y += 19;
+  if (duplo) { // subtotais por tabela
+    const t1 = orc.totalConv1 ?? itens.filter(i => i.tabela !== orc.convenio2).reduce((a, i) => a + (i.valor || 0), 0), t2 = orc.totalConv2 ?? itens.filter(i => i.tabela === orc.convenio2).reduce((a, i) => a + (i.valor || 0), 0);
+    const n1 = itens.filter(i => i.tabela !== orc.convenio2).length, n2 = itens.length - n1;
+    d.setTextColor(...TX); d.setFont('helvetica', 'bold'); d.setFontSize(8.5);
+    d.text(`${orc.convenioNome || orc.convenio}: ${n1} exame${n1 !== 1 ? 's' : ''} · ${brl(t1)}     |     ${orc.convenio2Nome || orc.convenio2}: ${n2} exame${n2 !== 1 ? 's' : ''} · ${brl(t2)}`, W / 2, y - 1.5, { align: 'center' });
+    y += 4;
+  }
   // ---- pré-cadastro pelo celular (QR + link), quando o orçamento tem token
   if (linkPre) {
     try {
