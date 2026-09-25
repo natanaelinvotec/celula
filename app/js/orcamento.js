@@ -16,6 +16,13 @@ const st = { id: null, numero: null, itens: [], fotos: [], convenio: null, convS
 const slugDe = it => (st.duplo && it.tab === 2) ? st.convSlug2 : st.convSlug;
 const nomeDe = it => (st.duplo && it.tab === 2) ? st.convenio2 : st.convenio;
 const vTot = i => (i.valor || 0) * (Number(i.qtd) || 1); // valor da linha = unitário × quantidade (amostras/dosagens/pontos)
+/** Exame já está no orçamento? Devolve a linha existente (ignora linhas em conferência). */
+const jaTem = mn => mn ? st.itens.find(i => i.ex?.mnemonico === mn && i.status !== 'conferencia') : null;
+/** Marca na linha existente que o pedido repetiu o exame e avisa a atendente. */
+function marcarRepetido(existente, lido, origem) {
+  existente.repetido = [...new Set([...(existente.repetido || []), lido || origem || 'adicionado de novo'])];
+  toast(`${existente.ex.nome} já está no orçamento${lido ? ` — o pedido repete em “${lido}”` : ''}. Não foi duplicado.`);
+}
 const curto = n => String(n || '').replace(/^tabela\s+/i, '').split(/\s+/).slice(0, 2).join(' ');
 const cfg = await D.config(); const convs = ordenarConvenios(perfil.papel === 'admin' ? await D.conveniosTodos() : await D.convenios()); // atendentes só veem convênios visíveis
 // Ordem do seletor: PARTICULAR (preferencial) → TABELA SOCIAL → PAX → PERFIS (A–Z) → demais (A–Z)
@@ -181,7 +188,9 @@ async function adicionarLido(e) {
   const qtd = Math.max(1, Math.min(12, Number(e.quantidade) || 1));
   const it = { uid: Math.random().toString(36).slice(2), lido: e.texto, normalizado: e.normalizado, confIA: e.confianca, cands, ex: null, status: 'miss', valor: null, prazoDias: null, origem: null, qtd };
   if (cands.length) {
-    const best = cands[0]; it.ex = best.ex; it.conf = Math.min(e.confianca, best.confianca);
+    const best = cands[0];
+    if (best.via !== 'busca' || best.confianca >= CONF_MIN_CFG) { const ex0 = jaTem(best.ex.mnemonico); if (ex0) { marcarRepetido(ex0, e.texto); return; } }
+    it.ex = best.ex; it.conf = Math.min(e.confianca, best.confianca);
     it.status = (it.conf >= CONF_MIN_CFG && best.via !== 'busca') || best.via === 'apelido' ? 'ok' : 'flag';
     it.iaMn = best.ex.mnemonico; it.iaVia = best.via || null; it.iaStatus = it.status; // o que a IA sugeriu (acurácia)
     await precificar(it);
@@ -198,7 +207,7 @@ async function adicionarLido(e) {
   if (qtd > 1 && it.ex) { const v = await varianteComQuantidade(it.ex, qtd); if (v) { it.ex = v; it.iaMn = v.mnemonico; it.qtd = 1; await precificar(it); return; }
     // o exame casado já traz outra quantidade no nome (ex.: "[3 DOSAGENS]" e o pedido diz 4): não multiplica, pede confirmação
     if (/\d+\s*(DOSAGENS?|PONTOS?|AMOSTRAS?)/.test(it.ex.nomeBusca)) { it.qtd = 1; it.status = 'flag'; it.conf = Math.min(it.conf, 0.6); return; } }
-  if (qtd > 1 && it.ex) { const serie = await serieDoExame(it.ex, qtd); if (serie.length === qtd - 1) { it.qtd = 1; for (const ex of serie) { const s2 = { uid: Math.random().toString(36).slice(2), lido: e.texto, normalizado: e.normalizado, confIA: e.confianca, cands: [], ex, status: it.status === 'flag' ? 'flag' : 'ok', conf: it.conf, iaMn: ex.mnemonico, iaStatus: it.status, valor: null, prazoDias: null, origem: null, qtd: 1, serieDe: it.uid }; await precificar(s2); st.itens.push(s2); } } }
+  if (qtd > 1 && it.ex) { const serie = await serieDoExame(it.ex, qtd); if (serie.length === qtd - 1) { it.qtd = 1; for (const ex of serie) { if (jaTem(ex.mnemonico)) { marcarRepetido(jaTem(ex.mnemonico), e.texto); continue; } const s2 = { uid: Math.random().toString(36).slice(2), lido: e.texto, normalizado: e.normalizado, confIA: e.confianca, cands: [], ex, status: it.status === 'flag' ? 'flag' : 'ok', conf: it.conf, iaMn: ex.mnemonico, iaStatus: it.status, valor: null, prazoDias: null, origem: null, qtd: 1, serieDe: it.uid }; await precificar(s2); st.itens.push(s2); } } }
 }
 /** Modal: a atendente monta o grupo para o termo lido (nome, grafias, exames) — grava em `grupos` e já abre as linhas. */
 async function abrirEditorGrupo(it) {
@@ -232,7 +241,7 @@ async function abrirEditorGrupo(it) {
 /** Abre um grupo de pedido em linhas (uma por exame do catálogo). Devolve quantas linhas entraram. */
 async function expandirGrupo(g, lido) {
   const cat = await D.catalogoMap(); let n = 0;
-  for (const mn of g.mnemonicos) { const ex = cat[mn]; if (!ex || ex.ativo === false) continue; if (st.itens.some(i => i.ex?.mnemonico === mn && i.grupo === g.nome)) continue;
+  for (const mn of g.mnemonicos) { const ex = cat[mn]; if (!ex || ex.ativo === false) continue; const ex0 = jaTem(mn); if (ex0) { if (ex0.grupo !== g.nome) marcarRepetido(ex0, lido, 'grupo ' + g.nome); continue; }
     const it = { uid: Math.random().toString(36).slice(2), lido, normalizado: g.nome.toUpperCase(), confIA: 1, conf: 1, cands: [], ex, status: 'ok', valor: null, prazoDias: null, origem: null, qtd: 1, grupo: g.nome, iaMn: mn, iaStatus: 'ok' };
     await precificar(it); st.itens.push(it); n++; }
   if (n) toast(`“${lido}” = grupo ${g.nome}: ${n} exame${n > 1 ? 's' : ''} adicionado${n > 1 ? 's' : ''}`, true);
@@ -290,7 +299,7 @@ function render() {
       const c = it.conf >= .85 ? 'g' : it.conf >= .7 ? 'w' : 'c';
       const tr = document.createElement('tr'); tr.className = it.status === 'flag' ? 'flag' : ['miss', 'semvalor', 'conferencia'].includes(it.status) ? 'miss' : '';
       tr.innerHTML = `<td>${mnemonicoHtml(it.ex, { cor: meta.cor })}</td>
-        <td class="nm"><b>${escapeHtml(it.ex ? it.ex.nome : it.normalizado || it.lido)}${it.qtd > 1 ? `<span style="color:var(--c3)">${escapeHtml(rotuloQtd(it.ex?.nome, it.qtd))}</span>` : ''}</b><small>${it.ex ? (it.ex.codigoTuss ? 'TUSS ' + it.ex.codigoTuss : 'sem TUSS') : 'não está no AutoLAC'}${it.origem === 'manual' ? ' · valor aprovado pela gestão' : ''}${it.grupo ? ` · <span class="pill on" style="padding:0 7px">grupo ${escapeHtml(it.grupo)}</span>` : ''}</small></td>
+        <td class="nm"><b>${escapeHtml(it.ex ? it.ex.nome : it.normalizado || it.lido)}${it.qtd > 1 ? `<span style="color:var(--c3)">${escapeHtml(rotuloQtd(it.ex?.nome, it.qtd))}</span>` : ''}</b><small>${it.ex ? (it.ex.codigoTuss ? 'TUSS ' + it.ex.codigoTuss : 'sem TUSS') : 'não está no AutoLAC'}${it.origem === 'manual' ? ' · valor aprovado pela gestão' : ''}${it.grupo ? ` · <span class="pill on" style="padding:0 7px">grupo ${escapeHtml(it.grupo)}</span>` : ''}${it.repetido?.length ? ` · <span class="pill warn" style="padding:0 7px" title="O pedido pede este exame mais de uma vez; entrou só uma">repetido no pedido: ${escapeHtml(it.repetido.join(', '))}</span>` : ''}</small></td>
         <td>${it.lido ? `<span class="conf ${c}"><i><b style="width:${Math.round(it.conf * 100)}%"></b></i>${Math.round(it.conf * 100)}%</span><small class="note" style="display:block">leu “${escapeHtml(it.lido)}”</small>` : '<span class="note">digitado</span>'}</td>
         ${st.duplo ? `<td><button class="tabsw t${it.tab === 2 ? 2 : 1}" title="Clique para trocar de tabela" data-tab="${it.uid}">${escapeHtml(curto(nomeDe(it)))}</button></td>` : ''}
         <td>${it.prazoDias != null ? `<span class="pz ${it.prazoDias > 5 ? 'long' : ''}">${it.prazoDias} ${it.prazoDias > 1 ? 'dias úteis' : 'dia útil'}</span>` : '<span class="pz long">—</span>'}</td>
@@ -379,6 +388,7 @@ document.addEventListener('change', e => { const inp = e.target; if (!inp.matche
 document.addEventListener('input', e => { const inp = e.target; if (inp.matches('[data-fix]')) { const it = st.itens.find(i => i.uid === inp.dataset.fix); if (it) it.buscaTxt = inp.value; } if (inp.matches('[data-sf]')) { const it = st.itens.find(i => i.uid === inp.closest('[data-confwrap]')?.dataset.confwrap); if (it) lerSugestao(it); } });
 async function escolher(it, mnemonico) {
   const cat = await D.catalogoMap(); const ex = cat[mnemonico]; if (!ex) return;
+  const ex0 = jaTem(mnemonico); if (ex0 && ex0.uid !== it.uid) { marcarRepetido(ex0, it.lido); st.itens = st.itens.filter(i => i.uid !== it.uid); render(); if (it.lido) D.ensinar(it.lido, mnemonico, perfil.unidade); return; }
   if (it.lido && it.iaMn !== mnemonico) it.corrigido = true; // a atendente trocou o que a IA sugeriu (ou a IA não achou)
   it.ex = ex; it.status = 'ok'; it.conf = 1; it.abrirBusca = false; it.abrirConf = false; it.editar = false; it.fora = null; it.buscaTxt = ''; await precificar(it); render();
 
@@ -399,7 +409,7 @@ document.addEventListener('input', async e => {
   box.innerHTML = hits.map(c => `<button data-${inp.id === 'q' ? 'novo' : 'add'}="${inp.dataset.fix || 'q'}" data-m="${c.mnemonico}"><span class="m">${c.mnemonico}</span><span>${escapeHtml(c.nome)}</span><span class="m" style="margin-left:auto">${brl(c.precos?.[st.convSlug])}${st.duplo && st.convSlug2 ? ' / ' + brl(c.precos?.[st.convSlug2]) : ''}</span></button>`).join('') || naoAchou;
   box.hidden = false;
 });
-$('sug').addEventListener('click', async e => { const b = e.target.closest('[data-novo]'); if (!b) return; const cat = await D.catalogoMap(); const it = { uid: Math.random().toString(36).slice(2), lido: null, conf: 1, cands: [], ex: cat[b.dataset.m], status: 'ok' }; st.manuais = st.manuais || {}; await precificar(it); st.itens.push(it); $('q').value = ''; $('sug').hidden = true; render(); });
+$('sug').addEventListener('click', async e => { const b = e.target.closest('[data-novo]'); if (!b) return; const cat = await D.catalogoMap(); const ex0 = jaTem(b.dataset.m); if (ex0) { marcarRepetido(ex0, null, 'adicionado manualmente'); $('q').value = ''; $('sug').hidden = true; render(); return; } const it = { uid: Math.random().toString(36).slice(2), lido: null, conf: 1, cands: [], ex: cat[b.dataset.m], status: 'ok' }; st.manuais = st.manuais || {}; await precificar(it); st.itens.push(it); $('q').value = ''; $('sug').hidden = true; render(); });
 document.addEventListener('click', e => { if (!e.target.closest('.search')) document.querySelectorAll('.sug').forEach(s => s.hidden = true); });
 
 // ---------- conferência (tempo real) ----------
