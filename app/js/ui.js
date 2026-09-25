@@ -211,6 +211,12 @@ export async function gerarPdf(orc, { validadeDias = 7, baixar = true, unitario 
     d.text(`${orc.convenioNome || orc.convenio}: ${n1} exame${n1 !== 1 ? 's' : ''} · ${brl(t1)}     |     ${orc.convenio2Nome || orc.convenio2}: ${n2} exame${n2 !== 1 ? 's' : ''} · ${brl(t2)}`, W / 2, y - 1.5, { align: 'center' });
     y += 4;
   }
+  // ---- convênio com cobertura (ex.: IMPCG/UFMS cobrem 70%): deixa claro que os valores são a parte do paciente
+  { const notas = [];
+    if (orc.repassePct && orc.repassePct !== 100) notas.push(`${orc.convenioNome || orc.convenio} cobre ${100 - orc.repassePct}% da tabela — os valores deste orçamento são a parte do paciente (${orc.repassePct}%).`);
+    if (duplo && orc.repassePct2 && orc.repassePct2 !== 100) notas.push(`${orc.convenio2Nome || orc.convenio2} cobre ${100 - orc.repassePct2}% da tabela — os valores são a parte do paciente (${orc.repassePct2}%).`);
+    if (notas.length) { d.setTextColor(...AZ2); d.setFont('helvetica', 'bold'); d.setFontSize(7.8); for (const n of notas) { d.text(n, W / 2, y - 1, { align: 'center' }); y += 4; } }
+  }
   // ---- pré-cadastro pelo celular (QR + link), quando o orçamento tem token
   if (linkPre) {
     try {
