@@ -10,7 +10,7 @@ const { perfil } = await exigirLogin({ papel: 'admin' });
 const root = montarShell({ perfil, ativo: 'dash', titulo: 'Dashboard', painel: true });
 const $ = id => document.getElementById(id);
 const cfg = await D.config();
-const TITLES = { dash: ['Dashboard', 'produção da central de atendimento'], sol: ['Solicitações de exames', 'exames lidos nos pedidos que ainda não existem no AutoLAC'], orc: ['Orçamentos', 'histórico de todas as atendentes'], cat: ['Catálogo de exames', 'valores por convênio, prazos e visibilidade'], usr: ['Usuários', 'equipe, papéis e senhas'], exp: ['Exportar atendimentos', 'quem veio coletar, por período e atendente'], cfg: ['Configurações', 'regras do sistema e sua conta'], ia: ['Acurácia da IA', 'quanto a leitura automática acerta e o que a memória já aprendeu'] };
+const TITLES = { dash: ['Dashboard', 'produção da central de atendimento'], sol: ['Solicitações de exames', 'exames lidos nos pedidos que ainda não existem no AutoLAC'], orc: ['Orçamentos', 'histórico de todas as atendentes'], cat: ['Catálogo de exames', 'valores por convênio, prazos e visibilidade'], usr: ['Usuários', 'equipe, papéis e senhas'], exp: ['Exportar atendimentos', 'quem veio coletar, por período e atendente'], cfg: ['Configurações', 'regras do sistema e sua conta'], grp: ['Grupos de pedido', 'termos do pedido médico que abrem vários exames (Ferrograma, Lipidograma…)'], ia: ['Acurácia da IA', 'quanto a leitura automática acerta e o que a memória já aprendeu'] };
 
 // fila de solicitações em tempo real (badge + tela)
 let pendentes = [], solSel = null, renderSol = null;
@@ -18,7 +18,7 @@ D.orcamentosParaLembrete({ dias: Number(cfg.lembreteDias) || 3 }).then(l => { co
 D.ouvirSolicitacoes('pendente', list => { pendentes = list; const b = $('badgeSol'); if (b) { b.textContent = list.length; b.hidden = !list.length; } if (location.hash === '#sol' && renderSol) renderSol(); });
 
 // ---------- roteamento por hash ----------
-const views = { dash: viewDash, sol: viewSol, orc: viewOrc, cat: viewCat, cnv: viewCnv, perf: viewPerf, crm: viewCrm, conv: viewConv, ia: viewIA, usr: viewUsr, exp: viewExp, cfg: viewCfg };
+const views = { dash: viewDash, sol: viewSol, orc: viewOrc, cat: viewCat, cnv: viewCnv, grp: viewGrp, perf: viewPerf, crm: viewCrm, conv: viewConv, ia: viewIA, usr: viewUsr, exp: viewExp, cfg: viewCfg };
 async function rota() {
   const k = (location.hash || '#dash').slice(1); const fn = views[k] || viewDash;
   document.querySelectorAll('.nav[data-k]').forEach(a => a.classList.toggle('on', a.dataset.k === (k === 'orc' ? 'hist' : k)));
@@ -94,6 +94,50 @@ function calendar(mes) {
   let s = ['DO', 'SE', 'TE', 'QA', 'QI', 'SX', 'SA'].map(d => `<div class="wd">${d}</div>`).join(''); for (let i = 0; i < first; i++) s += '<div></div>';
   for (let d = 1; d <= nd; d++) s += `<div class="${d === hoje.getDate() ? 'tod' : ''} ${porDia[d] ? 'mk' : ''}" title="${porDia[d] || 0} orçamentos">${d}${porDia[d] ? `<small style="display:block;font-size:.6rem;opacity:.8">${porDia[d]}</small>` : ''}</div>`;
   $('calGrid').innerHTML = s;
+}
+
+// ===================== GRUPOS DE PEDIDO =====================
+async function viewGrp() {
+  const cat = await D.catalogo(); const catMap = Object.fromEntries(cat.map(c => [c.mnemonico, c]));
+  let lista = await D.grupos(true); let edit = null; // grupo em edição (objeto) ou null
+  const desenhar = () => {
+    root.innerHTML = `<div class="grid" style="grid-template-columns:1.1fr 1fr;gap:16px">
+    <div class="card"><div class="card-h"><h2>Grupos cadastrados</h2><span class="cnt">${lista.length}</span><div class="sp"></div><button class="btn ghost sm" id="gNovo">+ Novo grupo</button>${lista.length ? '' : '<button class="btn blue sm" id="gPadrao">Criar grupos padrão</button>'}</div>
+      <div class="card-b">${lista.length ? `<table class="tbl"><thead><tr><th>Grupo</th><th>Grafias no pedido</th><th>Exames</th><th></th></tr></thead><tbody>${lista.map(g => `<tr class="${g.ativo === false ? 'fora' : ''}"><td><b>${escapeHtml(g.nome)}</b>${g.ativo === false ? ' <span class="pill crit">inativo</span>' : ''}</td><td><small class="note">${(g.termos || []).map(escapeHtml).join(' · ')}</small></td><td>${(g.mnemonicos || []).map(m => `<span class="mn" title="${escapeHtml(catMap[m]?.nome || 'não está no catálogo')}" ${catMap[m] ? '' : 'style="background:var(--crit-50);color:var(--crit)"'}>${escapeHtml(m)}</span>`).join(' ')}</td><td style="white-space:nowrap"><button class="ib" title="Editar" data-gedit="${g.id}">${ICO.lapis}</button><button class="ib red" title="Excluir" data-gdel="${g.id}">${ICO.lixo}</button></td></tr>`).join('')}</tbody></table>` : '<p class="note">Nenhum grupo ainda. Clique em “Criar grupos padrão” (Ferrograma, Lipidograma, Hepatograma, Ionograma, Proteinograma) ou em “Novo grupo”.</p>'}
+      <p class="note" style="margin-top:12px">Como funciona: quando a IA lê no pedido um termo igual a uma das grafias (ou o próprio nome do grupo), o orçamento abre uma linha por exame, já confirmadas. As atendentes também podem criar grupos direto na tela do orçamento, pelo botão “É um grupo”.</p></div></div>
+    <div class="card"><div class="card-h"><h2>${edit ? (edit.id ? 'Editar grupo' : 'Novo grupo') : 'Selecione um grupo'}</h2></div><div class="card-b">${edit ? `
+      <div class="form" style="grid-template-columns:1fr;gap:10px">
+        <label class="f">Nome<input class="in" id="eNome" value="${escapeHtml(edit.nome || '')}"></label>
+        <label class="f">Grafias que aparecem no pedido (uma por linha ou separadas por vírgula)<textarea class="in" id="eTermos" rows="3">${escapeHtml((edit.termos || []).join(', '))}</textarea></label>
+        <label class="f">Adicionar exame<div class="search"><input class="in" id="eBusca" placeholder="nome ou mnemônico" autocomplete="off"><div class="sug" id="eSug" hidden></div></div></label>
+        <div id="eLista" style="display:flex;gap:6px;flex-wrap:wrap;min-height:34px"></div>
+        <label class="chk" style="display:flex;gap:8px;align-items:center;font-weight:700"><input type="checkbox" id="eAtivo" ${edit.ativo !== false ? 'checked' : ''}> Ativo</label>
+        <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn ghost" id="eCancel">Cancelar</button><button class="btn blue" id="eSalvar">Salvar</button></div>
+      </div>` : '<p class="note">Escolha um grupo na lista ou crie um novo.</p>'}</div></div></div>`;
+    const sel = new Map((edit?.mnemonicos || []).filter(m => catMap[m]).map(m => [m, catMap[m]]));
+    const lst = () => { const el = $('eLista'); if (el) el.innerHTML = [...sel.values()].map(ex => `<span class="pill on" style="gap:6px">${escapeHtml(ex.mnemonico)} · ${escapeHtml(ex.nome)} <button class="ib" data-edel="${escapeHtml(ex.mnemonico)}">${ICO.x}</button></span>`).join('') || '<span class="note">Nenhum exame.</span>'; };
+    lst();
+    $('gNovo').onclick = () => { edit = { nome: '', termos: [], mnemonicos: [], ativo: true }; desenhar(); };
+    $('gPadrao') && ($('gPadrao').onclick = async () => { try { lista = await D.criarGruposPadrao(); toast('Grupos padrão criados', true); desenhar(); } catch (e) { toast('Erro: ' + e.message); } });
+    root.onclick = async e => {
+      const ed = e.target.closest('[data-gedit]'); if (ed) { edit = { ...lista.find(g => g.id === ed.dataset.gedit) }; desenhar(); return; }
+      const dl = e.target.closest('[data-gdel]'); if (dl) { const g = lista.find(x => x.id === dl.dataset.gdel); if (dl.dataset.armed !== '1') { dl.dataset.armed = '1'; dl.style.color = 'var(--red)'; toast(`Clique de novo para excluir o grupo ${g.nome}.`); setTimeout(() => { dl.dataset.armed = ''; }, 5000); return; } try { await D.excluirGrupo(g.id); lista = await D.grupos(true); if (edit?.id === g.id) edit = null; toast('Grupo excluído', true); desenhar(); } catch (err) { toast('Erro: ' + err.message); } return; }
+      const ad = e.target.closest('[data-eadd]'); if (ad) { sel.set(ad.dataset.eadd, catMap[ad.dataset.eadd]); $('eBusca').value = ''; $('eSug').hidden = true; lst(); return; }
+      const rm = e.target.closest('[data-edel]'); if (rm) { sel.delete(rm.dataset.edel); lst(); return; }
+    };
+    if (edit) {
+      $('eBusca').oninput = () => { const v = norm($('eBusca').value); const box = $('eSug'); if (v.length < 2) { box.hidden = true; return; } const toks = v.split(' ');
+        const hits = cat.filter(c => c.ativo !== false && toks.every(t => c.nomeBusca.includes(t) || c.mnemonico.includes(t))).slice(0, 10);
+        box.innerHTML = hits.map(c => `<button data-eadd="${c.mnemonico}"><span class="m">${c.mnemonico}</span><span>${escapeHtml(c.nome)}</span></button>`).join('') || '<div class="note" style="padding:8px 12px">Nada encontrado.</div>'; box.hidden = false; };
+      $('eCancel').onclick = () => { edit = null; desenhar(); };
+      $('eSalvar').onclick = async () => {
+        const nome = $('eNome').value.trim(); const termos = [nome, ...$('eTermos').value.split(/[,\n]/)].map(t => t.trim()).filter(Boolean);
+        if (!nome || !sel.size) { toast('Informe o nome e ao menos um exame.'); return; }
+        try { await D.salvarGrupo(edit.id || null, { nome, termos, mnemonicos: [...sel.keys()], ativo: $('eAtivo').checked }); lista = await D.grupos(true); edit = null; toast('Grupo salvo', true); desenhar(); } catch (err) { toast('Erro: ' + err.message); }
+      };
+    }
+  };
+  desenhar();
 }
 
 // ===================== ACURÁCIA DA IA =====================
