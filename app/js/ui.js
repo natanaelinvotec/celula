@@ -180,7 +180,7 @@ export async function gerarPdf(orc, { validadeDias = 7, baixar = true, unitario 
   d.setTextColor(...CZ); d.setFontSize(8.5); d.text(`Validade: ${validadeDias} dias (até ${val.toLocaleDateString('pt-BR')})`, W - MR, y + 13, { align: 'right' });
   y += 24; d.setDrawColor(...VM); d.setLineWidth(0.9); d.line(ML, y, W - MR, y); y += 4;
   // ---- cartões de informação
-  const duplo = !!orc.duplo && !!orc.convenio2; const curto = n => String(n || '').replace(/^tabela\s+/i, '');
+  const duplo = !!orc.duplo && !!orc.convenio2; const curto = n => String(n || '').replace(/^(tabela|perfil)\s+/i, '');
   const cards = [['PACIENTE', orc.paciente || '—', 1.4], [duplo ? 'CONVÊNIOS / TABELAS' : 'CONVÊNIO / TABELA', duplo ? `${orc.convenioNome || orc.convenio} + ${orc.convenio2Nome || orc.convenio2}` : (orc.convenioNome || orc.convenio || '—'), duplo ? 1.3 : 1], ['TELEFONE', orc.telefone || '—', duplo ? 0.8 : 1]];
   const tot = cards.reduce((a, c) => a + c[2], 0); let cx = ML;
   for (const [k, v, f] of cards) { const cw = (CW - 4) * f / tot; d.setFillColor(...F); d.roundedRect(cx, y, cw, 11, 2, 2, 'F'); d.setTextColor(...CZ); d.setFont('helvetica', 'bold'); d.setFontSize(6.5); d.text(k, cx + 3, y + 4); d.setTextColor(...TX); d.setFontSize(10); d.text(d.splitTextToSize(String(v), cw - 6)[0], cx + 3, y + 8.8); cx += cw + 2; }
@@ -188,7 +188,7 @@ export async function gerarPdf(orc, { validadeDias = 7, baixar = true, unitario 
   // ---- tabela de exames (sem mnemônico)
   const body = itens.map((i, k) => { const r = [i.nome || '', i.setor || exs[k].setor || '']; if (duplo) r.push(curto(i.tabelaNome || (i.tabela === orc.convenio2 ? orc.convenio2Nome : orc.convenioNome) || '')); r.push(i.prazoDias != null ? `${i.prazoDias} ${i.prazoDias === 1 ? 'dia útil' : 'dias úteis'}` : '—'); if (mostraValor) r.push(i.valor != null ? brl(i.valor) : 'sem valor'); return r; });
   const head = ['EXAME', 'SETOR']; if (duplo) head.push('TABELA'); head.push('PRAZO'); if (mostraValor) head.push('VALOR');
-  const cs = duplo ? { 0: { cellWidth: 'auto' }, 1: { cellWidth: 30 }, 2: { cellWidth: 28, textColor: CZ, fontStyle: 'bold' }, 3: { cellWidth: 24, textColor: AZ, fontStyle: 'bold' }, 4: { cellWidth: 26, halign: 'right', fontStyle: 'bold' } }
+  const cs = duplo ? { 0: { cellWidth: 'auto' }, 1: { cellWidth: 30 }, 2: { cellWidth: 24, textColor: CZ, fontStyle: 'bold', fontSize: 7.5 }, 3: { cellWidth: 24, textColor: AZ, fontStyle: 'bold' }, 4: { cellWidth: 26, halign: 'right', fontStyle: 'bold' } }
                    : { 0: { cellWidth: 'auto' }, 1: { cellWidth: 36 }, 2: { cellWidth: 26, textColor: AZ, fontStyle: 'bold' }, 3: { cellWidth: 26, halign: 'right', fontStyle: 'bold' } };
   d.autoTable({ startY: y, margin: { left: ML, right: MR }, head: [head], body,
     styles: { font: 'helvetica', fontSize: 9, cellPadding: { top: 2.4, bottom: 2.4, left: 2.5, right: 2.5 }, textColor: TX, lineColor: LN, lineWidth: { bottom: 0.2 } },
