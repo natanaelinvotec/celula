@@ -15,6 +15,7 @@ const st = { id: null, numero: null, itens: [], fotos: [], convenio: null, convS
 // dois convênios: cada item tem `tab` (1 ou 2). Sem o modo duplo, tudo é 1.
 const slugDe = it => (st.duplo && it.tab === 2) ? st.convSlug2 : st.convSlug;
 const nomeDe = it => (st.duplo && it.tab === 2) ? st.convenio2 : st.convenio;
+const vTot = i => (i.valor || 0) * (Number(i.qtd) || 1); // valor da linha = unitário × quantidade (amostras/dosagens/pontos)
 const curto = n => String(n || '').replace(/^tabela\s+/i, '').split(/\s+/).slice(0, 2).join(' ');
 const cfg = await D.config(); const convs = ordenarConvenios(perfil.papel === 'admin' ? await D.conveniosTodos() : await D.convenios()); // atendentes só veem convênios visíveis
 // Ordem do seletor: PARTICULAR (preferencial) → TABELA SOCIAL → PAX → PERFIS (A–Z) → demais (A–Z)
@@ -101,7 +102,7 @@ async function carregarPerfil(c) {
     st.manuais = await D.precosManuais(st.convSlug);
     if (substituir) st.itens = st.itens.filter(i => i.status === 'conferencia'); // mantém só o que está na gestão
     for (const ex of exs) { if (st.itens.some(i => i.ex?.mnemonico === ex.mnemonico)) continue; const it = { uid: Math.random().toString(36).slice(2), lido: null, conf: 1, cands: [], ex, status: 'ok', valor: null, prazoDias: null, origem: null }; await precificar(it); st.itens.push(it); }
-    await reprecificar(); render(); toast(`${c.nome}: ${exs.length} exames carregados · total ${brl(st.itens.reduce((a, i) => a + (i.valor || 0), 0))}`, true);
+    await reprecificar(); render(); toast(`${c.nome}: ${exs.length} exames carregados · total ${brl(st.itens.reduce((a, i) => a + vTot(i), 0))}`, true);
   };
   const temItens = st.itens.some(i => i.status !== 'conferencia');
   if (!temItens) { await aplicar(true); return; }
@@ -174,7 +175,8 @@ $('btnRun').addEventListener('click', async () => {
 
 async function adicionarLido(e) {
   const cands = await D.resolver(e.texto, { renal: st.renal, normalizadoIA: e.normalizado });
-  const it = { uid: Math.random().toString(36).slice(2), lido: e.texto, normalizado: e.normalizado, confIA: e.confianca, cands, ex: null, status: 'miss', valor: null, prazoDias: null, origem: null };
+  const qtd = Math.max(1, Math.min(12, Number(e.quantidade) || 1));
+  const it = { uid: Math.random().toString(36).slice(2), lido: e.texto, normalizado: e.normalizado, confIA: e.confianca, cands, ex: null, status: 'miss', valor: null, prazoDias: null, origem: null, qtd };
   if (cands.length) {
     const best = cands[0]; it.ex = best.ex; it.conf = Math.min(e.confianca, best.confianca);
     it.status = (it.conf >= CONF_MIN_CFG && best.via !== 'busca') || best.via === 'apelido' ? 'ok' : 'flag';
@@ -188,6 +190,18 @@ async function adicionarLido(e) {
     const fora = cat.find(c => c.foraAutolac && alvo.includes(c.nomeBusca)); if (fora) { it.fora = fora; it.motivo = 'fora_autolac'; }
   }
   st.itens.push(it);
+  // "EPF 3 amostras": se o catálogo tem a série (EPF, EPF2, EPF3 / "2ª AMOSTRA"), vira uma linha por amostra; senão fica 1 linha com quantidade
+  if (qtd > 1 && it.ex) { const serie = await serieDoExame(it.ex, qtd); if (serie.length === qtd - 1) { it.qtd = 1; for (const ex of serie) { const s2 = { uid: Math.random().toString(36).slice(2), lido: e.texto, normalizado: e.normalizado, confIA: e.confianca, cands: [], ex, status: it.status === 'flag' ? 'flag' : 'ok', conf: it.conf, iaMn: ex.mnemonico, iaStatus: it.status, valor: null, prazoDias: null, origem: null, qtd: 1, serieDe: it.uid }; await precificar(s2); st.itens.push(s2); } } }
+}
+/** Exames "irmãos" numerados de um exame base (EPF → EPF2, EPF3…; ou nome com "2ª AMOSTRA"/"3A AMOSTRA"). */
+async function serieDoExame(ex, n) {
+  const cat = await D.catalogo(); const base = ex.mnemonico.replace(/-DB$/, ''); const out = [];
+  for (let k = 2; k <= n; k++) {
+    const mn = cat.find(c => c.ativo !== false && !c.renal && (c.mnemonico === base + k || c.mnemonico === `${base}${k}-DB` || c.mnemonico === `${base}-${k}`))
+      || cat.find(c => c.ativo !== false && !c.renal && c.nomeBusca.startsWith(ex.nomeBusca.split(' ')[0]) && new RegExp(`\\b${k}\\s*[ªAº]?\\s*(AMOSTRA|DOSAGEM|COLETA|PONTO)`).test(c.nomeBusca));
+    if (!mn || mn.mnemonico === ex.mnemonico) break; out.push(mn);
+  }
+  return out;
 }
 async function precificar(it) {
   if (!it.ex) return;
@@ -216,10 +230,10 @@ function render() {
   if (semSetor.length) grupos.push(['Não identificado', semSetor]);
   for (const [s, list] of grupos) {
     const meta = SETORES[s] || { cor: 'var(--red)', label: 'Não encontrado no catálogo — precisa de conferência' };
-    const sub = list.reduce((a, i) => a + (i.valor || 0), 0);
+    const sub = list.reduce((a, i) => a + vTot(i), 0);
     const sec = document.createElement('section'); sec.className = 'sector'; sec.style.setProperty('--c', meta.cor);
     sec.innerHTML = `<div class="sec-h"><h3>${escapeHtml(meta.label)}</h3><span class="cnt">${list.length} exame${list.length > 1 ? 's' : ''}</span><span class="sub">${brl(sub)}</span></div>
-      <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Mnemônico</th><th>Exame</th><th>Leitura</th>${st.duplo ? '<th>Tabela</th>' : ''}<th>Prazo</th><th class="num">Valor</th><th></th></tr></thead><tbody></tbody></table></div>`;
+      <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Mnemônico</th><th>Exame</th><th>Leitura</th>${st.duplo ? '<th>Tabela</th>' : ''}<th>Prazo</th><th title="Amostras / dosagens / pontos">Qtd</th><th class="num">Valor</th><th></th></tr></thead><tbody></tbody></table></div>`;
     const tb = sec.querySelector('tbody');
     for (const it of list) {
       const c = it.conf >= .85 ? 'g' : it.conf >= .7 ? 'w' : 'c';
@@ -229,10 +243,11 @@ function render() {
         <td>${it.lido ? `<span class="conf ${c}"><i><b style="width:${Math.round(it.conf * 100)}%"></b></i>${Math.round(it.conf * 100)}%</span><small class="note" style="display:block">leu “${escapeHtml(it.lido)}”</small>` : '<span class="note">digitado</span>'}</td>
         ${st.duplo ? `<td><button class="tabsw t${it.tab === 2 ? 2 : 1}" title="Clique para trocar de tabela" data-tab="${it.uid}">${escapeHtml(curto(nomeDe(it)))}</button></td>` : ''}
         <td>${it.prazoDias != null ? `<span class="pz ${it.prazoDias > 5 ? 'long' : ''}">${it.prazoDias} ${it.prazoDias > 1 ? 'dias úteis' : 'dia útil'}</span>` : '<span class="pz long">—</span>'}</td>
-        <td class="num">${it.valor != null ? brl(it.valor) : '<span style="color:var(--red)">sem valor</span>'}</td>
+        <td><input class="in qtd" type="number" min="1" max="12" value="${it.qtd || 1}" data-qtd="${it.uid}" title="Quantidade de amostras/dosagens/pontos"></td>
+        <td class="num">${it.valor != null ? (it.qtd > 1 ? `${brl(vTot(it))}<small class="note" style="display:block;font-weight:600">${it.qtd} × ${brl(it.valor)}</small>` : brl(it.valor)) : '<span style="color:var(--red)">sem valor</span>'}</td>
         <td style="white-space:nowrap">${it.status === 'ok' ? `<button class="ib" title="Editar / trocar exame" data-edit="${it.uid}">${ICO.lapis}</button>` : ''}<button class="ib red" title="Remover" data-rm="${it.uid}">${ICO.lixo}</button></td>`;
       tb.appendChild(tr);
-      if (it.status !== 'ok' || it.editar) { const ar = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = st.duplo ? 7 : 6; td.style.padding = '0'; td.innerHTML = askBox(it); ar.appendChild(td); tb.appendChild(ar); }
+      if (it.status !== 'ok' || it.editar) { const ar = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = st.duplo ? 8 : 7; td.style.padding = '0'; td.innerHTML = askBox(it); ar.appendChild(td); tb.appendChild(ar); }
     }
     g.appendChild(sec);
   }
@@ -274,9 +289,9 @@ function formConf(it) {
   </div>`;
 }
 function stats() {
-  const n = st.itens.length, t = st.itens.reduce((a, i) => a + (i.valor || 0), 0);
+  const n = st.itens.length, t = st.itens.reduce((a, i) => a + vTot(i), 0);
   $('kN').textContent = n; $('kT').textContent = brl(t); $('fT').textContent = brl(t);
-  const f2 = $('fT2'); if (f2) { if (st.duplo) { const t1 = st.itens.filter(i => i.tab !== 2).reduce((a, i) => a + (i.valor || 0), 0), t2 = t - t1; f2.textContent = `${curto(st.convenio)}: ${brl(t1)} · ${curto(st.convenio2)}: ${brl(t2)}`; f2.hidden = false; } else f2.hidden = true; }
+  const f2 = $('fT2'); if (f2) { if (st.duplo) { const t1 = st.itens.filter(i => i.tab !== 2).reduce((a, i) => a + vTot(i), 0), t2 = t - t1; f2.textContent = `${curto(st.convenio)}: ${brl(t1)} · ${curto(st.convenio2)}: ${brl(t2)}`; f2.hidden = false; } else f2.hidden = true; }
   $('kC').textContent = st.itens.filter(i => ['flag', 'miss', 'semvalor'].includes(i.status)).length;
   $('kM').textContent = st.itens.filter(i => i.status === 'conferencia').length;
 }
@@ -305,6 +320,8 @@ function lerSugestao(it) {
   const num = x => x === '' ? null : Number(x);
   it.sug = { nome: v('nome').toUpperCase() || null, mnemonico: v('mnemonico').toUpperCase() || null, prazoDias: num(v('prazoDias')), valor: num(v('valor')), obs: v('obs') || null };
 }
+// quantidade (amostras/dosagens/pontos) por linha
+document.addEventListener('change', e => { const inp = e.target; if (!inp.matches('[data-qtd]')) return; const it = st.itens.find(i => i.uid === inp.dataset.qtd); if (!it) return; it.qtd = Math.max(1, Math.min(12, Number(inp.value) || 1)); render(); });
 // guarda o que a atendente digita para sobreviver ao re-render
 document.addEventListener('input', e => { const inp = e.target; if (inp.matches('[data-fix]')) { const it = st.itens.find(i => i.uid === inp.dataset.fix); if (it) it.buscaTxt = inp.value; } if (inp.matches('[data-sf]')) { const it = st.itens.find(i => i.uid === inp.closest('[data-confwrap]')?.dataset.confwrap); if (it) lerSugestao(it); } });
 async function escolher(it, mnemonico) {
@@ -374,13 +391,13 @@ async function onSolicitacoes(sols) {
 
 // ---------- gravar / whatsapp / limpar ----------
 function montarDados(status) {
-  const itens = st.itens.map(i => ({ mnemonico: i.ex?.mnemonico || null, nome: i.ex?.nome || i.normalizado || i.lido, setor: i.ex?.setor || null, valor: i.valor ?? null, prazoDias: i.prazoDias ?? null, lido: i.lido || null, status: i.status, solicitacaoId: i.solId || null, iaMn: i.iaMn ?? null, resultado: resultadoLeitura(i), tabela: slugDe(i) || null, tabelaNome: nomeDe(i) || null }));
+  const itens = st.itens.map(i => ({ mnemonico: i.ex?.mnemonico || null, nome: i.ex?.nome || i.normalizado || i.lido, setor: i.ex?.setor || null, valor: i.valor ?? null, prazoDias: i.prazoDias ?? null, lido: i.lido || null, status: i.status, solicitacaoId: i.solId || null, iaMn: i.iaMn ?? null, resultado: resultadoLeitura(i), tabela: slugDe(i) || null, tabelaNome: nomeDe(i) || null, qtd: Number(i.qtd) || 1, valorTotal: i.valor != null ? vTot(i) : null }));
   const pend = st.itens.some(i => i.status !== 'ok');
   return { status: status || (pend ? 'aguardando_conferencia' : 'gravado'), unidade: perfil.unidade, atendenteNome: perfil.nome, convenio: st.convSlug, convenioNome: st.convenio, renal: st.renal,
     duplo: !!st.duplo, convenio2: st.duplo ? st.convSlug2 : null, convenio2Nome: st.duplo ? st.convenio2 : null,
-    totalConv1: st.itens.filter(i => i.tab !== 2).reduce((a, i) => a + (i.valor || 0), 0), totalConv2: st.itens.filter(i => i.tab === 2).reduce((a, i) => a + (i.valor || 0), 0),
+    totalConv1: st.itens.filter(i => i.tab !== 2).reduce((a, i) => a + vTot(i), 0), totalConv2: st.itens.filter(i => i.tab === 2).reduce((a, i) => a + vTot(i), 0),
     paciente: $('pac').value.trim() || null, pacienteBusca: norm($('pac').value), telefone: $('tel').value.trim() || null, telefoneDigitos: soDigitos($('tel').value),
-    itens, total: st.itens.reduce((a, i) => a + (i.valor || 0), 0), qtd: itens.length, mnemonicos: itens.map(i => i.mnemonico).filter(Boolean),
+    itens, total: st.itens.reduce((a, i) => a + vTot(i), 0), qtd: itens.length, mnemonicos: itens.map(i => i.mnemonico).filter(Boolean),
     leituraIA: st.leitura ? { modelo: st.leitura.modelo, ms: st.leitura.ms, exames: st.leitura.exames.length, medico: st.leitura.medico || null, crm: st.leitura.crm || null, descartados: st.descartados } : null };
 }
 /** Como terminou cada leitura da IA (para o painel de acurácia): auto = IA acertou sozinha; confirmado = estava em dúvida e a atendente confirmou;
@@ -437,8 +454,8 @@ $('btnTransf').addEventListener('click', async () => {
 });
 $('btnZap').addEventListener('click', async () => {
   if (!st.itens.length) return; if (!validarPaciente()) return; try { await garantirOrcamento(); } catch {}
-  const linhas = st.itens.filter(i => i.ex).map(i => `• ${i.ex.nome}${st.duplo ? ` (${curto(nomeDe(i))})` : ''}${i.prazoDias != null ? ` — ${i.prazoDias} d.u.` : ''}${i.valor != null ? ` — ${brl(i.valor)}` : ''}`);
-  const txt = `*Célula Diagnósticos* — Orçamento ${st.numero ? '#' + st.numero : ''}\nPaciente: ${$('pac').value || '-'}\nConvênio: ${st.convenio}${st.duplo ? ' + ' + st.convenio2 : ''}\n\n${linhas.join('\n')}\n\n*Total: ${brl(st.itens.reduce((a, i) => a + (i.valor || 0), 0))}*\nValidade: ${cfg.validadeDias || 7} dias · prazos em dias úteis após a coleta.`;
+  const linhas = st.itens.filter(i => i.ex).map(i => `• ${i.ex.nome}${st.duplo ? ` (${curto(nomeDe(i))})` : ''}${i.prazoDias != null ? ` — ${i.prazoDias} d.u.` : ''}${i.qtd > 1 ? ` ×${i.qtd}` : ''}${i.valor != null ? ` — ${brl(vTot(i))}` : ''}`);
+  const txt = `*Célula Diagnósticos* — Orçamento ${st.numero ? '#' + st.numero : ''}\nPaciente: ${$('pac').value || '-'}\nConvênio: ${st.convenio}${st.duplo ? ' + ' + st.convenio2 : ''}\n\n${linhas.join('\n')}\n\n*Total: ${brl(st.itens.reduce((a, i) => a + vTot(i), 0))}*\nValidade: ${cfg.validadeDias || 7} dias · prazos em dias úteis após a coleta.`;
   const tel = soDigitos($('tel').value); window.open(`https://wa.me/${tel ? '55' + tel : ''}?text=${encodeURIComponent(txt)}`, '_blank');
   if (st.id) D.mudarStatus(st.id, 'enviado').catch(() => {});
 });
@@ -455,7 +472,7 @@ if (idEdit) (async () => {
     if (o.duplo && o.convenio2 && convs.some(c => c.slug === o.convenio2)) { st.duplo = true; $('duplo').checked = true; $('conv2Wrap').hidden = false; $('conv2').value = o.convenio2; st.convSlug2 = o.convenio2; st.convenio2 = o.convenio2Nome || convs.find(c => c.slug === o.convenio2)?.nome; st.manuais2 = await D.precosManuais(st.convSlug2); }
     $('pac').value = o.paciente || ''; $('tel').value = o.telefone || ''; st.renal = false;
     st.manuais = await D.precosManuais(st.convSlug);
-    st.itens = (o.itens || []).map(i => { const ex = i.mnemonico ? cat[i.mnemonico] : null; return { uid: Math.random().toString(36).slice(2), lido: i.lido || null, normalizado: i.nome, confIA: 1, conf: 1, cands: [], ex, status: i.status === 'conferencia' ? 'conferencia' : ex ? (i.valor != null ? 'ok' : 'semvalor') : 'miss', valor: i.valor ?? null, prazoDias: i.prazoDias ?? null, origem: null, solId: i.solicitacaoId || null, iaMn: i.iaMn ?? null, resultado: i.resultado || null, tab: st.duplo && i.tabela === o.convenio2 ? 2 : 1, tabFixo: !!st.duplo }; });
+    st.itens = (o.itens || []).map(i => { const ex = i.mnemonico ? cat[i.mnemonico] : null; return { uid: Math.random().toString(36).slice(2), lido: i.lido || null, normalizado: i.nome, confIA: 1, conf: 1, cands: [], ex, status: i.status === 'conferencia' ? 'conferencia' : ex ? (i.valor != null ? 'ok' : 'semvalor') : 'miss', valor: i.valor ?? null, prazoDias: i.prazoDias ?? null, origem: null, solId: i.solicitacaoId || null, iaMn: i.iaMn ?? null, resultado: i.resultado || null, tab: st.duplo && i.tabela === o.convenio2 ? 2 : 1, tabFixo: !!st.duplo, qtd: Number(i.qtd) || 1 }; });
     if (o.unitarioLiberado) marcarUnitarioLiberado();
     st.offSol = D.ouvirSolicitacoesDoOrcamento(st.id, onSolicitacoes);
     render(); $('leituraInfo').textContent = `Editando o orçamento #${numOrc(o.numero)} de ${o.atendenteNome || ''}`; toast(`Orçamento #${numOrc(o.numero)} carregado para edição`, true);
