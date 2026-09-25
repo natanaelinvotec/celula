@@ -366,3 +366,36 @@ export function mensagemLembrete(o, { atendente, validadeDias = 7 } = {}) {
   return `Olá, ${primeiro}! Aqui é ${(atendente || 'a equipe').split(' ')[0]}, da Célula Diagnósticos. 😊\nSeu orçamento nº ${String(o.numero).padStart(5, '0')} (${o.qtd || o.itens?.length || 0} exames · ${tot}) continua válido até ${val.toLocaleDateString('pt-BR')}.\nPosso te ajudar a agendar a coleta? Atendemos por ordem de chegada em 8 unidades em Campo Grande — é só responder por aqui.`;
 }
 export const linkWhatsApp = (tel, texto) => `https://wa.me/55${String(tel).replace(/\D/g, '').replace(/^55/, '')}?text=${encodeURIComponent(texto)}`;
+
+// ---------- grupos de pedido: um termo do pedido ("Ferrograma") abre vários exames do catálogo ----------
+export const GRUPOS_PADRAO = [
+  { id: 'ferrograma', nome: 'Ferrograma', termos: ['FERROGRAMA', 'PERFIL DE FERRO', 'PERFIL DO FERRO', 'CINETICA DO FERRO', 'CINETICA DE FERRO', 'METABOLISMO DO FERRO'], mnemonicos: ['FE', 'FERRI-DB', 'CAPATINT'] },
+  { id: 'lipidograma', nome: 'Lipidograma', termos: ['LIPIDOGRAMA', 'PERFIL LIPIDICO', 'LIPIDIOS', 'LIPIDES', 'COLESTEROL TOTAL E FRACOES', 'COLESTEROL E FRACOES', 'COLESTEROL FRACIONADO'], mnemonicos: ['COL', 'HDL', 'LDL', 'VLDL', 'TRIG'] },
+  { id: 'hepatograma', nome: 'Hepatograma', termos: ['HEPATOGRAMA', 'FUNCAO HEPATICA', 'PROVAS HEPATICAS', 'PROVAS DE FUNCAO HEPATICA', 'ENZIMAS HEPATICAS', 'PERFIL HEPATICO'], mnemonicos: ['TGO', 'TGP', 'GGT', 'FAL', 'BTF'] },
+  { id: 'ionograma', nome: 'Ionograma', termos: ['IONOGRAMA', 'ELETROLITOS', 'IONS'], mnemonicos: ['NA', 'K', 'CL'] },
+  { id: 'proteinograma', nome: 'Proteinograma', termos: ['PROTEINOGRAMA', 'ELETROFORESE DE PROTEINAS COM PROTEINAS TOTAIS'], mnemonicos: ['PRT', 'ALB', 'EFP-HP'] },
+];
+let _grupos, _gruposAt = 0;
+export async function grupos(force = false) {
+  if (_grupos && !force && Date.now() - _gruposAt < 300000) return _grupos;
+  const s = await getDocs(collection(db, 'grupos')); _grupos = s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.nome || '').localeCompare(b.nome || '')); _gruposAt = Date.now(); return _grupos;
+}
+export async function salvarGrupo(id, dados) {
+  const u = auth.currentUser; const ref = id ? doc(db, 'grupos', id) : doc(collection(db, 'grupos'));
+  const termos = [...new Set((dados.termos || []).map(t => norm(t)).filter(Boolean))];
+  await setDoc(ref, { nome: String(dados.nome || '').trim(), termos, mnemonicos: (dados.mnemonicos || []).filter(Boolean), ativo: dados.ativo !== false, atualizadoEm: serverTimestamp(), atualizadoPor: u.uid, ...(id ? {} : { criadoEm: serverTimestamp(), criadoPor: u.uid }) }, { merge: true });
+  _grupos = null; return ref.id;
+}
+export async function excluirGrupo(id) { await deleteDoc(doc(db, 'grupos', id)); _grupos = null; }
+export async function criarGruposPadrao() { for (const g of GRUPOS_PADRAO) { const ex = (await getDoc(doc(db, 'grupos', g.id))).exists(); if (!ex) await salvarGrupo(g.id, g); } _grupos = null; return grupos(true); }
+/** Acha o grupo que corresponde ao texto lido (ou ao nome normalizado pela IA). Casamento exato do termo, ou termo de uma palavra contido no texto ("FERROGRAMA COMPLETO"). */
+export async function grupoPara(texto, normalizadoIA) {
+  const lista = (await grupos()).filter(g => g.ativo !== false && g.termos?.length && g.mnemonicos?.length);
+  const alvos = [norm(texto), norm(normalizadoIA)].filter(Boolean);
+  for (const g of lista) for (const t of g.termos) for (const a of alvos) {
+    if (a === t) return g;
+    if (!t.includes(' ') && t.length >= 6 && a.split(' ').includes(t)) return g;          // "FERROGRAMA COMPLETO", "SOLICITO HEPATOGRAMA"
+    if (t.includes(' ') && a.startsWith(t)) return g;                                    // "PERFIL LIPIDICO COMPLETO"
+  }
+  return null;
+}
