@@ -3,7 +3,7 @@ import { exigirLogin, brl, norm, slug, toast, comprimirImagem, escapeHtml, SETOR
 import { montarShell } from './shell.js';
 import * as D from './dados.js';
 import { lerPedido } from './ia.js';
-import { mnemonicoHtml, copiar, fichaExame, fotoZoom, aviso, gerarPdf, numOrc, ICO, modal, fecharModal } from './ui.js';
+import { mnemonicoHtml, copiar, fichaExame, fotoZoom, aviso, gerarPdf, numOrc, ICO, modal, fecharModal, rotuloQtd } from './ui.js';
 
 const { perfil } = await exigirLogin();
 const root = montarShell({ perfil, ativo: 'novo', titulo: 'Novo orçamento por IA', subtitulo: 'fotografe o pedido, confira e grave' });
@@ -174,6 +174,9 @@ $('btnRun').addEventListener('click', async () => {
 });
 
 async function adicionarLido(e) {
+  // termo composto ("Ferrograma", "Lipidograma"…): abre os exames do grupo cadastrado pela gestão
+  const g = await D.grupoPara(e.texto, e.normalizado).catch(() => null);
+  if (g && await expandirGrupo(g, e.texto)) return;
   const cands = await D.resolver(e.texto, { renal: st.renal, normalizadoIA: e.normalizado });
   const qtd = Math.max(1, Math.min(12, Number(e.quantidade) || 1));
   const it = { uid: Math.random().toString(36).slice(2), lido: e.texto, normalizado: e.normalizado, confIA: e.confianca, cands, ex: null, status: 'miss', valor: null, prazoDias: null, origem: null, qtd };
@@ -196,6 +199,44 @@ async function adicionarLido(e) {
     // o exame casado já traz outra quantidade no nome (ex.: "[3 DOSAGENS]" e o pedido diz 4): não multiplica, pede confirmação
     if (/\d+\s*(DOSAGENS?|PONTOS?|AMOSTRAS?)/.test(it.ex.nomeBusca)) { it.qtd = 1; it.status = 'flag'; it.conf = Math.min(it.conf, 0.6); return; } }
   if (qtd > 1 && it.ex) { const serie = await serieDoExame(it.ex, qtd); if (serie.length === qtd - 1) { it.qtd = 1; for (const ex of serie) { const s2 = { uid: Math.random().toString(36).slice(2), lido: e.texto, normalizado: e.normalizado, confIA: e.confianca, cands: [], ex, status: it.status === 'flag' ? 'flag' : 'ok', conf: it.conf, iaMn: ex.mnemonico, iaStatus: it.status, valor: null, prazoDias: null, origem: null, qtd: 1, serieDe: it.uid }; await precificar(s2); st.itens.push(s2); } } }
+}
+/** Modal: a atendente monta o grupo para o termo lido (nome, grafias, exames) — grava em `grupos` e já abre as linhas. */
+async function abrirEditorGrupo(it) {
+  const cat = await D.catalogo(); const lido = it.lido || ''; const sel = new Map();
+  const m = modal(`<h2 style="margin:0 0 4px;color:var(--blue-d)">🧩 Grupo de pedido</h2>
+    <p class="note">O termo <b>“${escapeHtml(lido)}”</b> abre vários exames. Escolha quais — da próxima vez a IA já sabe.</p>
+    <div class="form" style="grid-template-columns:1fr 1fr;gap:10px">
+      <label class="f">Nome do grupo<input class="in" id="gNome" value="${escapeHtml(lido.replace(/\b\w/g, c => c.toUpperCase()))}"></label>
+      <label class="f">Outras grafias (separe por vírgula)<input class="in" id="gTermos" placeholder="ex.: perfil de ferro, cinética do ferro"></label>
+      <label class="f full">Buscar exame para incluir<div class="search"><input class="in" id="gBusca" placeholder="nome ou mnemônico" autocomplete="off"><div class="sug" id="gSug" hidden></div></div></label>
+      <div class="full" id="gLista" style="display:flex;gap:6px;flex-wrap:wrap;min-height:34px"></div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn ghost" id="gCancel">Cancelar</button><button class="btn blue" id="gSalvar">Salvar grupo e adicionar exames</button></div>`, { largura: 640 });
+  const $m = id => m.querySelector('#' + id);
+  const desenhar = () => { $m('gLista').innerHTML = [...sel.values()].map(ex => `<span class="pill on" style="gap:6px">${escapeHtml(ex.mnemonico)} · ${escapeHtml(ex.nome)} <button class="ib" data-gdel="${escapeHtml(ex.mnemonico)}" title="Tirar">${ICO.x}</button></span>`).join('') || '<span class="note">Nenhum exame escolhido ainda.</span>'; };
+  desenhar();
+  $m('gBusca').addEventListener('input', () => { const v = norm($m('gBusca').value); const box = $m('gSug'); if (v.length < 2) { box.hidden = true; return; } const toks = v.split(' ');
+    const hits = cat.filter(c => c.ativo !== false && !c.renal && toks.every(t => c.nomeBusca.includes(t) || c.mnemonico.includes(t))).slice(0, 10);
+    box.innerHTML = hits.map(c => `<button data-gadd="${c.mnemonico}"><span class="m">${c.mnemonico}</span><span>${escapeHtml(c.nome)}</span></button>`).join('') || '<div class="note" style="padding:8px 12px">Nada encontrado.</div>'; box.hidden = false; });
+  m.addEventListener('click', e => { const a = e.target.closest('[data-gadd]'); if (a) { const ex = cat.find(c => c.mnemonico === a.dataset.gadd); if (ex) sel.set(ex.mnemonico, ex); $m('gBusca').value = ''; $m('gSug').hidden = true; desenhar(); return; }
+    const d = e.target.closest('[data-gdel]'); if (d) { sel.delete(d.dataset.gdel); desenhar(); } });
+  $m('gCancel').onclick = () => fecharModal();
+  $m('gSalvar').onclick = async () => {
+    const nome = $m('gNome').value.trim(); if (!nome || !sel.size) { toast('Dê um nome e escolha ao menos um exame.'); return; }
+    const termos = [lido, nome, ...$m('gTermos').value.split(',')].map(t => t.trim()).filter(Boolean);
+    try { await D.salvarGrupo(null, { nome, termos, mnemonicos: [...sel.keys()] }); } catch (e) { toast('Não foi possível gravar o grupo: ' + e.message); return; }
+    fecharModal(); st.itens = st.itens.filter(i => i.uid !== it.uid);
+    await expandirGrupo({ nome, mnemonicos: [...sel.keys()] }, lido); render();
+  };
+}
+/** Abre um grupo de pedido em linhas (uma por exame do catálogo). Devolve quantas linhas entraram. */
+async function expandirGrupo(g, lido) {
+  const cat = await D.catalogoMap(); let n = 0;
+  for (const mn of g.mnemonicos) { const ex = cat[mn]; if (!ex || ex.ativo === false) continue; if (st.itens.some(i => i.ex?.mnemonico === mn && i.grupo === g.nome)) continue;
+    const it = { uid: Math.random().toString(36).slice(2), lido, normalizado: g.nome.toUpperCase(), confIA: 1, conf: 1, cands: [], ex, status: 'ok', valor: null, prazoDias: null, origem: null, qtd: 1, grupo: g.nome, iaMn: mn, iaStatus: 'ok' };
+    await precificar(it); st.itens.push(it); n++; }
+  if (n) toast(`“${lido}” = grupo ${g.nome}: ${n} exame${n > 1 ? 's' : ''} adicionado${n > 1 ? 's' : ''}`, true);
+  return n;
 }
 /** Exame do catálogo que já embute a quantidade no nome (ex.: "CURVA GLICEMICA 5 DOSAGENS", "LACTOSE 4 PONTOS"). */
 async function varianteComQuantidade(ex, n) {
@@ -249,7 +290,7 @@ function render() {
       const c = it.conf >= .85 ? 'g' : it.conf >= .7 ? 'w' : 'c';
       const tr = document.createElement('tr'); tr.className = it.status === 'flag' ? 'flag' : ['miss', 'semvalor', 'conferencia'].includes(it.status) ? 'miss' : '';
       tr.innerHTML = `<td>${mnemonicoHtml(it.ex, { cor: meta.cor })}</td>
-        <td class="nm"><b>${escapeHtml(it.ex ? it.ex.nome : it.normalizado || it.lido)}</b><small>${it.ex ? (it.ex.codigoTuss ? 'TUSS ' + it.ex.codigoTuss : 'sem TUSS') : 'não está no AutoLAC'}${it.origem === 'manual' ? ' · valor aprovado pela gestão' : ''}</small></td>
+        <td class="nm"><b>${escapeHtml(it.ex ? it.ex.nome : it.normalizado || it.lido)}${it.qtd > 1 ? `<span style="color:var(--c3)">${escapeHtml(rotuloQtd(it.ex?.nome, it.qtd))}</span>` : ''}</b><small>${it.ex ? (it.ex.codigoTuss ? 'TUSS ' + it.ex.codigoTuss : 'sem TUSS') : 'não está no AutoLAC'}${it.origem === 'manual' ? ' · valor aprovado pela gestão' : ''}${it.grupo ? ` · <span class="pill on" style="padding:0 7px">grupo ${escapeHtml(it.grupo)}</span>` : ''}</small></td>
         <td>${it.lido ? `<span class="conf ${c}"><i><b style="width:${Math.round(it.conf * 100)}%"></b></i>${Math.round(it.conf * 100)}%</span><small class="note" style="display:block">leu “${escapeHtml(it.lido)}”</small>` : '<span class="note">digitado</span>'}</td>
         ${st.duplo ? `<td><button class="tabsw t${it.tab === 2 ? 2 : 1}" title="Clique para trocar de tabela" data-tab="${it.uid}">${escapeHtml(curto(nomeDe(it)))}</button></td>` : ''}
         <td>${it.prazoDias != null ? `<span class="pz ${it.prazoDias > 5 ? 'long' : ''}">${it.prazoDias} ${it.prazoDias > 1 ? 'dias úteis' : 'dia útil'}</span>` : '<span class="pz long">—</span>'}</td>
@@ -273,6 +314,7 @@ function askBox(it) {
   const acoes = `
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <button class="btn ghost sm" data-digitar="${it.uid}">✏️ Clique aqui para digitar o nome correto</button>
+      ${it.lido ? `<button class="btn ghost sm" data-grupo="${it.uid}" title="Este termo abre vários exames (ex.: Ferrograma = Ferro + Ferritina + Capacidade)">🧩 É um grupo (vários exames)</button>` : ''}
       <button class="btn red sm" data-send="${it.uid}">Enviar para conferência</button>
     </div>
     <div class="search" data-fixwrap="${it.uid}" ${it.abrirBusca ? '' : 'hidden'}><input class="in" placeholder="Digite o nome correto do exame — o sistema puxa do catálogo (ex.: insulina, ferritina, anti tireoglobulina)" data-fix="${it.uid}" autocomplete="off" value="${escapeHtml(it.buscaTxt || '')}"><div class="sug" hidden></div></div>
@@ -313,6 +355,7 @@ $('groups').addEventListener('click', async e => {
   if (b.dataset.ficha) { const cat = await D.catalogoMap(); if (cat[b.dataset.ficha]) fichaExame(cat[b.dataset.ficha]); return; }
   if (b.dataset.edit) { const it = find(b.dataset.edit); it.editar = true; it.abrirBusca = true; render(); document.querySelector(`[data-fix="${it.uid}"]`)?.focus(); return; }
   if (b.dataset.manter) { const it = find(b.dataset.manter); it.editar = false; it.abrirConf = false; render(); return; }
+  if (b.dataset.grupo) { const it = find(b.dataset.grupo); abrirEditorGrupo(it); return; }
   if (b.dataset.tab) { const it = find(b.dataset.tab); it.tab = it.tab === 2 ? 1 : 2; it.tabFixo = true; await precificar(it); render(); return; }
   if (b.dataset.rm) { const it = find(b.dataset.rm); if (it?.lido) st.descartados.push({ lido: it.lido, iaMn: it.iaMn || null }); st.itens = st.itens.filter(i => i.uid !== b.dataset.rm); render(); return; }
   if (b.dataset.ok) { const it = find(b.dataset.ok); it.status = 'ok'; it.conf = 1; it.confirmado = true; await precificar(it); render(); D.ensinar(it.lido, it.ex.mnemonico, perfil.unidade); toast(`A IA aprendeu: “${it.lido}” = ${it.ex.mnemonico}`, true); return; }
@@ -401,7 +444,7 @@ async function onSolicitacoes(sols) {
 
 // ---------- gravar / whatsapp / limpar ----------
 function montarDados(status) {
-  const itens = st.itens.map(i => ({ mnemonico: i.ex?.mnemonico || null, nome: i.ex?.nome || i.normalizado || i.lido, setor: i.ex?.setor || null, valor: i.valor ?? null, prazoDias: i.prazoDias ?? null, lido: i.lido || null, status: i.status, solicitacaoId: i.solId || null, iaMn: i.iaMn ?? null, resultado: resultadoLeitura(i), tabela: slugDe(i) || null, tabelaNome: nomeDe(i) || null, qtd: Number(i.qtd) || 1, valorTotal: i.valor != null ? vTot(i) : null }));
+  const itens = st.itens.map(i => ({ mnemonico: i.ex?.mnemonico || null, nome: i.ex?.nome || i.normalizado || i.lido, setor: i.ex?.setor || null, valor: i.valor ?? null, prazoDias: i.prazoDias ?? null, lido: i.lido || null, status: i.status, solicitacaoId: i.solId || null, iaMn: i.iaMn ?? null, resultado: resultadoLeitura(i), tabela: slugDe(i) || null, tabelaNome: nomeDe(i) || null, qtd: Number(i.qtd) || 1, valorTotal: i.valor != null ? vTot(i) : null, grupo: i.grupo || null }));
   const pend = st.itens.some(i => i.status !== 'ok');
   return { status: status || (pend ? 'aguardando_conferencia' : 'gravado'), unidade: perfil.unidade, atendenteNome: perfil.nome, convenio: st.convSlug, convenioNome: st.convenio, renal: st.renal,
     duplo: !!st.duplo, convenio2: st.duplo ? st.convSlug2 : null, convenio2Nome: st.duplo ? st.convenio2 : null,
@@ -464,7 +507,7 @@ $('btnTransf').addEventListener('click', async () => {
 });
 $('btnZap').addEventListener('click', async () => {
   if (!st.itens.length) return; if (!validarPaciente()) return; try { await garantirOrcamento(); } catch {}
-  const linhas = st.itens.filter(i => i.ex).map(i => `• ${i.ex.nome}${st.duplo ? ` (${curto(nomeDe(i))})` : ''}${i.prazoDias != null ? ` — ${i.prazoDias} d.u.` : ''}${i.qtd > 1 ? ` ×${i.qtd}` : ''}${i.valor != null ? ` — ${brl(vTot(i))}` : ''}`);
+  const linhas = st.itens.filter(i => i.ex).map(i => `• ${i.ex.nome}${st.duplo ? ` (${curto(nomeDe(i))})` : ''}${i.prazoDias != null ? ` — ${i.prazoDias} d.u.` : ''}${rotuloQtd(i.ex.nome, i.qtd)}${i.valor != null ? ` — ${brl(vTot(i))}` : ''}`);
   const txt = `*Célula Diagnósticos* — Orçamento ${st.numero ? '#' + st.numero : ''}\nPaciente: ${$('pac').value || '-'}\nConvênio: ${st.convenio}${st.duplo ? ' + ' + st.convenio2 : ''}\n\n${linhas.join('\n')}\n\n*Total: ${brl(st.itens.reduce((a, i) => a + vTot(i), 0))}*\nValidade: ${cfg.validadeDias || 7} dias · prazos em dias úteis após a coleta.`;
   const tel = soDigitos($('tel').value); window.open(`https://wa.me/${tel ? '55' + tel : ''}?text=${encodeURIComponent(txt)}`, '_blank');
   if (st.id) D.mudarStatus(st.id, 'enviado').catch(() => {});
@@ -482,7 +525,7 @@ if (idEdit) (async () => {
     if (o.duplo && o.convenio2 && convs.some(c => c.slug === o.convenio2)) { st.duplo = true; $('duplo').checked = true; $('conv2Wrap').hidden = false; $('conv2').value = o.convenio2; st.convSlug2 = o.convenio2; st.convenio2 = o.convenio2Nome || convs.find(c => c.slug === o.convenio2)?.nome; st.manuais2 = await D.precosManuais(st.convSlug2); }
     $('pac').value = o.paciente || ''; $('tel').value = o.telefone || ''; st.renal = false;
     st.manuais = await D.precosManuais(st.convSlug);
-    st.itens = (o.itens || []).map(i => { const ex = i.mnemonico ? cat[i.mnemonico] : null; return { uid: Math.random().toString(36).slice(2), lido: i.lido || null, normalizado: i.nome, confIA: 1, conf: 1, cands: [], ex, status: i.status === 'conferencia' ? 'conferencia' : ex ? (i.valor != null ? 'ok' : 'semvalor') : 'miss', valor: i.valor ?? null, prazoDias: i.prazoDias ?? null, origem: null, solId: i.solicitacaoId || null, iaMn: i.iaMn ?? null, resultado: i.resultado || null, tab: st.duplo && i.tabela === o.convenio2 ? 2 : 1, tabFixo: !!st.duplo, qtd: Number(i.qtd) || 1 }; });
+    st.itens = (o.itens || []).map(i => { const ex = i.mnemonico ? cat[i.mnemonico] : null; return { uid: Math.random().toString(36).slice(2), lido: i.lido || null, normalizado: i.nome, confIA: 1, conf: 1, cands: [], ex, status: i.status === 'conferencia' ? 'conferencia' : ex ? (i.valor != null ? 'ok' : 'semvalor') : 'miss', valor: i.valor ?? null, prazoDias: i.prazoDias ?? null, origem: null, solId: i.solicitacaoId || null, iaMn: i.iaMn ?? null, resultado: i.resultado || null, tab: st.duplo && i.tabela === o.convenio2 ? 2 : 1, tabFixo: !!st.duplo, qtd: Number(i.qtd) || 1, grupo: i.grupo || null }; });
     if (o.unitarioLiberado) marcarUnitarioLiberado();
     st.offSol = D.ouvirSolicitacoesDoOrcamento(st.id, onSolicitacoes);
     render(); $('leituraInfo').textContent = `Editando o orçamento #${numOrc(o.numero)} de ${o.atendenteNome || ''}`; toast(`Orçamento #${numOrc(o.numero)} carregado para edição`, true);
