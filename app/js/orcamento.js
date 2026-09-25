@@ -273,7 +273,7 @@ async function precificar(it) {
       if (p.valor == null) { const p2 = await D.precoPrazo(it.ex, st.convSlug2, st.manuais2); if (p2.valor != null) { it.tab = 2; p = p2; } }
     }
   } else { it.tab = 1; p = await D.precoPrazo(it.ex, st.convSlug, st.manuais); }
-  it.valor = p.valor; it.prazoDias = p.prazoDias; it.origem = p.origem;
+  it.valor = p.valor; it.prazoDias = p.prazoDias; it.origem = p.origem; it.valorTabela = p.valorTabela ?? p.valor; it.repassePct = p.repassePct ?? 100;
   if (it.valor == null && it.status === 'ok') it.status = 'semvalor';
   if (it.valor != null && it.status === 'semvalor') it.status = 'ok';
 }
@@ -299,7 +299,7 @@ function render() {
       const c = it.conf >= .85 ? 'g' : it.conf >= .7 ? 'w' : 'c';
       const tr = document.createElement('tr'); tr.className = it.status === 'flag' ? 'flag' : ['miss', 'semvalor', 'conferencia'].includes(it.status) ? 'miss' : '';
       tr.innerHTML = `<td>${mnemonicoHtml(it.ex, { cor: meta.cor })}</td>
-        <td class="nm"><b>${escapeHtml(it.ex ? it.ex.nome : it.normalizado || it.lido)}${it.qtd > 1 ? `<span style="color:var(--c3)">${escapeHtml(rotuloQtd(it.ex?.nome, it.qtd))}</span>` : ''}</b><small>${it.ex ? (it.ex.codigoTuss ? 'TUSS ' + it.ex.codigoTuss : 'sem TUSS') : 'não está no AutoLAC'}${it.origem === 'manual' ? ' · valor aprovado pela gestão' : ''}${it.grupo ? ` · <span class="pill on" style="padding:0 7px">grupo ${escapeHtml(it.grupo)}</span>` : ''}${it.repetido?.length ? ` · <span class="pill warn" style="padding:0 7px" title="O pedido pede este exame mais de uma vez; entrou só uma">repetido no pedido: ${escapeHtml(it.repetido.join(', '))}</span>` : ''}</small></td>
+        <td class="nm"><b>${escapeHtml(it.ex ? it.ex.nome : it.normalizado || it.lido)}${it.qtd > 1 ? `<span style="color:var(--c3)">${escapeHtml(rotuloQtd(it.ex?.nome, it.qtd))}</span>` : ''}</b><small>${it.ex ? (it.ex.codigoTuss ? 'TUSS ' + it.ex.codigoTuss : 'sem TUSS') : 'não está no AutoLAC'}${it.origem === 'manual' ? ' · valor aprovado pela gestão' : ''}${it.valor != null && it.repassePct && it.repassePct !== 100 ? ` · <span class="pill on" style="padding:0 7px" title="O convênio cobre ${100 - it.repassePct}% da tabela (${brl(it.valorTabela)}); o paciente paga ${it.repassePct}%">paciente paga ${it.repassePct}% · tabela ${brl(it.valorTabela)}</span>` : ''}${it.grupo ? ` · <span class="pill on" style="padding:0 7px">grupo ${escapeHtml(it.grupo)}</span>` : ''}${it.repetido?.length ? ` · <span class="pill warn" style="padding:0 7px" title="O pedido pede este exame mais de uma vez; entrou só uma">repetido no pedido: ${escapeHtml(it.repetido.join(', '))}</span>` : ''}</small></td>
         <td>${it.lido ? `<span class="conf ${c}"><i><b style="width:${Math.round(it.conf * 100)}%"></b></i>${Math.round(it.conf * 100)}%</span><small class="note" style="display:block">leu “${escapeHtml(it.lido)}”</small>` : '<span class="note">digitado</span>'}</td>
         ${st.duplo ? `<td><button class="tabsw t${it.tab === 2 ? 2 : 1}" title="Clique para trocar de tabela" data-tab="${it.uid}">${escapeHtml(curto(nomeDe(it)))}</button></td>` : ''}
         <td>${it.prazoDias != null ? `<span class="pz ${it.prazoDias > 5 ? 'long' : ''}">${it.prazoDias} ${it.prazoDias > 1 ? 'dias úteis' : 'dia útil'}</span>` : '<span class="pz long">—</span>'}</td>
@@ -445,6 +445,7 @@ async function onSolicitacoes(sols) {
     if (s.status === 'aprovada' && it.status === 'conferencia') {
       const cat = await D.catalogo(true); it.ex = cat.find(c => c.mnemonico === s.mnemonico) || it.ex; it.status = 'ok'; it.conf = 1;
       it.valor = s.precos?.[slugDe(it)] ?? it.ex?.precos?.[slugDe(it)] ?? null; it.prazoDias = s.prazoDias ?? it.ex?.prazoDias ?? null; it.origem = 'aprovado';
+      it.valorTabela = it.valor; it.repassePct = await D.repasseDe(slugDe(it)); if (it.valor != null && it.repassePct !== 100) it.valor = D.aplicarRepasse(it.valor, it.repassePct);
       if (it.valor == null) it.status = 'semvalor'; mudou = true; aviso('Conferência aprovada', `${s.mnemonico} · ${it.ex?.nome || ''} voltou para o orçamento${it.valor != null ? ' com ' + brl(it.valor) : ''}${it.prazoDias != null ? ' · ' + it.prazoDias + ' d.u.' : ''}`);
     }
     if (s.status === 'recusada' && it.status === 'conferencia') { it.status = it.ex ? 'semvalor' : 'miss'; it.recusa = s.motivo; mudou = true; aviso('Conferência recusada', `${it.lido || it.ex?.nome || ''}: ${s.motivo || 'sem motivo informado'}`); }
@@ -454,10 +455,11 @@ async function onSolicitacoes(sols) {
 
 // ---------- gravar / whatsapp / limpar ----------
 function montarDados(status) {
-  const itens = st.itens.map(i => ({ mnemonico: i.ex?.mnemonico || null, nome: i.ex?.nome || i.normalizado || i.lido, setor: i.ex?.setor || null, valor: i.valor ?? null, prazoDias: i.prazoDias ?? null, lido: i.lido || null, status: i.status, solicitacaoId: i.solId || null, iaMn: i.iaMn ?? null, resultado: resultadoLeitura(i), tabela: slugDe(i) || null, tabelaNome: nomeDe(i) || null, qtd: Number(i.qtd) || 1, valorTotal: i.valor != null ? vTot(i) : null, grupo: i.grupo || null }));
+  const itens = st.itens.map(i => ({ mnemonico: i.ex?.mnemonico || null, nome: i.ex?.nome || i.normalizado || i.lido, setor: i.ex?.setor || null, valor: i.valor ?? null, prazoDias: i.prazoDias ?? null, lido: i.lido || null, status: i.status, solicitacaoId: i.solId || null, iaMn: i.iaMn ?? null, resultado: resultadoLeitura(i), tabela: slugDe(i) || null, tabelaNome: nomeDe(i) || null, qtd: Number(i.qtd) || 1, valorTotal: i.valor != null ? vTot(i) : null, grupo: i.grupo || null, valorTabela: i.valorTabela ?? i.valor ?? null, repassePct: i.repassePct ?? 100 }));
   const pend = st.itens.some(i => i.status !== 'ok');
+  const repassePct = st.itens.find(i => i.tab !== 2 && i.valor != null)?.repassePct ?? 100, repassePct2 = st.itens.find(i => i.tab === 2 && i.valor != null)?.repassePct ?? 100;
   return { status: status || (pend ? 'aguardando_conferencia' : 'gravado'), unidade: perfil.unidade, atendenteNome: perfil.nome, convenio: st.convSlug, convenioNome: st.convenio, renal: st.renal,
-    duplo: !!st.duplo, convenio2: st.duplo ? st.convSlug2 : null, convenio2Nome: st.duplo ? st.convenio2 : null,
+    duplo: !!st.duplo, convenio2: st.duplo ? st.convSlug2 : null, convenio2Nome: st.duplo ? st.convenio2 : null, repassePct, repassePct2: st.duplo ? repassePct2 : null,
     totalConv1: st.itens.filter(i => i.tab !== 2).reduce((a, i) => a + vTot(i), 0), totalConv2: st.itens.filter(i => i.tab === 2).reduce((a, i) => a + vTot(i), 0),
     paciente: $('pac').value.trim() || null, pacienteBusca: norm($('pac').value), telefone: $('tel').value.trim() || null, telefoneDigitos: soDigitos($('tel').value),
     itens, total: st.itens.reduce((a, i) => a + vTot(i), 0), qtd: itens.length, mnemonicos: itens.map(i => i.mnemonico).filter(Boolean),
@@ -515,10 +517,16 @@ $('btnTransf').addEventListener('click', async () => {
     catch (e) { toast('Não foi possível transferir: ' + e.message); }
   };
 });
+/** Frase para o paciente quando o convênio cobre parte da tabela (ex.: "IMPCG cobre 70% — você paga 30%"). */
+function notaRepasse() {
+  const partes = [];
+  for (const [tab, nome] of [[1, st.convenio], [2, st.convenio2]]) { const it = st.itens.find(i => i.valor != null && (i.tab === 2) === (tab === 2) && i.repassePct && i.repassePct !== 100); if (it) partes.push(`${nome} cobre ${100 - it.repassePct}% da tabela — os valores acima são a sua parte (${it.repassePct}%)`); }
+  return partes.length ? partes.join('. ') + '.\n' : '';
+}
 $('btnZap').addEventListener('click', async () => {
   if (!st.itens.length) return; if (!validarPaciente()) return; try { await garantirOrcamento(); } catch {}
   const linhas = st.itens.filter(i => i.ex).map(i => `• ${i.ex.nome}${st.duplo ? ` (${curto(nomeDe(i))})` : ''}${i.prazoDias != null ? ` — ${i.prazoDias} d.u.` : ''}${rotuloQtd(i.ex.nome, i.qtd)}${i.valor != null ? ` — ${brl(vTot(i))}` : ''}`);
-  const txt = `*Célula Diagnósticos* — Orçamento ${st.numero ? '#' + st.numero : ''}\nPaciente: ${$('pac').value || '-'}\nConvênio: ${st.convenio}${st.duplo ? ' + ' + st.convenio2 : ''}\n\n${linhas.join('\n')}\n\n*Total: ${brl(st.itens.reduce((a, i) => a + vTot(i), 0))}*\nValidade: ${cfg.validadeDias || 7} dias · prazos em dias úteis após a coleta.`;
+  const txt = `*Célula Diagnósticos* — Orçamento ${st.numero ? '#' + st.numero : ''}\nPaciente: ${$('pac').value || '-'}\nConvênio: ${st.convenio}${st.duplo ? ' + ' + st.convenio2 : ''}\n\n${linhas.join('\n')}\n\n*Total: ${brl(st.itens.reduce((a, i) => a + vTot(i), 0))}*\n${notaRepasse()}Validade: ${cfg.validadeDias || 7} dias · prazos em dias úteis após a coleta.`;
   const tel = soDigitos($('tel').value); window.open(`https://wa.me/${tel ? '55' + tel : ''}?text=${encodeURIComponent(txt)}`, '_blank');
   if (st.id) D.mudarStatus(st.id, 'enviado').catch(() => {});
 });
