@@ -1,7 +1,7 @@
 // historico.js — lista/filtros de orçamentos (usada pela atendente e pelo painel).
 import { brl, fmtData, toast, escapeHtml, norm, iniciais } from './firebase.js';
 import * as D from './dados.js';
-import { gerarPdf, numOrc, ICO, copiar } from './ui.js';
+import { gerarPdf, numOrc, ICO, copiar, rotuloQtd } from './ui.js';
 
 export const STATUS = { rascunho: ['Rascunho', 'pill'], gravado: ['Gravado', 'pill'], enviado: ['Enviado', 'pill on'], aguardando_conferencia: ['Aguardando conferência', 'pill warn'], convertido: ['Convertido', 'pill ok'], perdido: ['Perdido', 'pill crit'] };
 
@@ -65,7 +65,7 @@ export function montarHistorico(el, { perfil, admin, cfg = {} }) {
         ${o.status !== 'convertido' && o.status !== 'perdido' ? `<button class="btn ghost sm" data-perd="${o.id}">Marcar perdido</button>` : ''}
         ${pre[o.id] ? `<div class="pre-box"><b>Pré-cadastro do paciente</b> <small class="note">enviado em ${fmtData(pre[o.id].enviadoEm)}</small><div class="pre-grid"><span>Nome<b>${escapeHtml(pre[o.id].nome)}</b></span><span>CPF<b>${fmtCpf(pre[o.id].cpf)}</b></span><span>Nascimento<b>${fmtNasc(pre[o.id].nascimento)}</b></span><span>Celular<b>${fmtTel(pre[o.id].telefone)}</b></span></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost sm" data-copypre="${o.id}">Copiar dados</button>${!pre[o.id].visto ? `<button class="btn blue sm" data-visto="${o.id}">✓ Cadastrei no AutoLAC</button>` : '<span class="pill ok">✓ visto</span>'}</div></div>` : ''}
-        <div style="width:100%" class="note">${(o.itens || []).map(i => `${escapeHtml(i.nome)}${Number(i.qtd) > 1 ? ' ×' + i.qtd : ''}${o.duplo && i.tabelaNome ? ' [' + escapeHtml(String(i.tabelaNome).replace(/^Tabela /i, '')) + ']' : ''}${i.prazoDias != null ? ' · ' + i.prazoDias + ' d.u.' : ''}${i.valor != null ? ' · ' + brl(i.valorTotal ?? i.valor) : ''}`).join(' &nbsp;|&nbsp; ')}</div></div></td></tr>` : ''); }).join('') || '<tr><td colspan="10" class="note">Nenhum orçamento no filtro.</td></tr>';
+        <div style="width:100%" class="note">${(o.itens || []).map(i => `${escapeHtml(i.nome)}${escapeHtml(rotuloQtd(i.nome, i.qtd))}${o.duplo && i.tabelaNome ? ' [' + escapeHtml(String(i.tabelaNome).replace(/^Tabela /i, '')) + ']' : ''}${i.prazoDias != null ? ' · ' + i.prazoDias + ' d.u.' : ''}${i.valor != null ? ' · ' + brl(i.valorTotal ?? i.valor) : ''}`).join(' &nbsp;|&nbsp; ')}</div></div></td></tr>` : ''); }).join('') || '<tr><td colspan="10" class="note">Nenhum orçamento no filtro.</td></tr>';
   }
   ['hPac', 'hSt'].forEach(id => $(id).addEventListener('input', render)); if (admin) $('hAt').addEventListener('input', render);
   ['hNum', 'hTel', 'hDias'].forEach(id => { let t; $(id).addEventListener('input', () => { clearTimeout(t); t = setTimeout(carregar, 400); }); });
