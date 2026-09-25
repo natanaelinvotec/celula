@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pré-cadastros · Célula Diagnósticos</title>
+<link rel="icon" href="img/favicon.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<script type="module">
+import { exigirLogin } from './js/firebase.js';
+import { montarShell } from './js/shell.js';
+import { montarPreCadastros } from './js/precadastros.js';
+const { perfil } = await exigirLogin();
+const root = montarShell({ perfil, ativo: 'pre', titulo: 'Pré-cadastros', subtitulo: 'pacientes que preencheram o cadastro pelo QR code do orçamento — a próxima atendente livre cadastra no AutoLAC' });
+montarPreCadastros(root, { perfil });
+</script>
+</body>
+</html>
