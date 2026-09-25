@@ -257,3 +257,4 @@ label.f{display:flex;flex-direction:column;gap:5px;font-size:.72rem;font-weight:
 .tabsw{border:2px solid var(--blue-100);background:var(--blue-50);color:var(--blue-d);border-radius:999px;padding:3px 10px;font-size:.72rem;font-weight:800;white-space:nowrap;max-width:120px;overflow:hidden;text-overflow:ellipsis}
 .tabsw.t2{border-color:color-mix(in srgb,var(--c3) 40%,transparent);background:color-mix(in srgb,var(--c3) 14%,transparent);color:var(--c3)}
 .chk input{width:18px;height:18px;accent-color:var(--blue)}
+.in.qtd{width:58px;padding:6px 8px;text-align:center;font-weight:800}
