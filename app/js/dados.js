@@ -2,24 +2,36 @@
 import { db, auth, norm, slug } from './firebase.js';
 import { collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, startAfter, onSnapshot, increment, serverTimestamp, writeBatch, getCountFromServer } from 'https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js';
 
-let _cat = null, _catAt = 0, _cfg = null;
+let _cat = null, _catAt = 0, _cfg = null, _convs = null, _convsAt = 0;
 
 export async function config(force) { if (!_cfg || force) _cfg = (await getDoc(doc(db, 'config', 'app'))).data() || {}; return _cfg; }
 
 /** Convênios visíveis para as atendentes (ativo != false). */
 export async function convenios() { return (await conveniosTodos()).filter(c => c.ativo !== false); }
 /** Todos os convênios (gestão), inclusive ocultos. */
-export async function conveniosTodos() {
+export async function conveniosTodos(force) {
+  if (_convs && !force && Date.now() - _convsAt < 600000) return _convs;
   const s = await getDocs(collection(db, 'convenios'));
-  return s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+  _convs = s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.nome || '').localeCompare(b.nome || '')); _convsAt = Date.now();
+  return _convs;
 }
-/** Gestão mostra/oculta um convênio para as atendentes (com auditoria). */
+/** Gestão mostra/oculta um convênio para as atendentes ou ajusta o repasse ao paciente (com auditoria). */
 export async function editarConvenio(id, mudancas) {
   const u = auth.currentUser; const b = writeBatch(db);
   b.update(doc(db, 'convenios', id), { ...mudancas, atualizadoEm: serverTimestamp(), atualizadoPor: u.uid });
   b.set(doc(db, 'auditoria', `${Date.now()}_conv_${id}`), { tipo: 'convenio', convenio: id, por: u.uid, em: serverTimestamp(), dados: mudancas });
-  await b.commit();
+  await b.commit(); _convs = null;
 }
+/**
+ * Repasse ao paciente (%) de um convênio: 100 = paciente paga a tabela inteira; 30 = convênio cobre 70% e o paciente paga 30%.
+ * A tabela de preços fica intacta — só o valor entregue ao paciente é reduzido.
+ */
+export async function repasseDe(convSlug) {
+  if (!convSlug) return 100;
+  const c = (await conveniosTodos()).find(x => (x.slug || x.id) === convSlug);
+  const p = Number(c?.repassePct); return p > 0 && p < 100 ? p : 100;
+}
+export const aplicarRepasse = (valor, pct) => valor == null ? null : Math.round(valor * pct) / 100;
 
 /** Catálogo inteiro em memória (≈1.4k docs, ~1 MB) com cache de 10 min. */
 export async function catalogo(force) {
@@ -37,7 +49,10 @@ export async function precoPrazo(ex, convSlug, manuais) {
     const man = manuais ? manuais[`${ex.mnemonico}__${convSlug}`] : (await getDoc(doc(db, 'precos_manuais', `${ex.mnemonico}__${convSlug}`))).data();
     if (man) { if (valor == null && man.valor != null) { valor = man.valor; origem = 'manual'; } if (prazoDias == null && man.prazoDias != null) prazoDias = man.prazoDias; }
   }
-  return { valor, prazoDias, origem };
+  // convênio com cobertura (ex.: IMPCG/UFMS cobrem 70%): o paciente paga só o repasse configurado na aba Convênios
+  const repassePct = await repasseDe(convSlug), valorTabela = valor;
+  if (valor != null && repassePct !== 100) valor = aplicarRepasse(valor, repassePct);
+  return { valor, prazoDias, origem, valorTabela, repassePct };
 }
 export async function precosManuais(convSlug) {
   const s = await getDocs(query(collection(db, 'precos_manuais'), where('convenio', '==', convSlug)));
