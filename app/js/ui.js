@@ -186,7 +186,7 @@ export async function gerarPdf(orc, { validadeDias = 7, baixar = true, unitario 
   for (const [k, v, f] of cards) { const cw = (CW - 4) * f / tot; d.setFillColor(...F); d.roundedRect(cx, y, cw, 11, 2, 2, 'F'); d.setTextColor(...CZ); d.setFont('helvetica', 'bold'); d.setFontSize(6.5); d.text(k, cx + 3, y + 4); d.setTextColor(...TX); d.setFontSize(10); d.text(d.splitTextToSize(String(v), cw - 6)[0], cx + 3, y + 8.8); cx += cw + 2; }
   y += 14;
   // ---- tabela de exames (sem mnemônico)
-  const body = itens.map((i, k) => { const r = [i.nome || '', i.setor || exs[k].setor || '']; if (duplo) r.push(curto(i.tabelaNome || (i.tabela === orc.convenio2 ? orc.convenio2Nome : orc.convenioNome) || '')); r.push(i.prazoDias != null ? `${i.prazoDias} ${i.prazoDias === 1 ? 'dia útil' : 'dias úteis'}` : '—'); if (mostraValor) r.push(i.valor != null ? brl(i.valor) : 'sem valor'); return r; });
+  const body = itens.map((i, k) => { const q = Number(i.qtd) || 1; const r = [(i.nome || '') + (q > 1 ? ` (${q}×)` : ''), i.setor || exs[k].setor || '']; if (duplo) r.push(curto(i.tabelaNome || (i.tabela === orc.convenio2 ? orc.convenio2Nome : orc.convenioNome) || '')); r.push(i.prazoDias != null ? `${i.prazoDias} ${i.prazoDias === 1 ? 'dia útil' : 'dias úteis'}` : '—'); if (mostraValor) r.push(i.valor != null ? brl(i.valorTotal ?? i.valor * q) : 'sem valor'); return r; });
   const head = ['EXAME', 'SETOR']; if (duplo) head.push('TABELA'); head.push('PRAZO'); if (mostraValor) head.push('VALOR');
   const cs = duplo ? { 0: { cellWidth: 'auto' }, 1: { cellWidth: 30 }, 2: { cellWidth: 24, textColor: CZ, fontStyle: 'bold', fontSize: 7.5 }, 3: { cellWidth: 24, textColor: AZ, fontStyle: 'bold' }, 4: { cellWidth: 26, halign: 'right', fontStyle: 'bold' } }
                    : { 0: { cellWidth: 'auto' }, 1: { cellWidth: 36 }, 2: { cellWidth: 26, textColor: AZ, fontStyle: 'bold' }, 3: { cellWidth: 26, halign: 'right', fontStyle: 'bold' } };
@@ -203,7 +203,7 @@ export async function gerarPdf(orc, { validadeDias = 7, baixar = true, unitario 
   d.setFontSize(7); d.text('TOTAL DO ORÇAMENTO', W - MR - 4, y + 5, { align: 'right' }); d.setFont('helvetica', 'bold'); d.setFontSize(16); d.text(brl(orc.total || 0), W - MR - 4, y + 12, { align: 'right' });
   y += 19;
   if (duplo) { // subtotais por tabela
-    const t1 = orc.totalConv1 ?? itens.filter(i => i.tabela !== orc.convenio2).reduce((a, i) => a + (i.valor || 0), 0), t2 = orc.totalConv2 ?? itens.filter(i => i.tabela === orc.convenio2).reduce((a, i) => a + (i.valor || 0), 0);
+    const t1 = orc.totalConv1 ?? itens.filter(i => i.tabela !== orc.convenio2).reduce((a, i) => a + (i.valorTotal ?? (i.valor || 0) * (Number(i.qtd) || 1)), 0), t2 = orc.totalConv2 ?? itens.filter(i => i.tabela === orc.convenio2).reduce((a, i) => a + (i.valorTotal ?? (i.valor || 0) * (Number(i.qtd) || 1)), 0);
     const n1 = itens.filter(i => i.tabela !== orc.convenio2).length, n2 = itens.length - n1;
     d.setTextColor(...TX); d.setFont('helvetica', 'bold'); d.setFontSize(8.5);
     d.text(`${orc.convenioNome || orc.convenio}: ${n1} exame${n1 !== 1 ? 's' : ''} · ${brl(t1)}     |     ${orc.convenio2Nome || orc.convenio2}: ${n2} exame${n2 !== 1 ? 's' : ''} · ${brl(t2)}`, W / 2, y - 1.5, { align: 'center' });
