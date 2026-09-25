@@ -116,6 +116,8 @@ async function logoDataUrl() {
 }
 const pad5 = n => n != null ? String(n).padStart(5, '0') : '—';
 export const numOrc = pad5;
+/** Rótulo da quantidade para o paciente: curvas/tolerâncias contam "dosagens"; fezes, urina e demais contam "amostras". */
+export function rotuloQtd(nome, qtd) { const q = Number(qtd) || 1; if (q <= 1) return ''; const n = String(nome || '').toUpperCase(); const u = /CURVA|TOLERANCIA|TOLERÂNCIA|DOSAGE/.test(n) ? 'dosagens' : 'amostras'; return ` (${q} ${u})`; }
 export const CENTRAL = { fone: '(67) 98124-0201', instagram: '@celula.ms', site: 'www.celulams.com.br', cnpj: '08.257.861/0001-61' };
 export const UNIDADES = [
   { nome: 'Matriz', end: 'Rua Abrão Júlio Rahe, 87 · Centro', atend: '06:15–18:00', coleta: 'até 17:30', sab: '06:15–11:00' },
@@ -186,7 +188,7 @@ export async function gerarPdf(orc, { validadeDias = 7, baixar = true, unitario 
   for (const [k, v, f] of cards) { const cw = (CW - 4) * f / tot; d.setFillColor(...F); d.roundedRect(cx, y, cw, 11, 2, 2, 'F'); d.setTextColor(...CZ); d.setFont('helvetica', 'bold'); d.setFontSize(6.5); d.text(k, cx + 3, y + 4); d.setTextColor(...TX); d.setFontSize(10); d.text(d.splitTextToSize(String(v), cw - 6)[0], cx + 3, y + 8.8); cx += cw + 2; }
   y += 14;
   // ---- tabela de exames (sem mnemônico)
-  const body = itens.map((i, k) => { const q = Number(i.qtd) || 1; const r = [(i.nome || '') + (q > 1 ? ` (${q}×)` : ''), i.setor || exs[k].setor || '']; if (duplo) r.push(curto(i.tabelaNome || (i.tabela === orc.convenio2 ? orc.convenio2Nome : orc.convenioNome) || '')); r.push(i.prazoDias != null ? `${i.prazoDias} ${i.prazoDias === 1 ? 'dia útil' : 'dias úteis'}` : '—'); if (mostraValor) r.push(i.valor != null ? brl(i.valorTotal ?? i.valor * q) : 'sem valor'); return r; });
+  const body = itens.map((i, k) => { const q = Number(i.qtd) || 1; const r = [(i.nome || '') + rotuloQtd(i.nome, q), i.setor || exs[k].setor || '']; if (duplo) r.push(curto(i.tabelaNome || (i.tabela === orc.convenio2 ? orc.convenio2Nome : orc.convenioNome) || '')); r.push(i.prazoDias != null ? `${i.prazoDias} ${i.prazoDias === 1 ? 'dia útil' : 'dias úteis'}` : '—'); if (mostraValor) r.push(i.valor != null ? brl(i.valorTotal ?? i.valor * q) : 'sem valor'); return r; });
   const head = ['EXAME', 'SETOR']; if (duplo) head.push('TABELA'); head.push('PRAZO'); if (mostraValor) head.push('VALOR');
   const cs = duplo ? { 0: { cellWidth: 'auto' }, 1: { cellWidth: 30 }, 2: { cellWidth: 24, textColor: CZ, fontStyle: 'bold', fontSize: 7.5 }, 3: { cellWidth: 24, textColor: AZ, fontStyle: 'bold' }, 4: { cellWidth: 26, halign: 'right', fontStyle: 'bold' } }
                    : { 0: { cellWidth: 'auto' }, 1: { cellWidth: 36 }, 2: { cellWidth: 26, textColor: AZ, fontStyle: 'bold' }, 3: { cellWidth: 26, halign: 'right', fontStyle: 'bold' } };
