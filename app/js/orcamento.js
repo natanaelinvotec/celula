@@ -11,7 +11,11 @@ const $ = id => document.getElementById(id);
 const CONF_MIN = 0.85;
 
 // ---------- estado ----------
-const st = { id: null, numero: null, itens: [], fotos: [], convenio: null, convSlug: null, renal: false, manuais: {}, leitura: null, offSol: null, descartados: [] };
+const st = { id: null, numero: null, itens: [], fotos: [], convenio: null, convSlug: null, renal: false, manuais: {}, leitura: null, offSol: null, descartados: [], duplo: false, convSlug2: null, convenio2: null, manuais2: {} };
+// dois convênios: cada item tem `tab` (1 ou 2). Sem o modo duplo, tudo é 1.
+const slugDe = it => (st.duplo && it.tab === 2) ? st.convSlug2 : st.convSlug;
+const nomeDe = it => (st.duplo && it.tab === 2) ? st.convenio2 : st.convenio;
+const curto = n => String(n || '').replace(/^tabela\s+/i, '').split(/\s+/).slice(0, 2).join(' ');
 const cfg = await D.config(); const convs = ordenarConvenios(perfil.papel === 'admin' ? await D.conveniosTodos() : await D.convenios()); // atendentes só veem convênios visíveis
 // Ordem do seletor: PARTICULAR (preferencial) → TABELA SOCIAL → PAX → PERFIS (A–Z) → demais (A–Z)
 function ordenarConvenios(list) {
@@ -32,6 +36,8 @@ root.innerHTML = `
   <aside class="left">
     <section class="card"><div class="card-h"><h2>1 · Convênio e paciente</h2></div><div class="card-b" style="display:flex;flex-direction:column;gap:10px">
       <label class="f">Convênio *<select class="in" id="conv">${convs.map(c => `<option value="${c.slug}" ${c.slug === 'particular' ? 'selected' : ''}>${escapeHtml(c.nome)}${norm(c.nome) === 'PARTICULAR' ? ' — preferencial' : ''}${ehPerfil(c) ? ' ★' : ''}</option>`).join('')}</select></label>
+      <label class="chk" style="display:flex;gap:8px;align-items:center;font-weight:700;cursor:pointer"><input type="checkbox" id="duplo"> Orçamento com dois convênios</label>
+      <label class="f" id="conv2Wrap" hidden>Convênio 2 — para o que o 1º não cobre<select class="in" id="conv2">${convs.map(c => `<option value="${c.slug}" ${norm(c.nome) === 'TABELA SOCIAL' ? 'selected' : ''}>${escapeHtml(c.nome)}${ehPerfil(c) ? ' ★' : ''}</option>`).join('')}</select><small class="note" style="text-transform:none;letter-spacing:0;font-weight:600;margin-top:4px">Exames sem valor no 1º vão sozinhos para o 2º. Para trocar um exame de tabela, clique no botão da coluna “Tabela”.</small></label>
       <label class="f">Paciente *<input class="in" id="pac" placeholder="Nome do interessado (obrigatório)" autocomplete="off" required></label>
       <label class="f">Celular / WhatsApp *<input class="in" id="tel" placeholder="(67) 9 9999-9999 (obrigatório)" inputmode="tel" required></label>
     </div></section>
@@ -57,7 +63,7 @@ root.innerHTML = `
     <div id="groups"><div class="card"><div class="card-b" style="text-align:center;color:var(--muted);font-weight:700;padding:40px">Envie a foto do pedido e clique em “Analisar pedido com a IA” — ou adicione exames manualmente acima.</div></div></div>
     <div class="card foot" style="margin-top:14px"><div class="card-b" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
       <div><span class="note">Orçamento</span><br><b id="numLbl">novo</b></div>
-      <div><span class="note">Total</span><br><b style="font-size:1.4rem;color:var(--blue-d)" id="fT">R$ 0,00</b></div>
+      <div><span class="note">Total</span><br><b style="font-size:1.4rem;color:var(--blue-d)" id="fT">R$ 0,00</b><small class="note" id="fT2" style="display:block" hidden></small></div>
       <div class="sp" style="flex:1"></div>
       <button class="btn ghost" id="btnLimpar">Limpar</button>
       <button class="btn ghost" id="btnTransf" title="Passar este orçamento para outra atendente">Transferir</button>
@@ -75,6 +81,17 @@ $('conv').addEventListener('change', async () => {
   st.convSlug = $('conv').value; const c = convs.find(x => x.slug === st.convSlug); st.convenio = c?.nome;
   if (ehPerfil(c)) { await carregarPerfil(c); return; }
   await reprecificar(); render(); toast('Valores recalculados pela tabela ' + st.convenio);
+});
+$('duplo').addEventListener('change', async () => {
+  st.duplo = $('duplo').checked; $('conv2Wrap').hidden = !st.duplo;
+  if (st.duplo) { st.convSlug2 = $('conv2').value; st.convenio2 = convs.find(c => c.slug === st.convSlug2)?.nome; if (st.convSlug2 === st.convSlug) { toast('Escolha um 2º convênio diferente do 1º.'); } }
+  else { for (const it of st.itens) { it.tab = 1; it.tabFixo = false; } }
+  await reprecificar(); render(); toast(st.duplo ? `Dois convênios: ${st.convenio} + ${st.convenio2}` : 'Voltou para um convênio só', true);
+});
+$('conv2').addEventListener('change', async () => {
+  st.convSlug2 = $('conv2').value; st.convenio2 = convs.find(c => c.slug === st.convSlug2)?.nome;
+  for (const it of st.itens) if (!it.tabFixo) it.tab = 1;
+  await reprecificar(); render(); toast('2º convênio: ' + st.convenio2);
 });
 /** Perfil (pacote): carrega todos os exames que têm valor nessa tabela e fecha o total. */
 async function carregarPerfil(c) {
@@ -173,12 +190,20 @@ async function adicionarLido(e) {
   st.itens.push(it);
 }
 async function precificar(it) {
-  if (!it.ex) return; const p = await D.precoPrazo(it.ex, st.convSlug, st.manuais);
+  if (!it.ex) return;
+  let p;
+  if (st.duplo && st.convSlug2) {
+    if (it.tabFixo) p = await D.precoPrazo(it.ex, slugDe(it), it.tab === 2 ? st.manuais2 : st.manuais);
+    else { // automático: tenta o 1º; sem valor, cai para o 2º
+      it.tab = 1; p = await D.precoPrazo(it.ex, st.convSlug, st.manuais);
+      if (p.valor == null) { const p2 = await D.precoPrazo(it.ex, st.convSlug2, st.manuais2); if (p2.valor != null) { it.tab = 2; p = p2; } }
+    }
+  } else { it.tab = 1; p = await D.precoPrazo(it.ex, st.convSlug, st.manuais); }
   it.valor = p.valor; it.prazoDias = p.prazoDias; it.origem = p.origem;
   if (it.valor == null && it.status === 'ok') it.status = 'semvalor';
   if (it.valor != null && it.status === 'semvalor') it.status = 'ok';
 }
-async function reprecificar() { st.manuais = await D.precosManuais(st.convSlug); for (const it of st.itens) if (it.status !== 'conferencia') await precificar(it); }
+async function reprecificar() { st.manuais = await D.precosManuais(st.convSlug); st.manuais2 = st.duplo && st.convSlug2 ? await D.precosManuais(st.convSlug2) : {}; for (const it of st.itens) if (it.status !== 'conferencia') await precificar(it); }
 async function reresolver() { const lidos = st.itens.filter(i => i.lido && i.status !== 'conferencia'); st.itens = st.itens.filter(i => !lidos.includes(i)); for (const l of lidos) await adicionarLido({ texto: l.lido, normalizado: l.normalizado, confianca: l.confIA ?? 1 }); render(); }
 
 // ---------- render ----------
@@ -194,7 +219,7 @@ function render() {
     const sub = list.reduce((a, i) => a + (i.valor || 0), 0);
     const sec = document.createElement('section'); sec.className = 'sector'; sec.style.setProperty('--c', meta.cor);
     sec.innerHTML = `<div class="sec-h"><h3>${escapeHtml(meta.label)}</h3><span class="cnt">${list.length} exame${list.length > 1 ? 's' : ''}</span><span class="sub">${brl(sub)}</span></div>
-      <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Mnemônico</th><th>Exame</th><th>Leitura</th><th>Prazo</th><th class="num">Valor</th><th></th></tr></thead><tbody></tbody></table></div>`;
+      <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Mnemônico</th><th>Exame</th><th>Leitura</th>${st.duplo ? '<th>Tabela</th>' : ''}<th>Prazo</th><th class="num">Valor</th><th></th></tr></thead><tbody></tbody></table></div>`;
     const tb = sec.querySelector('tbody');
     for (const it of list) {
       const c = it.conf >= .85 ? 'g' : it.conf >= .7 ? 'w' : 'c';
@@ -202,11 +227,12 @@ function render() {
       tr.innerHTML = `<td>${mnemonicoHtml(it.ex, { cor: meta.cor })}</td>
         <td class="nm"><b>${escapeHtml(it.ex ? it.ex.nome : it.normalizado || it.lido)}</b><small>${it.ex ? (it.ex.codigoTuss ? 'TUSS ' + it.ex.codigoTuss : 'sem TUSS') : 'não está no AutoLAC'}${it.origem === 'manual' ? ' · valor aprovado pela gestão' : ''}</small></td>
         <td>${it.lido ? `<span class="conf ${c}"><i><b style="width:${Math.round(it.conf * 100)}%"></b></i>${Math.round(it.conf * 100)}%</span><small class="note" style="display:block">leu “${escapeHtml(it.lido)}”</small>` : '<span class="note">digitado</span>'}</td>
+        ${st.duplo ? `<td><button class="tabsw t${it.tab === 2 ? 2 : 1}" title="Clique para trocar de tabela" data-tab="${it.uid}">${escapeHtml(curto(nomeDe(it)))}</button></td>` : ''}
         <td>${it.prazoDias != null ? `<span class="pz ${it.prazoDias > 5 ? 'long' : ''}">${it.prazoDias} ${it.prazoDias > 1 ? 'dias úteis' : 'dia útil'}</span>` : '<span class="pz long">—</span>'}</td>
         <td class="num">${it.valor != null ? brl(it.valor) : '<span style="color:var(--red)">sem valor</span>'}</td>
         <td style="white-space:nowrap">${it.status === 'ok' ? `<button class="ib" title="Editar / trocar exame" data-edit="${it.uid}">${ICO.lapis}</button>` : ''}<button class="ib red" title="Remover" data-rm="${it.uid}">${ICO.lixo}</button></td>`;
       tb.appendChild(tr);
-      if (it.status !== 'ok' || it.editar) { const ar = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 6; td.style.padding = '0'; td.innerHTML = askBox(it); ar.appendChild(td); tb.appendChild(ar); }
+      if (it.status !== 'ok' || it.editar) { const ar = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = st.duplo ? 7 : 6; td.style.padding = '0'; td.innerHTML = askBox(it); ar.appendChild(td); tb.appendChild(ar); }
     }
     g.appendChild(sec);
   }
@@ -230,7 +256,7 @@ function askBox(it) {
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn blue sm" data-ok="${it.uid}">Sim, está correto</button>
     ${it.cands.length > 1 ? `<div class="cands">${it.cands.slice(1, 4).map(c => `<button data-pick="${it.uid}" data-m="${c.ex.mnemonico}"><span class="mn">${c.ex.mnemonico}</span> ${escapeHtml(c.ex.nome)}<small>${escapeHtml(c.ex.setor)}</small></button>`).join('')}</div>` : ''}</div>
     <div class="note">Não é nenhum desses? Digite o nome certo abaixo ou mande para a gestão conferir.</div>${acoes}</div>`;
-  if (it.status === 'semvalor') return `<div class="ask crit"><div style="display:flex;gap:10px;align-items:flex-start;color:var(--red)">${warn}<div><b>${escapeHtml(it.ex.nome)}</b> não tem valor cadastrado para o convênio <b>${escapeHtml(st.convenio)}</b>. Envie para a gestão definir valor e prazo — o orçamento atualiza sozinho quando for aprovado.</div></div>${acoes}</div>`;
+  if (it.status === 'semvalor') return `<div class="ask crit"><div style="display:flex;gap:10px;align-items:flex-start;color:var(--red)">${warn}<div><b>${escapeHtml(it.ex.nome)}</b> não tem valor cadastrado para ${st.duplo ? `<b>${escapeHtml(st.convenio)}</b> nem <b>${escapeHtml(st.convenio2)}</b>` : `o convênio <b>${escapeHtml(st.convenio)}</b>`}. Envie para a gestão definir valor e prazo — o orçamento atualiza sozinho quando for aprovado.</div></div>${acoes}</div>`;
   if (it.fora) return `<div class="ask crit"><div style="display:flex;gap:10px;align-items:flex-start;color:var(--red)">${warn}<div>A IA leu <span class="hand">${escapeHtml(it.lido)}</span> = <b>${escapeHtml(it.fora.nome)}</b> (${escapeHtml(it.fora.mnemonico)}), mas este exame <b>está fora do AutoLAC</b> (sem valor). Envie para conferência como <b>possível nova negociação</b>, ou digite outro exame.</div></div>${acoes}</div>`;
   return `<div class="ask crit"><div style="display:flex;gap:10px;align-items:flex-start;color:var(--red)">${warn}<div>A IA leu <span class="hand">${escapeHtml(it.lido)}</span> (${escapeHtml(it.normalizado || '')}) mas <b>não encontrou no catálogo</b>. Digite o nome correto ou envie para conferência preenchendo o que souber.</div></div>${acoes}</div>`;
 }
@@ -250,6 +276,7 @@ function formConf(it) {
 function stats() {
   const n = st.itens.length, t = st.itens.reduce((a, i) => a + (i.valor || 0), 0);
   $('kN').textContent = n; $('kT').textContent = brl(t); $('fT').textContent = brl(t);
+  const f2 = $('fT2'); if (f2) { if (st.duplo) { const t1 = st.itens.filter(i => i.tab !== 2).reduce((a, i) => a + (i.valor || 0), 0), t2 = t - t1; f2.textContent = `${curto(st.convenio)}: ${brl(t1)} · ${curto(st.convenio2)}: ${brl(t2)}`; f2.hidden = false; } else f2.hidden = true; }
   $('kC').textContent = st.itens.filter(i => ['flag', 'miss', 'semvalor'].includes(i.status)).length;
   $('kM').textContent = st.itens.filter(i => i.status === 'conferencia').length;
 }
@@ -261,6 +288,7 @@ $('groups').addEventListener('click', async e => {
   if (b.dataset.ficha) { const cat = await D.catalogoMap(); if (cat[b.dataset.ficha]) fichaExame(cat[b.dataset.ficha]); return; }
   if (b.dataset.edit) { const it = find(b.dataset.edit); it.editar = true; it.abrirBusca = true; render(); document.querySelector(`[data-fix="${it.uid}"]`)?.focus(); return; }
   if (b.dataset.manter) { const it = find(b.dataset.manter); it.editar = false; it.abrirConf = false; render(); return; }
+  if (b.dataset.tab) { const it = find(b.dataset.tab); it.tab = it.tab === 2 ? 1 : 2; it.tabFixo = true; await precificar(it); render(); return; }
   if (b.dataset.rm) { const it = find(b.dataset.rm); if (it?.lido) st.descartados.push({ lido: it.lido, iaMn: it.iaMn || null }); st.itens = st.itens.filter(i => i.uid !== b.dataset.rm); render(); return; }
   if (b.dataset.ok) { const it = find(b.dataset.ok); it.status = 'ok'; it.conf = 1; it.confirmado = true; await precificar(it); render(); D.ensinar(it.lido, it.ex.mnemonico, perfil.unidade); toast(`A IA aprendeu: “${it.lido}” = ${it.ex.mnemonico}`, true); return; }
   if (b.dataset.pick) { const it = find(b.dataset.pick); await escolher(it, b.dataset.m); return; }
@@ -298,7 +326,7 @@ document.addEventListener('input', async e => {
     .sort((a, b) => b.s - a.s || a.c.nomeBusca.length - b.c.nomeBusca.length).slice(0, 12).map(x => x.c);
   const naoAchou = inp.id === 'q' ? '<div class="note" style="padding:10px 12px">Nenhum exame encontrado.</div>'
     : `<div class="note" style="padding:10px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">Nenhum exame com esse nome no catálogo.<button class="btn red sm" data-naoachou="${inp.dataset.fix}" data-txt="${escapeHtml(inp.value.trim())}">Enviar “${escapeHtml(inp.value.trim())}” para conferência</button></div>`;
-  box.innerHTML = hits.map(c => `<button data-${inp.id === 'q' ? 'novo' : 'add'}="${inp.dataset.fix || 'q'}" data-m="${c.mnemonico}"><span class="m">${c.mnemonico}</span><span>${escapeHtml(c.nome)}</span><span class="m" style="margin-left:auto">${brl(c.precos?.[st.convSlug])}</span></button>`).join('') || naoAchou;
+  box.innerHTML = hits.map(c => `<button data-${inp.id === 'q' ? 'novo' : 'add'}="${inp.dataset.fix || 'q'}" data-m="${c.mnemonico}"><span class="m">${c.mnemonico}</span><span>${escapeHtml(c.nome)}</span><span class="m" style="margin-left:auto">${brl(c.precos?.[st.convSlug])}${st.duplo && st.convSlug2 ? ' / ' + brl(c.precos?.[st.convSlug2]) : ''}</span></button>`).join('') || naoAchou;
   box.hidden = false;
 });
 $('sug').addEventListener('click', async e => { const b = e.target.closest('[data-novo]'); if (!b) return; const cat = await D.catalogoMap(); const it = { uid: Math.random().toString(36).slice(2), lido: null, conf: 1, cands: [], ex: cat[b.dataset.m], status: 'ok' }; st.manuais = st.manuais || {}; await precificar(it); st.itens.push(it); $('q').value = ''; $('sug').hidden = true; render(); });
@@ -318,7 +346,7 @@ async function enviarConferencia(it) {
     it.status = 'conferencia'; it.editar = false; render();
     const sug = it.sug && Object.values(it.sug).some(v => v != null && v !== '') ? it.sug : null;
     const fotos = await fotosReduzidas(); const guia = it.ex || it.fora;
-    it.solId = await D.solicitar({ orcamentoId: st.id, orcamentoNumero: st.numero, textoLido: it.lido || sug?.nome || (guia?.nome) || '', normalizadoIA: sug?.nome || it.normalizado || guia?.nome || null, guiaDb: guia ? { mnemonico: guia.mnemonico, nome: guia.nome, setor: guia.setor, prazoDias: guia.prazoDias } : null, convenio: st.convSlug, setorSugerido: guia?.setor, sugestao: sug, fotos,
+    it.solId = await D.solicitar({ orcamentoId: st.id, orcamentoNumero: st.numero, textoLido: it.lido || sug?.nome || (guia?.nome) || '', normalizadoIA: sug?.nome || it.normalizado || guia?.nome || null, guiaDb: guia ? { mnemonico: guia.mnemonico, nome: guia.nome, setor: guia.setor, prazoDias: guia.prazoDias } : null, convenio: slugDe(it), setorSugerido: guia?.setor, sugestao: sug, fotos,
       motivo: it.fora ? 'fora_autolac' : it.ex ? 'sem_valor' : 'nao_encontrado' });
     render(); toast('Enviado para conferência — a gestão já vê na fila' + (sug ? ' com o que você preencheu' : '') + '.', true);
   } catch (e) { it.status = it.ex ? 'semvalor' : 'miss'; render(); toast('Não foi possível enviar: ' + e.message); }
@@ -336,7 +364,7 @@ async function onSolicitacoes(sols) {
     const it = st.itens.find(i => i.solId === s.id); if (!it) continue;
     if (s.status === 'aprovada' && it.status === 'conferencia') {
       const cat = await D.catalogo(true); it.ex = cat.find(c => c.mnemonico === s.mnemonico) || it.ex; it.status = 'ok'; it.conf = 1;
-      it.valor = s.precos?.[st.convSlug] ?? it.ex?.precos?.[st.convSlug] ?? null; it.prazoDias = s.prazoDias ?? it.ex?.prazoDias ?? null; it.origem = 'aprovado';
+      it.valor = s.precos?.[slugDe(it)] ?? it.ex?.precos?.[slugDe(it)] ?? null; it.prazoDias = s.prazoDias ?? it.ex?.prazoDias ?? null; it.origem = 'aprovado';
       if (it.valor == null) it.status = 'semvalor'; mudou = true; aviso('Conferência aprovada', `${s.mnemonico} · ${it.ex?.nome || ''} voltou para o orçamento${it.valor != null ? ' com ' + brl(it.valor) : ''}${it.prazoDias != null ? ' · ' + it.prazoDias + ' d.u.' : ''}`);
     }
     if (s.status === 'recusada' && it.status === 'conferencia') { it.status = it.ex ? 'semvalor' : 'miss'; it.recusa = s.motivo; mudou = true; aviso('Conferência recusada', `${it.lido || it.ex?.nome || ''}: ${s.motivo || 'sem motivo informado'}`); }
@@ -346,9 +374,11 @@ async function onSolicitacoes(sols) {
 
 // ---------- gravar / whatsapp / limpar ----------
 function montarDados(status) {
-  const itens = st.itens.map(i => ({ mnemonico: i.ex?.mnemonico || null, nome: i.ex?.nome || i.normalizado || i.lido, setor: i.ex?.setor || null, valor: i.valor ?? null, prazoDias: i.prazoDias ?? null, lido: i.lido || null, status: i.status, solicitacaoId: i.solId || null, iaMn: i.iaMn ?? null, resultado: resultadoLeitura(i) }));
+  const itens = st.itens.map(i => ({ mnemonico: i.ex?.mnemonico || null, nome: i.ex?.nome || i.normalizado || i.lido, setor: i.ex?.setor || null, valor: i.valor ?? null, prazoDias: i.prazoDias ?? null, lido: i.lido || null, status: i.status, solicitacaoId: i.solId || null, iaMn: i.iaMn ?? null, resultado: resultadoLeitura(i), tabela: slugDe(i) || null, tabelaNome: nomeDe(i) || null }));
   const pend = st.itens.some(i => i.status !== 'ok');
   return { status: status || (pend ? 'aguardando_conferencia' : 'gravado'), unidade: perfil.unidade, atendenteNome: perfil.nome, convenio: st.convSlug, convenioNome: st.convenio, renal: st.renal,
+    duplo: !!st.duplo, convenio2: st.duplo ? st.convSlug2 : null, convenio2Nome: st.duplo ? st.convenio2 : null,
+    totalConv1: st.itens.filter(i => i.tab !== 2).reduce((a, i) => a + (i.valor || 0), 0), totalConv2: st.itens.filter(i => i.tab === 2).reduce((a, i) => a + (i.valor || 0), 0),
     paciente: $('pac').value.trim() || null, pacienteBusca: norm($('pac').value), telefone: $('tel').value.trim() || null, telefoneDigitos: soDigitos($('tel').value),
     itens, total: st.itens.reduce((a, i) => a + (i.valor || 0), 0), qtd: itens.length, mnemonicos: itens.map(i => i.mnemonico).filter(Boolean),
     leituraIA: st.leitura ? { modelo: st.leitura.modelo, ms: st.leitura.ms, exames: st.leitura.exames.length, medico: st.leitura.medico || null, crm: st.leitura.crm || null, descartados: st.descartados } : null };
@@ -407,12 +437,12 @@ $('btnTransf').addEventListener('click', async () => {
 });
 $('btnZap').addEventListener('click', async () => {
   if (!st.itens.length) return; if (!validarPaciente()) return; try { await garantirOrcamento(); } catch {}
-  const linhas = st.itens.filter(i => i.ex).map(i => `• ${i.ex.nome}${i.prazoDias != null ? ` — ${i.prazoDias} d.u.` : ''}${i.valor != null ? ` — ${brl(i.valor)}` : ''}`);
-  const txt = `*Célula Diagnósticos* — Orçamento ${st.numero ? '#' + st.numero : ''}\nPaciente: ${$('pac').value || '-'}\nConvênio: ${st.convenio}\n\n${linhas.join('\n')}\n\n*Total: ${brl(st.itens.reduce((a, i) => a + (i.valor || 0), 0))}*\nValidade: ${cfg.validadeDias || 7} dias · prazos em dias úteis após a coleta.`;
+  const linhas = st.itens.filter(i => i.ex).map(i => `• ${i.ex.nome}${st.duplo ? ` (${curto(nomeDe(i))})` : ''}${i.prazoDias != null ? ` — ${i.prazoDias} d.u.` : ''}${i.valor != null ? ` — ${brl(i.valor)}` : ''}`);
+  const txt = `*Célula Diagnósticos* — Orçamento ${st.numero ? '#' + st.numero : ''}\nPaciente: ${$('pac').value || '-'}\nConvênio: ${st.convenio}${st.duplo ? ' + ' + st.convenio2 : ''}\n\n${linhas.join('\n')}\n\n*Total: ${brl(st.itens.reduce((a, i) => a + (i.valor || 0), 0))}*\nValidade: ${cfg.validadeDias || 7} dias · prazos em dias úteis após a coleta.`;
   const tel = soDigitos($('tel').value); window.open(`https://wa.me/${tel ? '55' + tel : ''}?text=${encodeURIComponent(txt)}`, '_blank');
   if (st.id) D.mudarStatus(st.id, 'enviado').catch(() => {});
 });
-$('btnLimpar').addEventListener('click', () => { if (st.offSol) st.offSol(); Object.assign(st, { id: null, numero: null, itens: [], fotos: [], leitura: null, offSol: null, _fotosSol: null, unitario: false, unitPedido: false, preToken: null, descartados: [] }); $('btnUnit').textContent = 'Valores unitários'; $('btnUnit').classList.add('ghost'); $('btnUnit').classList.remove('blue'); history.replaceState(null, '', location.pathname); $('prevWrap').hidden = true; $('prev').innerHTML = ''; $('btnRun').disabled = true; $('btnRun').textContent = 'Analisar pedido com a IA'; $('numLbl').textContent = 'novo'; $('leituraInfo').textContent = ''; $('pac').value = ''; $('tel').value = ''; $('pac').style.borderColor = ''; $('tel').style.borderColor = ''; render(); });
+$('btnLimpar').addEventListener('click', () => { if (st.offSol) st.offSol(); Object.assign(st, { id: null, numero: null, itens: [], fotos: [], leitura: null, offSol: null, _fotosSol: null, unitario: false, unitPedido: false, preToken: null, descartados: [], duplo: false, convSlug2: null, convenio2: null, manuais2: {} }); $('duplo').checked = false; $('conv2Wrap').hidden = true; $('btnUnit').textContent = 'Valores unitários'; $('btnUnit').classList.add('ghost'); $('btnUnit').classList.remove('blue'); history.replaceState(null, '', location.pathname); $('prevWrap').hidden = true; $('prev').innerHTML = ''; $('btnRun').disabled = true; $('btnRun').textContent = 'Analisar pedido com a IA'; $('numLbl').textContent = 'novo'; $('leituraInfo').textContent = ''; $('pac').value = ''; $('tel').value = ''; $('pac').style.borderColor = ''; $('tel').style.borderColor = ''; render(); });
 render();
 
 // ---------- abrir um orçamento existente para editar (orcamento.html?id=...) ----------
@@ -422,9 +452,10 @@ if (idEdit) (async () => {
     const o = await D.orcamento(idEdit); if (!o) { toast('Orçamento não encontrado.'); return; }
     const cat = await D.catalogoMap(); st.id = o.id; st.numero = o.numero; st.preToken = o.preToken || null; $('numLbl').textContent = '#' + numOrc(o.numero);
     if (o.convenio && convs.some(c => c.slug === o.convenio)) { $('conv').value = o.convenio; st.convSlug = o.convenio; st.convenio = o.convenioNome || convs.find(c => c.slug === o.convenio)?.nome; }
+    if (o.duplo && o.convenio2 && convs.some(c => c.slug === o.convenio2)) { st.duplo = true; $('duplo').checked = true; $('conv2Wrap').hidden = false; $('conv2').value = o.convenio2; st.convSlug2 = o.convenio2; st.convenio2 = o.convenio2Nome || convs.find(c => c.slug === o.convenio2)?.nome; st.manuais2 = await D.precosManuais(st.convSlug2); }
     $('pac').value = o.paciente || ''; $('tel').value = o.telefone || ''; st.renal = false;
     st.manuais = await D.precosManuais(st.convSlug);
-    st.itens = (o.itens || []).map(i => { const ex = i.mnemonico ? cat[i.mnemonico] : null; return { uid: Math.random().toString(36).slice(2), lido: i.lido || null, normalizado: i.nome, confIA: 1, conf: 1, cands: [], ex, status: i.status === 'conferencia' ? 'conferencia' : ex ? (i.valor != null ? 'ok' : 'semvalor') : 'miss', valor: i.valor ?? null, prazoDias: i.prazoDias ?? null, origem: null, solId: i.solicitacaoId || null, iaMn: i.iaMn ?? null, resultado: i.resultado || null }; });
+    st.itens = (o.itens || []).map(i => { const ex = i.mnemonico ? cat[i.mnemonico] : null; return { uid: Math.random().toString(36).slice(2), lido: i.lido || null, normalizado: i.nome, confIA: 1, conf: 1, cands: [], ex, status: i.status === 'conferencia' ? 'conferencia' : ex ? (i.valor != null ? 'ok' : 'semvalor') : 'miss', valor: i.valor ?? null, prazoDias: i.prazoDias ?? null, origem: null, solId: i.solicitacaoId || null, iaMn: i.iaMn ?? null, resultado: i.resultado || null, tab: st.duplo && i.tabela === o.convenio2 ? 2 : 1, tabFixo: !!st.duplo }; });
     if (o.unitarioLiberado) marcarUnitarioLiberado();
     st.offSol = D.ouvirSolicitacoesDoOrcamento(st.id, onSolicitacoes);
     render(); $('leituraInfo').textContent = `Editando o orçamento #${numOrc(o.numero)} de ${o.atendenteNome || ''}`; toast(`Orçamento #${numOrc(o.numero)} carregado para edição`, true);
