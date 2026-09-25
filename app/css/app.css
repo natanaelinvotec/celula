@@ -19,7 +19,7 @@
   --ok-50:#10301c;--warn-50:#3a2a0d;--crit-50:#3b1414;--ac:#3fb3b1;--tox:#d3953b;--gen:#9b74d6;--pat:#d0607a;--mol:#8fa2d8;--pro:#6b9cff;--shadow:0 12px 32px rgba(0,0,0,.35);--blue:#4f83f5;--blue-d:#b9cdff;--blue-100:#2f4478;--red:#f26b6b}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);font-family:'Nunito',system-ui,sans-serif;font-size:14.5px;line-height:1.45}
-button,input,select{font:inherit;color:inherit}button{cursor:pointer}
+button,input,select,textarea{font:inherit;color:inherit}button{cursor:pointer}
 :focus-visible{outline:3px solid var(--blue);outline-offset:2px}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 .app{display:grid;grid-template-columns:240px 1fr;min-height:100vh;max-width:1500px;margin:0 auto}
@@ -258,3 +258,4 @@ label.f{display:flex;flex-direction:column;gap:5px;font-size:.72rem;font-weight:
 .tabsw.t2{border-color:color-mix(in srgb,var(--c3) 40%,transparent);background:color-mix(in srgb,var(--c3) 14%,transparent);color:var(--c3)}
 .chk input{width:18px;height:18px;accent-color:var(--blue)}
 .in.qtd{width:58px;padding:6px 8px;text-align:center;font-weight:800}
+textarea.in{resize:vertical;min-height:70px}
