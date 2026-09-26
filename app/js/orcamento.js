@@ -11,7 +11,8 @@ const $ = id => document.getElementById(id);
 const CONF_MIN = 0.85;
 
 // ---------- estado ----------
-const st = { id: null, numero: null, itens: [], fotos: [], convenio: null, convSlug: null, renal: false, manuais: {}, leitura: null, offSol: null, descartados: [], duplo: false, convSlug2: null, convenio2: null, manuais2: {} };
+const st = { id: null, numero: null, itens: [], fotos: [], convenio: null, convSlug: null, renal: false, manuais: {}, leitura: null, offSol: null, descartados: [], duplo: false, convSlug2: null, convenio2: null, manuais2: {}, lancarEm: 1, perfis: {} };
+// lancarEm: tabela em que os NOVOS exames entram (1 = 1º convênio; vira 2 quando a caixinha é marcada). perfis: {slug: [mnemônicos]} das tabelas PERFIL em uso.
 // dois convênios: cada item tem `tab` (1 ou 2). Sem o modo duplo, tudo é 1.
 const slugDe = it => (st.duplo && it.tab === 2) ? st.convSlug2 : st.convSlug;
 const nomeDe = it => (st.duplo && it.tab === 2) ? st.convenio2 : st.convenio;
@@ -45,7 +46,7 @@ root.innerHTML = `
     <section class="card"><div class="card-h"><h2>1 · Convênio e paciente</h2></div><div class="card-b" style="display:flex;flex-direction:column;gap:10px">
       <label class="f">Convênio *<select class="in" id="conv">${convs.map(c => `<option value="${c.slug}" ${c.slug === 'particular' ? 'selected' : ''}>${escapeHtml(c.nome)}${norm(c.nome) === 'PARTICULAR' ? ' — preferencial' : ''}${ehPerfil(c) ? ' ★' : ''}</option>`).join('')}</select></label>
       <label class="chk" style="display:flex;gap:8px;align-items:center;font-weight:700;cursor:pointer"><input type="checkbox" id="duplo"> Orçamento com dois convênios</label>
-      <label class="f" id="conv2Wrap" hidden>Convênio 2 — para o que o 1º não cobre<select class="in" id="conv2">${convs.map(c => `<option value="${c.slug}" ${norm(c.nome) === 'TABELA SOCIAL' ? 'selected' : ''}>${escapeHtml(c.nome)}${ehPerfil(c) ? ' ★' : ''}</option>`).join('')}</select><small class="note" style="text-transform:none;letter-spacing:0;font-weight:600;margin-top:4px">Exames sem valor no 1º vão sozinhos para o 2º. Para trocar um exame de tabela, clique no botão da coluna “Tabela”.</small></label>
+      <label class="f" id="conv2Wrap" hidden>Convênio 2 — para o que o 1º não cobre<select class="in" id="conv2">${convs.map(c => `<option value="${c.slug}" ${norm(c.nome) === 'TABELA SOCIAL' ? 'selected' : ''}>${escapeHtml(c.nome)}${ehPerfil(c) ? ' ★' : ''}</option>`).join('')}</select><small class="note" style="text-transform:none;letter-spacing:0;font-weight:600;margin-top:4px">Os exames que já estavam ficam no 1º; os próximos entram em: <label style="display:inline-flex;gap:4px;align-items:center;margin:0 6px 0 2px;cursor:pointer"><input type="radio" name="lancarEm" value="1"> 1º</label><label style="display:inline-flex;gap:4px;align-items:center;cursor:pointer"><input type="radio" name="lancarEm" value="2" checked> 2º</label>. Sem valor numa tabela, cai para a outra. Perfil (★) entra completo e sobressai. Para trocar um exame de tabela, clique no botão da coluna “Tabela”.</small></label>
       <label class="f">Paciente *<input class="in" id="pac" placeholder="Nome do interessado (obrigatório)" autocomplete="off" required></label>
       <label class="f">Celular / WhatsApp *<input class="in" id="tel" placeholder="(67) 9 9999-9999 (obrigatório)" inputmode="tel" required></label>
     </div></section>
@@ -86,37 +87,68 @@ root.innerHTML = `
 D.contar('apelidos').then(n => $('memN').textContent = n.toLocaleString('pt-BR')).catch(() => $('memN').textContent = '—');
 st.convSlug = $('conv').value; st.convenio = convs.find(c => c.slug === st.convSlug)?.nome;
 $('conv').addEventListener('change', async () => {
-  st.convSlug = $('conv').value; const c = convs.find(x => x.slug === st.convSlug); st.convenio = c?.nome;
-  if (ehPerfil(c)) { await carregarPerfil(c); return; }
+  const antes = st.convSlug; st.convSlug = $('conv').value; const c = convs.find(x => x.slug === st.convSlug); st.convenio = c?.nome;
+  limparPerfil(antes);
+  if (ehPerfil(c)) { await carregarPerfil(c, 1); return; }
   await reprecificar(); render(); toast('Valores recalculados pela tabela ' + st.convenio);
 });
 $('duplo').addEventListener('change', async () => {
   st.duplo = $('duplo').checked; $('conv2Wrap').hidden = !st.duplo;
-  if (st.duplo) { st.convSlug2 = $('conv2').value; st.convenio2 = convs.find(c => c.slug === st.convSlug2)?.nome; if (st.convSlug2 === st.convSlug) { toast('Escolha um 2º convênio diferente do 1º.'); } }
-  else { for (const it of st.itens) { it.tab = 1; it.tabFixo = false; } }
-  await reprecificar(); render(); toast(st.duplo ? `Dois convênios: ${st.convenio} + ${st.convenio2}` : 'Voltou para um convênio só', true);
+  if (st.duplo) {
+    st.convSlug2 = $('conv2').value; st.convenio2 = convs.find(c => c.slug === st.convSlug2)?.nome; if (st.convSlug2 === st.convSlug) { toast('Escolha um 2º convênio diferente do 1º.'); }
+    st.lancarEm = 2; syncLancarEm(); // daqui em diante o que entrar vai para o 2º
+    const c2 = convs.find(c => c.slug === st.convSlug2); if (ehPerfil(c2)) { await carregarPerfil(c2, 2); return; }
+  } else { const antes2 = st.convSlug2; st.convSlug2 = null; limparPerfil(antes2); st.lancarEm = 1; for (const it of st.itens) { it.tab = 1; it.tabFixo = false; it.tabLanc = 1; } }
+  await reprecificar(); render(); toast(st.duplo ? `Dois convênios: ${st.convenio} + ${st.convenio2} — os próximos exames entram em ${st.convenio2}` : 'Voltou para um convênio só', true);
 });
 $('conv2').addEventListener('change', async () => {
-  st.convSlug2 = $('conv2').value; st.convenio2 = convs.find(c => c.slug === st.convSlug2)?.nome;
-  for (const it of st.itens) if (!it.tabFixo) it.tab = 1;
+  const antes = st.convSlug2; st.convSlug2 = $('conv2').value; st.convenio2 = convs.find(c => c.slug === st.convSlug2)?.nome;
+  limparPerfil(antes); for (const it of st.itens) if (!it.tabFixo) it.tab = it.tabLanc === 2 ? 2 : 1;
+  const c2 = convs.find(c => c.slug === st.convSlug2); if (ehPerfil(c2)) { await carregarPerfil(c2, 2); return; }
   await reprecificar(); render(); toast('2º convênio: ' + st.convenio2);
 });
-/** Perfil (pacote): carrega todos os exames que têm valor nessa tabela e fecha o total. */
-async function carregarPerfil(c) {
+document.addEventListener('change', e => { if (!e.target.matches('[name="lancarEm"]')) return; st.lancarEm = Number(e.target.value) === 2 ? 2 : 1; toast(`Novos exames entram em ${st.lancarEm === 2 ? st.convenio2 : st.convenio}`, true); });
+function syncLancarEm() { document.querySelectorAll('[name="lancarEm"]').forEach(r => { r.checked = Number(r.value) === st.lancarEm; }); }
+/** Perfil (pacote) saiu das tabelas: tira os exames que só entraram por causa dele (não lidos do pedido). */
+function limparPerfil(slug) {
+  if (!slug || !st.perfis[slug] || slug === st.convSlug || (st.duplo && slug === st.convSlug2)) return;
+  delete st.perfis[slug];
+  st.itens = st.itens.filter(i => !(i.viaPerfil === slug && !i.lido && i.status !== 'conferencia'));
+}
+/**
+ * Perfil (pacote) na posição `tabN`: entra COMPLETO. Os exames que faltam são adicionados; os que já estavam e fazem parte
+ * do perfil são reprecificados pela regra "perfil sobressai" (troca de tabela e reduz o valor) — nunca duplica.
+ */
+async function carregarPerfil(c, tabN = 1, soSomar = false) {
   const cat = await D.catalogo(); const exs = cat.filter(e => e.ativo !== false && e.precos?.[c.slug] != null).sort((a, b) => a.nome.localeCompare(b.nome));
   if (!exs.length) { toast(`A tabela ${c.nome} não tem exames com valor cadastrado.`); await reprecificar(); render(); return; }
+  st.perfis[c.slug] = exs.map(e => e.mnemonico);
   const aplicar = async (substituir) => {
-    st.manuais = await D.precosManuais(st.convSlug);
     if (substituir) st.itens = st.itens.filter(i => i.status === 'conferencia'); // mantém só o que está na gestão
-    for (const ex of exs) { if (st.itens.some(i => i.ex?.mnemonico === ex.mnemonico)) continue; const it = { uid: Math.random().toString(36).slice(2), lido: null, conf: 1, cands: [], ex, status: 'ok', valor: null, prazoDias: null, origem: null }; await precificar(it); st.itens.push(it); }
-    await reprecificar(); render(); toast(`${c.nome}: ${exs.length} exames carregados · total ${brl(st.itens.reduce((a, i) => a + vTot(i), 0))}`, true);
+    let novos = 0, jaTinha = 0;
+    for (const ex of exs) {
+      const ex0 = jaTem(ex.mnemonico); if (ex0) { jaTinha++; continue; }
+      const it = { uid: Math.random().toString(36).slice(2), lido: null, conf: 1, cands: [], ex, status: 'ok', valor: null, prazoDias: null, origem: null, viaPerfil: c.slug, tabLanc: tabN }; st.itens.push(it); novos++;
+    }
+    await reprecificar(); render();
+    const noPerfil = st.itens.filter(i => i.ex && st.perfis[c.slug].includes(i.ex.mnemonico) && slugDe(i) === c.slug).length;
+    toast(`${c.nome}: ${novos} exame(s) adicionados${jaTinha ? `, ${jaTinha} já constavam` : ''} · ${noPerfil}/${exs.length} no perfil · total ${brl(st.itens.reduce((a, i) => a + vTot(i), 0))}`, true);
   };
   const temItens = st.itens.some(i => i.status !== 'conferencia');
-  if (!temItens) { await aplicar(true); return; }
-  const m = modal(`<h2 style="margin:0 0 6px;color:var(--blue-d)">${escapeHtml(c.nome)}</h2><p class="note">Este perfil tem <b>${exs.length}</b> exames com valor na tabela. O orçamento já tem ${st.itens.length} exame(s): o que você quer fazer?</p>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-top:14px"><button class="btn ghost" id="pfAdd">Adicionar aos exames atuais</button><button class="btn blue" id="pfSub">Substituir pelo perfil</button></div>`, { largura: 480 });
+  if (!temItens || tabN === 2 || soSomar) { await aplicar(false); return; } // no 2º convênio o perfil sempre soma ao que já existe
+  const m = modal(`<h2 style="margin:0 0 6px;color:var(--blue-d)">${escapeHtml(c.nome)}</h2><p class="note">Este perfil tem <b>${exs.length}</b> exames com valor na tabela e entra completo. O orçamento já tem ${st.itens.length} exame(s): o que você quer fazer?</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-top:14px"><button class="btn ghost" id="pfAdd">Somar ao que já tem (sem duplicar)</button><button class="btn blue" id="pfSub">Substituir pelo perfil</button></div>`, { largura: 480 });
   m.querySelector('#pfAdd').onclick = async () => { fecharModal(); await aplicar(false); };
   m.querySelector('#pfSub').onclick = async () => { fecharModal(); await aplicar(true); };
+}
+/** Perfis em uso com exames faltando (a atendente removeu): [{slug, nome, faltam:[mn]}]. O valor rateado só vale com o pacote inteiro. */
+function perfisIncompletos() {
+  const out = [];
+  for (const [slug, mns] of Object.entries(st.perfis)) {
+    if (slug !== st.convSlug && !(st.duplo && slug === st.convSlug2)) continue;
+    const faltam = mns.filter(m => !jaTem(m)); if (faltam.length) out.push({ slug, nome: convs.find(c => c.slug === slug)?.nome || slug, faltam });
+  }
+  return out;
 }
 /** Nome e celular são obrigatórios para gravar, gerar PDF ou enviar. */
 function validarPaciente() {
@@ -263,14 +295,31 @@ async function serieDoExame(ex, n) {
   }
   return out;
 }
+/** Qual das duas tabelas é PERFIL (2 tem prioridade se as duas forem). null = nenhuma. */
+function tabPerfil() { if (!st.duplo || !st.convSlug2) return ehPerfil(convs.find(c => c.slug === st.convSlug)) ? 1 : null; if (ehPerfil(convs.find(c => c.slug === st.convSlug2))) return 2; return ehPerfil(convs.find(c => c.slug === st.convSlug)) ? 1 : null; }
+/**
+ * Regra de precificação com dois convênios (combinada com o Natanael, 25/09):
+ *  - cada exame fica na tabela em que foi LANÇADO (tabLanc): antes da caixinha tudo é 1º; depois, o que entra vai para o 2º.
+ *    Se a tabela de lançamento não tem o exame, cai para a outra.
+ *  - PERFIL sobressai: se uma das tabelas é perfil e o exame faz parte dele, o perfil ganha no empate ou quando é mais barato
+ *    (valor cheio da tabela); se a outra tabela for mais barata (ou custo zero) o exame fica onde está — nunca duplica.
+ *  - troca manual pelo botão da coluna Tabela (tabFixo) vale acima de tudo.
+ */
 async function precificar(it) {
   if (!it.ex) return;
+  if (it.tabLanc == null) it.tabLanc = (st.duplo && st.convSlug2) ? (st.lancarEm === 2 ? 2 : 1) : 1;
   let p;
   if (st.duplo && st.convSlug2) {
-    if (it.tabFixo) p = await D.precoPrazo(it.ex, slugDe(it), it.tab === 2 ? st.manuais2 : st.manuais);
-    else { // automático: tenta o 1º; sem valor, cai para o 2º
-      it.tab = 1; p = await D.precoPrazo(it.ex, st.convSlug, st.manuais);
-      if (p.valor == null) { const p2 = await D.precoPrazo(it.ex, st.convSlug2, st.manuais2); if (p2.valor != null) { it.tab = 2; p = p2; } }
+    const pr = t => D.precoPrazo(it.ex, t === 2 ? st.convSlug2 : st.convSlug, t === 2 ? st.manuais2 : st.manuais);
+    if (it.tabFixo) p = await pr(it.tab);
+    else {
+      const t0 = it.tabLanc === 2 ? 2 : 1, t1 = t0 === 2 ? 1 : 2;
+      it.tab = t0; p = await pr(t0);
+      if (p.valor == null) { const p2 = await pr(t1); if (p2.valor != null) { it.tab = t1; p = p2; } }
+      const tp = tabPerfil();
+      if (tp && it.tab !== tp && st.perfis[tp === 2 ? st.convSlug2 : st.convSlug]?.includes(it.ex.mnemonico)) {
+        const pp = await pr(tp); if (pp.valor != null && (p.valorTabela == null || pp.valorTabela <= p.valorTabela)) { it.tab = tp; p = pp; }
+      }
     }
   } else { it.tab = 1; p = await D.precoPrazo(it.ex, st.convSlug, st.manuais); }
   it.valor = p.valor; it.prazoDias = p.prazoDias; it.origem = p.origem; it.valorTabela = p.valorTabela ?? p.valor; it.repassePct = p.repassePct ?? 100;
@@ -285,6 +334,9 @@ function render() {
   const g = $('groups');
   if (!st.itens.length) { g.innerHTML = '<div class="card"><div class="card-b" style="text-align:center;color:var(--muted);font-weight:700;padding:40px">Nenhum exame ainda.</div></div>'; stats(); return; }
   g.innerHTML = '';
+  for (const p of perfisIncompletos()) { // perfil é pacote: o valor rateado só vale com todos os exames
+    g.insertAdjacentHTML('beforeend', `<div class="ask crit" style="margin-bottom:10px"><div style="display:flex;gap:10px;align-items:flex-start;color:var(--red)"><div><b>${escapeHtml(p.nome)} incompleto</b> — faltam ${p.faltam.length} exame(s): ${escapeHtml(p.faltam.join(', '))}. O valor rateado do perfil só vale com o pacote inteiro; complete ou troque o convênio.</div></div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn blue sm" data-recompor="${escapeHtml(p.slug)}">Recompor perfil</button></div></div>`);
+  }
   const semSetor = st.itens.filter(i => !i.ex);
   const grupos = SETOR_ORDEM.map(s => [s, st.itens.filter(i => i.ex && i.ex.setor === s)]).filter(x => x[1].length);
   if (semSetor.length) grupos.push(['Não identificado', semSetor]);
@@ -366,6 +418,7 @@ $('groups').addEventListener('click', async e => {
   if (b.dataset.manter) { const it = find(b.dataset.manter); it.editar = false; it.abrirConf = false; render(); return; }
   if (b.dataset.grupo) { const it = find(b.dataset.grupo); abrirEditorGrupo(it); return; }
   if (b.dataset.tab) { const it = find(b.dataset.tab); it.tab = it.tab === 2 ? 1 : 2; it.tabFixo = true; await precificar(it); render(); return; }
+  if (b.dataset.recompor) { const c = convs.find(x => x.slug === b.dataset.recompor); if (c) await carregarPerfil(c, st.duplo && c.slug === st.convSlug2 ? 2 : 1, true); return; }
   if (b.dataset.rm) { const it = find(b.dataset.rm); if (it?.lido) st.descartados.push({ lido: it.lido, iaMn: it.iaMn || null }); st.itens = st.itens.filter(i => i.uid !== b.dataset.rm); render(); return; }
   if (b.dataset.ok) { const it = find(b.dataset.ok); it.status = 'ok'; it.conf = 1; it.confirmado = true; await precificar(it); render(); D.ensinar(it.lido, it.ex.mnemonico, perfil.unidade); toast(`A IA aprendeu: “${it.lido}” = ${it.ex.mnemonico}`, true); return; }
   if (b.dataset.pick) { const it = find(b.dataset.pick); await escolher(it, b.dataset.m); return; }
@@ -455,7 +508,7 @@ async function onSolicitacoes(sols) {
 
 // ---------- gravar / whatsapp / limpar ----------
 function montarDados(status) {
-  const itens = st.itens.map(i => ({ mnemonico: i.ex?.mnemonico || null, nome: i.ex?.nome || i.normalizado || i.lido, setor: i.ex?.setor || null, valor: i.valor ?? null, prazoDias: i.prazoDias ?? null, lido: i.lido || null, status: i.status, solicitacaoId: i.solId || null, iaMn: i.iaMn ?? null, resultado: resultadoLeitura(i), tabela: slugDe(i) || null, tabelaNome: nomeDe(i) || null, qtd: Number(i.qtd) || 1, valorTotal: i.valor != null ? vTot(i) : null, grupo: i.grupo || null, valorTabela: i.valorTabela ?? i.valor ?? null, repassePct: i.repassePct ?? 100 }));
+  const itens = st.itens.map(i => ({ mnemonico: i.ex?.mnemonico || null, nome: i.ex?.nome || i.normalizado || i.lido, setor: i.ex?.setor || null, valor: i.valor ?? null, prazoDias: i.prazoDias ?? null, lido: i.lido || null, status: i.status, solicitacaoId: i.solId || null, iaMn: i.iaMn ?? null, resultado: resultadoLeitura(i), tabela: slugDe(i) || null, tabelaNome: nomeDe(i) || null, qtd: Number(i.qtd) || 1, valorTotal: i.valor != null ? vTot(i) : null, grupo: i.grupo || null, valorTabela: i.valorTabela ?? i.valor ?? null, repassePct: i.repassePct ?? 100, tabLanc: i.tabLanc || 1, viaPerfil: i.viaPerfil || null }));
   const pend = st.itens.some(i => i.status !== 'ok');
   const repassePct = st.itens.find(i => i.tab !== 2 && i.valor != null)?.repassePct ?? 100, repassePct2 = st.itens.find(i => i.tab === 2 && i.valor != null)?.repassePct ?? 100;
   return { status: status || (pend ? 'aguardando_conferencia' : 'gravado'), unidade: perfil.unidade, atendenteNome: perfil.nome, convenio: st.convSlug, convenioNome: st.convenio, renal: st.renal,
@@ -530,7 +583,7 @@ $('btnZap').addEventListener('click', async () => {
   const tel = soDigitos($('tel').value); window.open(`https://wa.me/${tel ? '55' + tel : ''}?text=${encodeURIComponent(txt)}`, '_blank');
   if (st.id) D.mudarStatus(st.id, 'enviado').catch(() => {});
 });
-$('btnLimpar').addEventListener('click', () => { if (st.offSol) st.offSol(); Object.assign(st, { id: null, numero: null, itens: [], fotos: [], leitura: null, offSol: null, _fotosSol: null, unitario: false, unitPedido: false, preToken: null, descartados: [], duplo: false, convSlug2: null, convenio2: null, manuais2: {} }); $('duplo').checked = false; $('conv2Wrap').hidden = true; $('btnUnit').textContent = 'Valores unitários'; $('btnUnit').classList.add('ghost'); $('btnUnit').classList.remove('blue'); history.replaceState(null, '', location.pathname); $('prevWrap').hidden = true; $('prev').innerHTML = ''; $('btnRun').disabled = true; $('btnRun').textContent = 'Analisar pedido com a IA'; $('numLbl').textContent = 'novo'; $('leituraInfo').textContent = ''; $('pac').value = ''; $('tel').value = ''; $('pac').style.borderColor = ''; $('tel').style.borderColor = ''; render(); });
+$('btnLimpar').addEventListener('click', () => { if (st.offSol) st.offSol(); Object.assign(st, { id: null, numero: null, itens: [], fotos: [], leitura: null, offSol: null, _fotosSol: null, unitario: false, unitPedido: false, preToken: null, descartados: [], duplo: false, convSlug2: null, convenio2: null, manuais2: {}, lancarEm: 1, perfis: {} }); $('duplo').checked = false; $('conv2Wrap').hidden = true; $('btnUnit').textContent = 'Valores unitários'; $('btnUnit').classList.add('ghost'); $('btnUnit').classList.remove('blue'); history.replaceState(null, '', location.pathname); $('prevWrap').hidden = true; $('prev').innerHTML = ''; $('btnRun').disabled = true; $('btnRun').textContent = 'Analisar pedido com a IA'; $('numLbl').textContent = 'novo'; $('leituraInfo').textContent = ''; $('pac').value = ''; $('tel').value = ''; $('pac').style.borderColor = ''; $('tel').style.borderColor = ''; render(); });
 render();
 
 // ---------- abrir um orçamento existente para editar (orcamento.html?id=...) ----------
@@ -543,7 +596,9 @@ if (idEdit) (async () => {
     if (o.duplo && o.convenio2 && convs.some(c => c.slug === o.convenio2)) { st.duplo = true; $('duplo').checked = true; $('conv2Wrap').hidden = false; $('conv2').value = o.convenio2; st.convSlug2 = o.convenio2; st.convenio2 = o.convenio2Nome || convs.find(c => c.slug === o.convenio2)?.nome; st.manuais2 = await D.precosManuais(st.convSlug2); }
     $('pac').value = o.paciente || ''; $('tel').value = o.telefone || ''; st.renal = false;
     st.manuais = await D.precosManuais(st.convSlug);
-    st.itens = (o.itens || []).map(i => { const ex = i.mnemonico ? cat[i.mnemonico] : null; return { uid: Math.random().toString(36).slice(2), lido: i.lido || null, normalizado: i.nome, confIA: 1, conf: 1, cands: [], ex, status: i.status === 'conferencia' ? 'conferencia' : ex ? (i.valor != null ? 'ok' : 'semvalor') : 'miss', valor: i.valor ?? null, prazoDias: i.prazoDias ?? null, origem: null, solId: i.solicitacaoId || null, iaMn: i.iaMn ?? null, resultado: i.resultado || null, tab: st.duplo && i.tabela === o.convenio2 ? 2 : 1, tabFixo: !!st.duplo, qtd: Number(i.qtd) || 1, grupo: i.grupo || null }; });
+    st.itens = (o.itens || []).map(i => { const ex = i.mnemonico ? cat[i.mnemonico] : null; return { uid: Math.random().toString(36).slice(2), lido: i.lido || null, normalizado: i.nome, confIA: 1, conf: 1, cands: [], ex, status: i.status === 'conferencia' ? 'conferencia' : ex ? (i.valor != null ? 'ok' : 'semvalor') : 'miss', valor: i.valor ?? null, prazoDias: i.prazoDias ?? null, origem: null, solId: i.solicitacaoId || null, iaMn: i.iaMn ?? null, resultado: i.resultado || null, tab: st.duplo && i.tabela === o.convenio2 ? 2 : 1, tabFixo: !!st.duplo, tabLanc: st.duplo && i.tabela === o.convenio2 ? 2 : 1, viaPerfil: i.viaPerfil || null, qtd: Number(i.qtd) || 1, grupo: i.grupo || null }; });
+    st.lancarEm = st.duplo ? 2 : 1; syncLancarEm(); st.perfis = {};
+    for (const slug of [st.convSlug, st.duplo ? st.convSlug2 : null]) { const c = convs.find(x => x.slug === slug); if (ehPerfil(c)) st.perfis[slug] = Object.values(cat).filter(e => e.ativo !== false && e.precos?.[slug] != null).map(e => e.mnemonico); }
     if (o.unitarioLiberado) marcarUnitarioLiberado();
     st.offSol = D.ouvirSolicitacoesDoOrcamento(st.id, onSolicitacoes);
     render(); $('leituraInfo').textContent = `Editando o orçamento #${numOrc(o.numero)} de ${o.atendenteNome || ''}`; toast(`Orçamento #${numOrc(o.numero)} carregado para edição`, true);
