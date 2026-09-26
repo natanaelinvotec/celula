@@ -6,6 +6,7 @@ import { numOrc, ICO, copiar } from './ui.js';
 import { fmtCpf, fmtNasc, fmtTel } from './historico.js';
 
 export function montarPreCadastros(el, { perfil }) {
+  const admin = perfil.papel === 'admin';
   el.innerHTML = `<div class="card lem" style="margin-bottom:14px"><div class="card-h"><h2>Fila para cadastrar no AutoLAC</h2><span class="badge-n" id="pCnt" hidden></span><div class="sp"></div><span class="note">quem estiver livre pega o próximo: copie os dados, cadastre no AutoLAC e clique em “Cadastrei”</span></div>
     <div class="card-b" id="pFila" style="display:flex;flex-direction:column;gap:8px"><div class="note">Carregando…</div></div></div>
   <div class="card"><div class="card-h"><h2>Já cadastrados</h2><span class="cnt" id="pCntOk"></span><div class="sp"></div><label class="f" style="min-width:220px">Buscar<input class="in" id="pQ" placeholder="nome, CPF ou nº do orçamento"></label></div>
@@ -27,6 +28,7 @@ export function montarPreCadastros(el, { perfil }) {
       <button class="btn ghost sm" data-copypre="${p.id}" title="Copia nome, CPF, nascimento e celular separados por TAB">${ICO.copy} Copiar dados</button>
       <a class="btn ghost sm" href="orcamento.html?id=${p.id}" title="Abrir o orçamento">Orçamento</a>
       ${fila ? `<button class="btn blue sm" data-visto="${p.id}">✓ Cadastrei no AutoLAC</button>` : ''}
+      ${admin ? `<button class="ib red" title="Excluir pré-cadastro (só gestão; clique duas vezes)" data-del="${p.id}">${ICO.lixo}</button>` : ''}
     </div>`; };
   function render() {
     const fila = lista.filter(p => !p.visto).sort((a, b) => (a.enviadoEm?.toMillis?.() || 0) - (b.enviadoEm?.toMillis?.() || 0)); // mais antigo primeiro
@@ -42,6 +44,11 @@ export function montarPreCadastros(el, { perfil }) {
   el.addEventListener('click', async e => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.copypre) { const p = lista.find(x => x.id === b.dataset.copypre); copiar(`${p.nome}\t${fmtCpf(p.cpf)}\t${fmtNasc(p.nascimento)}\t${fmtTel(p.telefone)}`); return; }
+    if (b.dataset.del) { // gestão: excluir de vez (testes, duplicados) — precisa de dois cliques em 5 s
+      const p = lista.find(x => x.id === b.dataset.del);
+      if (b.dataset.armed !== '1') { b.dataset.armed = '1'; b.style.background = 'var(--crit-50)'; b.style.color = 'var(--red)'; toast(`Clique de novo na lixeira para EXCLUIR o pré-cadastro de ${p.nome} (não tem volta).`); setTimeout(() => { b.dataset.armed = ''; b.style.background = ''; b.style.color = ''; }, 5000); return; }
+      try { await D.excluirPreCadastro(p.id); toast(`Pré-cadastro de ${p.nome} excluído`, true); } catch (err) { toast('Erro ao excluir: ' + err.message); } return;
+    }
     if (b.dataset.visto) { b.disabled = true; try { await D.marcarPreVisto(b.dataset.visto); toast('Pré-cadastro marcado como cadastrado no AutoLAC', true); } catch (err) { b.disabled = false; toast('Erro: ' + err.message); } }
   });
 }
