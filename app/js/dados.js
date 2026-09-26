@@ -253,6 +253,7 @@ export function ouvirPreCadastros(cb, max = 300) {
 }
 export async function preCadastro(orcId) { const d = await getDoc(doc(db, 'precadastros', orcId)); return d.exists() ? { id: d.id, ...d.data() } : null; }
 export const marcarPreVisto = orcId => updateDoc(doc(db, 'precadastros', orcId), { visto: true, vistoPor: auth.currentUser.uid, vistoEm: serverTimestamp() });
+export const excluirPreCadastro = orcId => deleteDoc(doc(db, 'precadastros', orcId)); // só admin (regra do Firestore)
 export async function orcamentoPorId(id) { const d = await getDoc(doc(db, 'orcamentos', id)); return d.exists() ? { id: d.id, ...d.data() } : null; }
 export const ouvirOrcamento = (id, cb) => onSnapshot(doc(db, 'orcamentos', id), d => cb({ id: d.id, ...d.data() }));
 export async function converterOrcamento(id) {
