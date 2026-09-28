@@ -259,3 +259,4 @@ label.f{display:flex;flex-direction:column;gap:5px;font-size:.72rem;font-weight:
 .chk input{width:18px;height:18px;accent-color:var(--blue)}
 .in.qtd{width:58px;padding:6px 8px;text-align:center;font-weight:800}
 textarea.in{resize:vertical;min-height:70px}
+.sug button.sel{background:var(--blue-50);box-shadow:inset 3px 0 0 var(--blue)}
