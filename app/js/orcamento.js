@@ -484,7 +484,12 @@ $('sug').addEventListener('click', async e => { const b = e.target.closest('[dat
 document.addEventListener('click', e => { if (!e.target.closest('.search')) document.querySelectorAll('.sug').forEach(s => s.hidden = true); });
 
 // ---------- conferência (tempo real) ----------
-async function garantirOrcamento(status) {
+/** Grava (cria na 1ª vez, atualiza depois). Chamadas em fila: cliques repetidos em Gravar/PDF/WhatsApp nunca criam dois orçamentos. */
+function garantirOrcamento(status) {
+  const p = (st._fila || Promise.resolve()).catch(() => {}).then(() => gravarAgora(status));
+  st._fila = p; return p;
+}
+async function gravarAgora(status) {
   const dados = montarDados(status || 'rascunho');
   st.id = await D.gravarOrcamento(dados, st.id);
   if (!st.numero) { const d = await new Promise(r => { const off = D.ouvirOrcamento(st.id, x => { off(); r(x); }); }); st.numero = d.numero; st.preToken = d.preToken || null; $('numLbl').textContent = '#' + numOrc(st.numero); }
@@ -548,13 +553,16 @@ function resultadoLeitura(i) {
   return i.status === 'ok' ? 'confirmado' : 'pendente';
 }
 $('btnSalvar').addEventListener('click', async () => {
+  if (st._salvando) return; // já está gravando
   if (!st.itens.length) { toast('Adicione ao menos um exame.'); return; }
   if (!validarPaciente()) return;
   const pend = st.itens.filter(i => ['flag', 'miss', 'semvalor'].includes(i.status)).length; if (pend) { toast(`Ainda há ${pend} exame(s) a confirmar ou sem valor.`); return; }
+  st._salvando = true; $('btnSalvar').disabled = true;
   try {
     await garantirOrcamento(st.itens.some(i => i.status === 'conferencia') ? 'aguardando_conferencia' : 'gravado'); toast(`Orçamento #${numOrc(st.numero)} gravado — gerando PDF…`, true);
     await baixarPdf();
   } catch (e) { toast('Erro ao gravar: ' + e.message); }
+  finally { st._salvando = false; $('btnSalvar').disabled = false; }
 });
 async function baixarPdf() {
   if (!st.itens.length) { toast('Adicione ao menos um exame.'); return; }
