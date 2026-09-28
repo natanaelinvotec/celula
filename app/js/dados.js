@@ -1,6 +1,6 @@
 // dados.js — acesso ao Firestore: catálogo, convênios, apelidos (aprendizado), solicitações, orçamentos.
 import { db, auth, norm, slug } from './firebase.js';
-import { collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, startAfter, onSnapshot, increment, serverTimestamp, writeBatch, getCountFromServer, arrayUnion } from 'https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js';
+import { collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, startAfter, onSnapshot, increment, serverTimestamp, writeBatch, getCountFromServer, arrayUnion, runTransaction } from 'https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js';
 
 let _cat = null, _catAt = 0, _cfg = null, _convs = null, _convsAt = 0;
 
@@ -224,9 +224,14 @@ export async function editarExame(mnemonico, mudancas) {
 
 // ---------- orçamentos ----------
 export async function proximoNumero() {
-  // contador atômico em config/contadores (regras permitem só increment de 1)
-  const ref = doc(db, 'config', 'contadores'); await setDoc(ref, { orcamento: increment(1) }, { merge: true });
-  return (await getDoc(ref)).data().orcamento;
+  // transação: lê o valor atual e grava +1 no mesmo passo. Se duas atendentes gravarem ao mesmo tempo, o Firestore repete
+  // a transação de uma delas — cada orçamento recebe um número único (antes: increment + leitura separada podia repetir).
+  const ref = doc(db, 'config', 'contadores');
+  return runTransaction(db, async tx => {
+    const cur = (await tx.get(ref)).data()?.orcamento || 0;
+    tx.set(ref, { orcamento: cur + 1 }, { merge: true });
+    return cur + 1;
+  });
 }
 export async function gravarOrcamento(dados, id) {
   const u = auth.currentUser;
