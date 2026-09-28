@@ -50,27 +50,34 @@ export function parseRelatorio(linhas) {
   return { registros: regs, atendimentos: [...porProt.values()], periodo };
 }
 
-/** Cruza atendimentos do relatório com orçamentos abertos. Retorna {auto:[], quase:[]} com {orc, at, motivo}. */
+/**
+ * Cruza atendimentos do relatório com orçamentos abertos. Retorna {auto:[], quase:[]} com {orc, at, motivo}.
+ * Regra (Natanael, 28/09): o que casa é o NOME (igual, tolerando acento/abreviação ≥ 92%); o valor não bloqueia.
+ * Nome igual + valor igual (diferença ≤ R$ 0,05) → convertido automaticamente; nome igual com valor diferente → "confira e confirme"
+ * mostrando o valor do orçamento e o do cadastro para a gestão decidir.
+ */
 export function cruzar(atendimentos, orcamentos) {
   const auto = [], quase = [], usados = new Set();
   const abertos = orcamentos.filter(o => o.status !== 'convertido' && o.status !== 'perdido' && o.paciente);
+  const brl = v => 'R$ ' + Number(v || 0).toFixed(2).replace('.', ',');
   for (const at of atendimentos) {
     const nAt = norm(at.paciente); if (!nAt) continue;
     let melhor = null;
     for (const o of abertos) {
       if (usados.has(o.id)) continue;
       const nO = o.pacienteBusca || norm(o.paciente); const simNome = nAt === nO ? 1 : similar(nAt, nO);
-      if (simNome < 0.72) continue;
+      if (simNome < 0.92) continue; // só nome igual
       const tot = Number(o.total || 0); const cand = [at.total, ...at.guias.map(g => g.valor)];
-      const difs = cand.map(v => tot ? Math.abs(v - tot) / tot : 1); const dif = Math.min(...difs);
-      const score = simNome * 0.6 + Math.max(0, 1 - dif) * 0.4;
-      if (!melhor || score > melhor.score) melhor = { o, simNome, dif, score, valorRel: cand[difs.indexOf(dif)] };
+      const difs = cand.map(v => Math.abs(v - tot)); const dif = Math.min(...difs);
+      // mesmo nome em mais de um orçamento: fica o de nome mais exato e, empatado, o de valor mais próximo
+      if (!melhor || simNome > melhor.simNome || (simNome === melhor.simNome && dif < melhor.dif)) melhor = { o, simNome, dif, valorRel: cand[difs.indexOf(dif)] };
     }
     if (!melhor) continue;
-    const nomeOk = melhor.simNome >= 0.92, valorOk = melhor.dif <= 0.12;
-    const item = { orc: melhor.o, at, simNome: melhor.simNome, dif: melhor.dif, valorRel: melhor.valorRel, motivo: `${nomeOk ? 'nome igual' : 'nome parecido (' + Math.round(melhor.simNome * 100) + '%)'} · valor ${valorOk ? 'bate' : 'difere ' + Math.round(melhor.dif * 100) + '%'}` };
-    if (nomeOk && valorOk) { auto.push(item); usados.add(melhor.o.id); }
-    else if (melhor.simNome >= 0.8 && melhor.dif <= 0.35) quase.push(item);
+    const valorOk = melhor.dif <= 0.05;
+    const item = { orc: melhor.o, at, simNome: melhor.simNome, dif: melhor.dif, valorRel: melhor.valorRel,
+      motivo: `nome igual${melhor.simNome < 1 ? ' (' + Math.round(melhor.simNome * 100) + '%)' : ''} · ${valorOk ? 'valor bate' : `valor diferente: orçamento ${brl(melhor.o.total)} × cadastro ${brl(melhor.valorRel)}`}` };
+    usados.add(melhor.o.id);
+    (valorOk ? auto : quase).push(item);
   }
   return { auto, quase };
 }
