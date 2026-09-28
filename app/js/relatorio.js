@@ -64,7 +64,7 @@ export function cruzar(atendimentos, orcamentos) {
     const nAt = norm(at.paciente); if (!nAt) continue;
     let melhor = null;
     for (const o of abertos) {
-      if (usados.has(o.id)) continue;
+      if (usados.has(o.id) || (o.conversaoRecusada || []).includes(String(at.protocolo))) continue; // gestão já recusou este par
       const nO = o.pacienteBusca || norm(o.paciente); const simNome = nAt === nO ? 1 : similar(nAt, nO);
       if (simNome < 0.92) continue; // só nome igual
       const tot = Number(o.total || 0); const cand = [at.total, ...at.guias.map(g => g.valor)];
