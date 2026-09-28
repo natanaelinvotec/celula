@@ -24,7 +24,7 @@ Site estático (GitHub Pages) + Firebase (projeto **CelulaMS**): Auth por e-mail
 `firestore.rules` (esta pasta) já está publicada no projeto. Papéis: `atendente` (orçamentos, apelidos, solicitações) e `admin` (catálogo, aprovações, usuários, config). Auditoria em `auditoria/`.
 
 ## IA
-Modelos: `gemini-3.6-flash` → reserva `gemini-3.5-flash`. Sem `responseMimeType` (no nível gratuito dá erro 500 com imagem); o JSON é pedido no prompt. Limite gratuito por minuto/dia: se aparecer "Limite de uso da IA atingido", aguarde ou passe o projeto para Blaze. Recomendado ativar o **App Check** (reCAPTCHA v3) em Firebase AI Logic → Configurações quando o site estiver no ar.
+Modelos: `gemini-3.6-flash` → reserva `gemini-3.5-flash`. Sem `responseMimeType` (no nível gratuito dá erro 500 com imagem); o JSON é pedido no prompt. Limite gratuito por minuto/dia: se aparecer "Limite de uso da IA atingido", aguarde ou passe o projeto para Blaze. Recomendado ativar o **App Check** (reCAPTCHA v3) em Firebase AI Logic → Configurações quando o site estiveddr no ar.
 
 ## Regras de negócio
 - Prazo Célula = prazo DB + 2 dias úteis (`config/app.prazoExtraDiasUteis`).
