@@ -57,7 +57,7 @@ export function montarHistorico(el, { perfil, admin, cfg = {} }) {
   <div class="card"><div class="card-h"><h2>${admin ? 'Histórico de orçamentos' : 'Meus orçamentos'}</h2><span class="cnt" id="hCnt"></span><div class="sp"></div><span class="note">Clique na linha para ver os mnemônicos, editar, gerar PDF ou marcar como convertido</span></div>
     <div class="card-b"><div class="tbl-wrap" id="hWrap" style="max-height:640px;overflow:auto"><table class="tbl"><thead><tr><th>Nº</th><th>Data</th><th>Paciente</th><th>Telefone</th><th>Convênio</th>${admin ? '<th>Atendente</th>' : ''}<th>Exames</th><th class="num">Total</th><th>Status</th><th></th></tr></thead><tbody id="hBody"><tr><td colspan="9" class="note">Carregando…</td></tr></tbody></table></div><div id="hPag"></div></div></div>`;
   const $ = id => el.querySelector('#' + id);
-  montarLembretes($('hLem'), { perfil, cfg });
+  if (!admin) montarLembretes($('hLem'), { perfil, cfg }); // no painel da gestão a fila fica só no CRM
   // pré-cadastros enviados pelos pacientes (página pública): badge na lista + dados ao abrir a linha
   const offPre = D.ouvirPreCadastros(map => { pre = map; if (rows.length) render(); });
   addEventListener('pagehide', () => offPre());
