@@ -1,6 +1,6 @@
 // dados.js — acesso ao Firestore: catálogo, convênios, apelidos (aprendizado), solicitações, orçamentos.
 import { db, auth, norm, slug } from './firebase.js';
-import { collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, startAfter, onSnapshot, increment, serverTimestamp, writeBatch, getCountFromServer } from 'https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js';
+import { collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, startAfter, onSnapshot, increment, serverTimestamp, writeBatch, getCountFromServer, arrayUnion } from 'https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js';
 
 let _cat = null, _catAt = 0, _cfg = null, _convs = null, _convsAt = 0;
 
@@ -265,6 +265,8 @@ export async function converterViaRelatorio(id, info) {
   const u = auth.currentUser;
   return updateDoc(doc(db, 'orcamentos', id), { status: 'convertido', convertidoEm: serverTimestamp(), convertidoPor: u.uid, convertidoPorNome: 'Relatório AutoLAC', convertidoVia: 'relatorio', relatorio: info, atualizadoEm: serverTimestamp() });
 }
+/** Gestão recusou casar este atendimento (protocolo do AutoLAC) com o orçamento: não volta a ser sugerido nas próximas importações. */
+export const recusarConversao = (id, protocolo) => updateDoc(doc(db, 'orcamentos', id), { conversaoRecusada: arrayUnion(String(protocolo)), conversaoRecusadaPor: auth.currentUser.uid, atualizadoEm: serverTimestamp() });
 /** Registro resumido de uma importação de relatório (o PDF em si nunca é guardado). */
 export const registrarImportacao = dados => addDoc(collection(db, 'importacoes'), { ...dados, por: auth.currentUser.uid, em: serverTimestamp() });
 export const mudarStatus = (id, status) => updateDoc(doc(db, 'orcamentos', id), { status, atualizadoEm: serverTimestamp() });
