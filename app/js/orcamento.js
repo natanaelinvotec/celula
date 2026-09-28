@@ -451,7 +451,8 @@ async function escolher(it, mnemonico) {
 document.addEventListener('input', async e => {
   const inp = e.target; if (!(inp.matches('[data-fix]') || inp.id === 'q')) return;
   const box = inp.nextElementSibling; const v = inp.value.trim().toLowerCase(); if (v.length < 2) { box.hidden = true; return; }
-  const cat = await D.catalogo();
+  const seq = inp._seq = (inp._seq || 0) + 1; // só a busca mais recente desenha a lista
+  const cat = await D.catalogo(); if (seq !== inp._seq) return;
   // busca por palavras: "insulina basal" acha INSULINA; "anti tireo" acha ANTI-TIREOGLOBULINA (qualquer ordem, sem acento)
   const toks = norm(v).split(' ').filter(Boolean); const vm = v.toUpperCase();
   const pont = c => { const nb = c.nomeBusca; let s = 0; for (const t of toks) { if (nb.includes(t)) s += nb.split(' ').some(w => w.startsWith(t)) ? 2 : 1; } if (c.mnemonico.includes(vm)) s += 3; if (nb.startsWith(toks[0] || '')) s += 1; return s; };
@@ -459,8 +460,25 @@ document.addEventListener('input', async e => {
     .sort((a, b) => b.s - a.s || a.c.nomeBusca.length - b.c.nomeBusca.length).slice(0, 12).map(x => x.c);
   const naoAchou = inp.id === 'q' ? '<div class="note" style="padding:10px 12px">Nenhum exame encontrado.</div>'
     : `<div class="note" style="padding:10px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">Nenhum exame com esse nome no catálogo.<button class="btn red sm" data-naoachou="${inp.dataset.fix}" data-txt="${escapeHtml(inp.value.trim())}">Enviar “${escapeHtml(inp.value.trim())}” para conferência</button></div>`;
-  box.innerHTML = hits.map(c => `<button data-${inp.id === 'q' ? 'novo' : 'add'}="${inp.dataset.fix || 'q'}" data-m="${c.mnemonico}"><span class="m">${c.mnemonico}</span><span>${escapeHtml(c.nome)}</span><span class="m" style="margin-left:auto">${brl(c.precos?.[st.convSlug])}${st.duplo && st.convSlug2 ? ' / ' + brl(c.precos?.[st.convSlug2]) : ''}</span></button>`).join('') || naoAchou;
-  box.hidden = false;
+  box.innerHTML = hits.map((c, k) => `<button class="${k === 0 ? 'sel' : ''}" data-${inp.id === 'q' ? 'novo' : 'add'}="${inp.dataset.fix || 'q'}" data-m="${c.mnemonico}"><span class="m">${c.mnemonico}</span><span>${escapeHtml(c.nome)}</span><span class="m" style="margin-left:auto">${brl(c.precos?.[st.convSlug])}${st.duplo && st.convSlug2 ? ' / ' + brl(c.precos?.[st.convSlug2]) : ''}</span></button>`).join('') || naoAchou;
+  box.hidden = false; box.dataset.q = v;
+  if (inp._enterPend) { inp._enterPend = false; box.querySelector('button[data-m]')?.click(); } // Enter apertado antes da lista chegar
+});
+// teclado na busca de exames: 1º resultado já vem selecionado; ↑/↓ escolhe, Enter adiciona, Esc fecha
+document.addEventListener('keydown', e => {
+  const inp = e.target; if (!(inp.matches?.('[data-fix]') || inp.id === 'q')) return;
+  const box = inp.nextElementSibling; if (!box) return;
+  if (e.key === 'Escape') { box.hidden = true; return; }
+  if (!['ArrowDown', 'ArrowUp', 'Enter'].includes(e.key)) return;
+  const bs = [...box.querySelectorAll('button[data-m]')];
+  if (e.key === 'Enter') {
+    e.preventDefault(); if (inp.value.trim().length < 2) return;
+    if (box.dataset.q !== inp.value.trim().toLowerCase()) { inp._enterPend = true; return; } // lista ainda carregando: adiciona assim que chegar
+    (bs.find(b => b.classList.contains('sel')) || bs[0])?.click(); return;
+  }
+  if (box.hidden || !bs.length) return; e.preventDefault();
+  let i = bs.findIndex(b => b.classList.contains('sel')); i = e.key === 'ArrowDown' ? Math.min(bs.length - 1, i + 1) : Math.max(0, i - 1);
+  bs.forEach((b, k) => b.classList.toggle('sel', k === i)); bs[i].scrollIntoView({ block: 'nearest' });
 });
 $('sug').addEventListener('click', async e => { const b = e.target.closest('[data-novo]'); if (!b) return; const cat = await D.catalogoMap(); const ex0 = jaTem(b.dataset.m); if (ex0) { marcarRepetido(ex0, null, 'adicionado manualmente'); $('q').value = ''; $('sug').hidden = true; render(); return; } const it = { uid: Math.random().toString(36).slice(2), lido: null, conf: 1, cands: [], ex: cat[b.dataset.m], status: 'ok' }; st.manuais = st.manuais || {}; await precificar(it); st.itens.push(it); $('q').value = ''; $('sug').hidden = true; render(); });
 document.addEventListener('click', e => { if (!e.target.closest('.search')) document.querySelectorAll('.sug').forEach(s => s.hidden = true); });
