@@ -307,7 +307,8 @@ export async function converterOrcamento(id) {
 /** Conversão detectada no relatório de atendimento do AutoLAC (nome + valor batendo). */
 export async function converterViaRelatorio(id, info) {
   const u = auth.currentUser;
-  return updateDoc(doc(db, 'orcamentos', id), { status: 'convertido', convertidoEm: serverTimestamp(), convertidoPor: u.uid, convertidoPorNome: 'Relatório AutoLAC', convertidoVia: 'relatorio', relatorio: info, atualizadoEm: serverTimestamp() });
+  const nome = info.nomeCompleto ? { paciente: info.nomeCompleto, pacienteBusca: norm(info.nomeCompleto), pacienteDigitado: info.nomeDigitado || null } : {}; // casou pelo 1º nome/parcial: guarda o nome completo do cadastro
+  return updateDoc(doc(db, 'orcamentos', id), { status: 'convertido', convertidoEm: serverTimestamp(), convertidoPor: u.uid, convertidoPorNome: 'Relatório AutoLAC', convertidoVia: 'relatorio', relatorio: info, ...nome, atualizadoEm: serverTimestamp() });
 }
 /** Gestão recusou casar este atendimento (protocolo do AutoLAC) com o orçamento: não volta a ser sugerido nas próximas importações. */
 export const recusarConversao = (id, protocolo) => updateDoc(doc(db, 'orcamentos', id), { conversaoRecusada: arrayUnion(String(protocolo)), conversaoRecusadaPor: auth.currentUser.uid, atualizadoEm: serverTimestamp() });
