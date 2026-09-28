@@ -190,8 +190,47 @@ export async function aprovarSolicitacao(sol, { mnemonico, nome, setor, prazoDia
   b.update(doc(db, 'solicitacoes', sol.id), { status: 'aprovada', mnemonico, prazoDias, precos, aprovadoPor: u.uid, aprovadoEm: serverTimestamp() });
   b.set(doc(db, 'auditoria', `${Date.now()}_${mnemonico}`), { tipo: 'aprovacao', mnemonico, solicitacaoId: sol.id, por: u.uid, em: serverTimestamp(), dados: { nome, setor, prazoDias, precos } });
   await b.commit(); _cat = null;
+  if (sol.orcamentoId) await aplicarConferencia(sol.orcamentoId).catch(e => console.warn('aplicarConferencia', e));
 }
-export const recusarSolicitacao = (sol, motivo) => updateDoc(doc(db, 'solicitacoes', sol.id), { status: 'recusada', motivo: motivo || null, aprovadoPor: auth.currentUser.uid, aprovadoEm: serverTimestamp() });
+export async function recusarSolicitacao(sol, motivo) {
+  await updateDoc(doc(db, 'solicitacoes', sol.id), { status: 'recusada', motivo: motivo || null, aprovadoPor: auth.currentUser.uid, aprovadoEm: serverTimestamp() });
+  if (sol.orcamentoId) await aplicarConferencia(sol.orcamentoId).catch(e => console.warn('aplicarConferencia', e));
+}
+/**
+ * Leva o resultado da conferência para o orçamento GRAVADO (antes só a tela aberta da atendente atualizava; com ela fechada o
+ * orçamento ficava "Aguardando conferência" para sempre). Aprovada → item fica ok com valor/prazo; recusada → item sai do total
+ * (status "recusado", mantém o nome e o motivo). Sem pendências → status "gravado". Também casa item "sem valor" com solicitação
+ * aprovada do mesmo exame (quando a solicitação foi reenviada e o vínculo se perdeu).
+ */
+export async function aplicarConferencia(orcId) {
+  const ref = doc(db, 'orcamentos', orcId); const o = (await getDoc(ref)).data(); if (!o) return null;
+  const sols = (await getDocs(query(collection(db, 'solicitacoes'), where('orcamentoId', '==', orcId)))).docs.map(d => ({ id: d.id, ...d.data() })).filter(x => !x.tipo);
+  const cat = await catalogo(true); const byMn = mn => cat.find(c => c.mnemonico === mn);
+  let mudou = false;
+  const itens = [];
+  for (const i of (o.itens || [])) {
+    if (i.status === 'ok' || i.status === 'recusado') { itens.push(i); continue; }
+    const s = sols.find(x => x.id === i.solicitacaoId) || (i.mnemonico ? sols.find(x => x.status === 'aprovada' && x.mnemonico === i.mnemonico) : null);
+    if (s?.status === 'aprovada') {
+      const ex = byMn(s.mnemonico); const tab = i.tabela || o.convenio;
+      let valorTabela = s.precos?.[tab] ?? ex?.precos?.[tab] ?? null; const pct = await repasseDe(tab);
+      const valor = valorTabela != null && pct !== 100 ? aplicarRepasse(valorTabela, pct) : valorTabela; const q = Number(i.qtd) || 1;
+      itens.push({ ...i, mnemonico: s.mnemonico, nome: ex?.nome || i.nome, setor: ex?.setor || i.setor || null, valor, valorTabela, repassePct: pct, valorTotal: valor != null ? Math.round(valor * q * 100) / 100 : null,
+        prazoDias: s.prazoDias ?? ex?.prazoDias ?? i.prazoDias ?? null, status: valor != null ? 'ok' : 'semvalor', solicitacaoId: s.id });
+      mudou = true;
+    } else if (s?.status === 'recusada') { itens.push({ ...i, status: 'recusado', valor: null, valorTotal: null, recusa: s.motivo || null, solicitacaoId: s.id }); mudou = true; }
+    else itens.push(i);
+  }
+  if (!mudou && o.status !== 'aguardando_conferencia') return o;
+  const validos = itens.filter(i => i.status === 'ok');
+  const tot = x => x.valorTotal ?? (x.valor || 0) * (Number(x.qtd) || 1);
+  const pend = itens.some(i => i.status === 'conferencia' || i.status === 'semvalor' || i.status === 'miss' || i.status === 'flag');
+  const novo = { itens, total: Math.round(validos.reduce((a, i) => a + tot(i), 0) * 100) / 100, qtd: validos.length, mnemonicos: validos.map(i => i.mnemonico).filter(Boolean), atualizadoEm: serverTimestamp() };
+  if (o.duplo) { novo.totalConv1 = validos.filter(i => i.tabela !== o.convenio2).reduce((a, i) => a + tot(i), 0); novo.totalConv2 = validos.filter(i => i.tabela === o.convenio2).reduce((a, i) => a + tot(i), 0); }
+  if (o.status === 'aguardando_conferencia' && !pend) novo.status = 'gravado';
+  await updateDoc(ref, novo);
+  return { ...o, ...novo };
+}
 
 /** Admin inclui um procedimento novo no catálogo (falha se o mnemônico já existir). */
 export async function criarExame({ mnemonico, nome, setor, prazoDias, codigoTuss, precos, renal }) {
