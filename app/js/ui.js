@@ -165,7 +165,7 @@ export async function gerarPdf(orc, { validadeDias = 7, baixar = true, unitario 
   // catálogo para jejum/setor
   let cat = {}, cfgApp = {}; try { const D = await import('./dados.js'); cat = await D.catalogoMap(); cfgApp = await D.config(); } catch {}
   const mostraValor = unitario || !!orc.unitarioLiberado; // padrão: só o total (valor unitário só com liberação da gestão)
-  const itens = (orc.itens || []); const exs = itens.map(i => cat[i.mnemonico] || {});
+  const itens = (orc.itens || []).filter(i => i.status !== 'recusado'); // exame recusado na conferência não sai no PDF const exs = itens.map(i => cat[i.mnemonico] || {});
   const jej = maiorJejum(exs);
   const linkPre = orc.id && orc.preToken ? `https://celulams.com.br/app/pre.html?o=${orc.id}&t=${orc.preToken}${orc.numero ? '&n=' + orc.numero : ''}` : null;
   // ---- cabeçalho
