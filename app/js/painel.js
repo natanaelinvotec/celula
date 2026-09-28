@@ -1,7 +1,7 @@
 // painel.js — Painel Gerencial (admin): dashboard, solicitações, orçamentos, catálogo, usuários, exportar, configurações.
 import { exigirLogin, brl, fmtData, fmtDia, toast, escapeHtml, iniciais, comprimirImagem, criarUsuario, resetSenha, norm, SETORES, SETOR_ORDEM } from './firebase.js';
 import { montarShell, setTitulo } from './shell.js';
-import { montarHistorico, montarLembretes, STATUS } from './historico.js';
+import { montarHistorico, montarLembretes, STATUS, paginador } from './historico.js';
 import { mnemonicoHtml, copiar, fichaExame, fotoZoom, numOrc, ICO, PERFIS_PADRAO, sugerirPerfis } from './ui.js';
 import { linhasDoPdf, parseRelatorio, cruzar } from './relatorio.js';
 import * as D from './dados.js';
@@ -376,8 +376,8 @@ async function viewCrm() {
     <label class="f">Buscar<input class="in" id="cQ" placeholder="nome ou telefone"></label>
     <label class="f">&nbsp;<button class="btn blue" id="cGo" style="justify-content:center">Atualizar</button></label></div></div></div>
   <div class="card"><div class="card-h"><h2>CRM de pacientes</h2><span class="cnt" id="cCnt"></span><div class="sp"></div><button class="btn ghost sm" id="cCsv">Exportar .csv</button></div>
-  <div class="card-b tbl-wrap"><table class="tbl"><thead><tr><th>Paciente</th><th>Telefone</th><th>Orçamentos</th><th>Último</th><th>Convênio</th><th>Atendente</th><th class="num">Total orçado</th><th>Convertido</th><th></th></tr></thead><tbody id="cBody"><tr><td colspan="9" class="note">Carregando…</td></tr></tbody></table></div></div>`;
-  let pacientes = [];
+  <div class="card-b"><div class="tbl-wrap" id="cWrap" style="max-height:640px;overflow:auto"><table class="tbl"><thead><tr><th>Paciente</th><th>Telefone</th><th>Orçamentos</th><th>Último</th><th>Convênio</th><th>Atendente</th><th class="num">Total orçado</th><th>Convertido</th><th></th></tr></thead><tbody id="cBody"><tr><td colspan="9" class="note">Carregando…</td></tr></tbody></table></div><div id="cPag"></div></div></div>`;
+  let pacientes = [], pagC = 0; const POR = 20;
   montarLembretes($('cLem'), { perfil, cfg }).then(n => { const b = $('badgeLem'); if (b) { b.textContent = n; b.hidden = !n; } });
   const montar = async () => {
     const de = new Date($('cDe').value + 'T00:00:00'), ate = new Date($('cAte').value + 'T23:59:59'); const dias = Math.ceil((Date.now() - de) / 86400000) + 1;
@@ -388,14 +388,16 @@ async function viewCrm() {
       const p = map.get(k); p.n++; p.total += r.total || 0; if (r.status === 'convertido') p.convertido = true; p.orcs.push(r);
       const d = r.criadoEm?.toDate?.(); if (d && (!p.ultimo || d > p.ultimo)) { p.ultimo = d; p.ultimoNum = r.numero; p.convenio = r.convenioNome || r.convenio; p.atendente = r.atendenteNome; p.nome = r.paciente; if (r.telefone) { p.tel = r.telefone; } }
     }
-    pacientes = [...map.values()].sort((a, b) => (b.ultimo || 0) - (a.ultimo || 0)); render();
+    pacientes = [...map.values()].sort((a, b) => (b.ultimo || 0) - (a.ultimo || 0)); pagC = 0; render();
   };
   const filtrados = () => { const q = norm($('cQ').value), qd = $('cQ').value.replace(/\D/g, ''), cv = $('cConv').value; return pacientes.filter(p => (!q || norm(p.nome).includes(q) || (qd && p.telD.includes(qd))) && (!cv || (cv === 'sim' ? p.convertido : !p.convertido))); };
   const render = () => {
     const list = filtrados(); $('cCnt').textContent = `${list.length} pacientes · ${list.filter(p => p.convertido).length} convertidos`;
-    $('cBody').innerHTML = list.map(p => `<tr><td><b>${escapeHtml(p.nome)}</b></td><td>${escapeHtml(p.tel || '—')}</td><td>${p.n}</td><td>${p.ultimo ? p.ultimo.toLocaleDateString('pt-BR') : '—'} <small class="note">#${numOrc(p.ultimoNum)}</small></td><td>${escapeHtml(p.convenio || '')}</td><td>${escapeHtml(p.atendente || '')}</td><td class="num">${brl(p.total)}</td><td>${p.convertido ? '<span class="pill ok">✓ sim</span>' : '<span class="pill warn">não</span>'}</td><td style="white-space:nowrap">${p.telD ? `<a class="btn ghost sm" target="_blank" href="https://wa.me/55${p.telD}?text=${encodeURIComponent('Olá ' + (p.nome.split(' ')[0]) + ', aqui é do Laboratório Célula. Seu orçamento #' + numOrc(p.ultimoNum) + ' continua válido — podemos agendar sua coleta?')}">WhatsApp</a>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="note">Nenhum paciente no filtro.</td></tr>';
+    const paginas = Math.max(1, Math.ceil(list.length / POR)); pagC = Math.min(pagC, paginas - 1); $('cPag').innerHTML = paginador(pagC, paginas, list.length, 'cpag'); // 20 por página
+    $('cBody').innerHTML = list.slice(pagC * POR, pagC * POR + POR).map(p => `<tr><td><b>${escapeHtml(p.nome)}</b></td><td>${escapeHtml(p.tel || '—')}</td><td>${p.n}</td><td>${p.ultimo ? p.ultimo.toLocaleDateString('pt-BR') : '—'} <small class="note">#${numOrc(p.ultimoNum)}</small></td><td>${escapeHtml(p.convenio || '')}</td><td>${escapeHtml(p.atendente || '')}</td><td class="num">${brl(p.total)}</td><td>${p.convertido ? '<span class="pill ok">✓ sim</span>' : '<span class="pill warn">não</span>'}</td><td style="white-space:nowrap">${p.telD ? `<a class="btn ghost sm" target="_blank" href="https://wa.me/55${p.telD}?text=${encodeURIComponent('Olá ' + (p.nome.split(' ')[0]) + ', aqui é do Laboratório Célula. Seu orçamento #' + numOrc(p.ultimoNum) + ' continua válido — podemos agendar sua coleta?')}">WhatsApp</a>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="note">Nenhum paciente no filtro.</td></tr>';
   };
-  $('cGo').onclick = montar; ['cQ', 'cConv'].forEach(id => $(id).addEventListener('input', render));
+  $('cGo').onclick = montar; ['cQ', 'cConv'].forEach(id => $(id).addEventListener('input', () => { pagC = 0; render(); }));
+  $('cPag').addEventListener('click', e => { const b = e.target.closest('[data-cpag]'); if (!b) return; pagC = +b.dataset.cpag; render(); $('cWrap').scrollTop = 0; });
   $('cCsv').onclick = () => {
     const list = filtrados(); if (!list.length) return toast('Nada para exportar.');
     const lin = [['Paciente', 'Telefone', 'Orçamentos', 'Último orçamento', 'Nº', 'Convênio', 'Atendente', 'Total orçado', 'Convertido'], ...list.map(p => [p.nome, p.tel, p.n, p.ultimo ? p.ultimo.toLocaleDateString('pt-BR') : '', numOrc(p.ultimoNum), p.convenio || '', p.atendente || '', p.total.toFixed(2).replace('.', ','), p.convertido ? 'SIM' : 'NÃO'])];
