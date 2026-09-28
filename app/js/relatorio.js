@@ -50,34 +50,76 @@ export function parseRelatorio(linhas) {
   return { registros: regs, atendimentos: [...porProt.values()], periodo };
 }
 
+// ---------- comparação de nomes (regra 28/09: atendente muitas vezes digita só o 1º nome; o relatório traz o nome completo) ----------
+const LIGA = new Set(['DE', 'DA', 'DO', 'DAS', 'DOS', 'E', 'D']);
+const tokens = n => norm(n).split(' ').filter(t => t && !LIGA.has(t));
+/** distância de edição (Levenshtein) — para erro de digitação: SIMONI × SIMONE */
+function lev(a, b) { const m = a.length, n = b.length; if (!m || !n) return m || n; let p = Array.from({ length: n + 1 }, (_, j) => j); for (let i = 1; i <= m; i++) { const c = [i]; for (let j = 1; j <= n; j++) c[j] = Math.min(p[j] + 1, c[j - 1] + 1, p[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); p = c; } return p[n]; }
+/** palavra igual, com 1 letra de tolerância a partir de 5 letras; letra solta (inicial "S.") casa com palavra que começa com ela */
+const palavraIgual = (a, b) => a === b || (a.length === 1 && b.startsWith(a)) || (b.length === 1 && a.startsWith(b)) || (Math.min(a.length, b.length) >= 5 && lev(a, b) <= 1);
 /**
- * Cruza atendimentos do relatório com orçamentos abertos. Retorna {auto:[], quase:[]} com {orc, at, motivo}.
- * Regra (Natanael, 28/09): o que casa é o NOME (igual, tolerando acento/abreviação ≥ 92%); o valor não bloqueia.
- * Nome igual + valor igual (diferença ≤ R$ 0,05) → convertido automaticamente; nome igual com valor diferente → "confira e confirme"
- * mostrando o valor do orçamento e o do cadastro para a gestão decidir.
+ * Compara o nome do orçamento com o do relatório. Níveis:
+ *  3 completo  — nome inteiro igual (tolera acento/abreviação ≥ 92%)
+ *  2 parcial   — todas as palavras do orçamento (2 ou mais) estão no nome do relatório, na ordem, começando pelo 1º nome
+ *  1 primeiro  — o orçamento tem só o 1º nome (ou 1º nome + inicial) e ele bate com o 1º nome do relatório
+ *  0 não casa  — inclusive quando o 1º nome bate mas o sobrenome digitado é outro (pessoa diferente)
+ */
+export function compararNomes(nomeOrc, nomeRel) {
+  const a = norm(nomeOrc), b = norm(nomeRel); if (!a || !b) return { nivel: 0 };
+  const sim = a === b ? 1 : similar(a, b); if (sim >= 0.92) return { nivel: 3, sim, tipo: 'nome completo' };
+  const tO = tokens(nomeOrc), tR = tokens(nomeRel); if (!tO.length || !tR.length || !palavraIgual(tO[0], tR[0])) return { nivel: 0 };
+  let j = 1; for (let i = 1; i < tO.length; i++) { while (j < tR.length && !palavraIgual(tO[i], tR[j])) j++; if (j >= tR.length) return { nivel: 0 }; j++; }
+  const cheias = tO.filter(t => t.length > 1).length; // palavras de verdade (sem as iniciais)
+  return cheias >= 2 ? { nivel: 2, tipo: 'nome parcial' } : { nivel: 1, tipo: 'só o 1º nome' };
+}
+const dia = d => { if (!d) return null; if (typeof d === 'string') { const m = d.match(/^(\d{2})\/(\d{2})\/(\d{4})$/); return m ? Date.UTC(+m[3], m[2] - 1, +m[1]) / 86400000 : null; } const x = d.toDate ? d.toDate() : new Date(d); return Date.UTC(x.getFullYear(), x.getMonth(), x.getDate()) / 86400000; };
+
+/**
+ * Cruza atendimentos do relatório com orçamentos abertos. Retorna {auto:[], quase:[]} com {orc, at, motivo, nivel, nomeCompleto}.
+ * Regras (Natanael, 28/09):
+ *  • Nome completo igual (nível 3) ou parcial (nível 2): valor igual (≤ R$ 0,05) → convertido automático; valor diferente → "confira e confirme".
+ *  • Só o 1º nome (nível 1) é fraco (há muitas "MARIA"), então precisa de reforço:
+ *      automático só se o valor bate, mais a qtd de exames ou o convênio, E o par é único (ninguém disputa o mesmo nome);
+ *      senão vai para conferência se tiver ao menos um reforço: valor bate, valor até 15% de diferença, mesma qtd de exames ou mesmo convênio;
+ *      sem nenhum reforço, não sugere.
+ *  • Níveis 1 e 2 exigem que o atendimento seja no dia do orçamento ou depois.
+ *  • Cada orçamento e cada atendimento casa uma vez só: primeiro os pares mais fortes (nível, valor, exames, convênio, data mais próxima).
  */
 export function cruzar(atendimentos, orcamentos) {
-  const auto = [], quase = [], usados = new Set();
   const abertos = orcamentos.filter(o => o.status !== 'convertido' && o.status !== 'perdido' && o.paciente);
   const brl = v => 'R$ ' + Number(v || 0).toFixed(2).replace('.', ',');
+  const pares = [];
   for (const at of atendimentos) {
-    const nAt = norm(at.paciente); if (!nAt) continue;
-    let melhor = null;
+    if (!norm(at.paciente)) continue; const dAt = dia(at.data);
     for (const o of abertos) {
-      if (usados.has(o.id) || (o.conversaoRecusada || []).includes(String(at.protocolo))) continue; // gestão já recusou este par
-      const nO = o.pacienteBusca || norm(o.paciente); const simNome = nAt === nO ? 1 : similar(nAt, nO);
-      if (simNome < 0.92) continue; // só nome igual
+      if ((o.conversaoRecusada || []).includes(String(at.protocolo))) continue; // gestão já recusou este par
+      const cmp = compararNomes(o.paciente, at.paciente); if (!cmp.nivel) continue;
+      const dOrc = dia(o.criadoEm), dias = dAt != null && dOrc != null ? dAt - dOrc : null;
+      if (cmp.nivel < 3 && dias != null && dias < 0) continue; // atendimento antes do orçamento: não é conversão dele
       const tot = Number(o.total || 0); const cand = [at.total, ...at.guias.map(g => g.valor)];
-      const difs = cand.map(v => Math.abs(v - tot)); const dif = Math.min(...difs);
-      // mesmo nome em mais de um orçamento: fica o de nome mais exato e, empatado, o de valor mais próximo
-      if (!melhor || simNome > melhor.simNome || (simNome === melhor.simNome && dif < melhor.dif)) melhor = { o, simNome, dif, valorRel: cand[difs.indexOf(dif)] };
+      const difs = cand.map(v => Math.abs(v - tot)); const dif = Math.min(...difs); const valorRel = cand[difs.indexOf(dif)];
+      const valorOk = dif <= 0.05, valorPerto = tot > 0 && dif / tot <= 0.15;
+      const qtdOk = !!o.qtd && (o.qtd === at.qtdTotal || at.guias.some(g => g.qtd === o.qtd));
+      const cO = norm(o.convenioNome || o.convenio), convOk = !!cO && at.guias.some(g => { const cR = norm(g.convenio); return cR && (cR === cO || cO.includes(cR) || cR.includes(cO)); });
+      if (cmp.nivel === 1 && !(valorOk || valorPerto || qtdOk || convOk)) continue; // só o 1º nome e nada mais bate: não sugere
+      const score = cmp.nivel * 1000 + (valorOk ? 300 : valorPerto ? 100 : 0) + (qtdOk ? 60 : 0) + (convOk ? 40 : 0) + (cmp.sim || 0) * 10 - Math.min(dias ?? 30, 90) * 0.1;
+      pares.push({ o, at, ...cmp, dif, valorRel, valorOk, valorPerto, qtdOk, convOk, dias, score });
     }
-    if (!melhor) continue;
-    const valorOk = melhor.dif <= 0.05;
-    const item = { orc: melhor.o, at, simNome: melhor.simNome, dif: melhor.dif, valorRel: melhor.valorRel,
-      motivo: `nome igual${melhor.simNome < 1 ? ' (' + Math.round(melhor.simNome * 100) + '%)' : ''} · ${valorOk ? 'valor bate' : `valor diferente: orçamento ${brl(melhor.o.total)} × cadastro ${brl(melhor.valorRel)}`}` };
-    usados.add(melhor.o.id);
-    (valorOk ? auto : quase).push(item);
+  }
+  // disputa: quantos candidatos de nível 1 cada orçamento/atendimento tem
+  const nO = new Map(), nA = new Map();
+  for (const p of pares) if (p.nivel === 1) { nO.set(p.o.id, (nO.get(p.o.id) || 0) + 1); nA.set(p.at.protocolo, (nA.get(p.at.protocolo) || 0) + 1); }
+  const auto = [], quase = [], usO = new Set(), usA = new Set();
+  for (const p of pares.sort((a, b) => b.score - a.score)) {
+    if (usO.has(p.o.id) || usA.has(p.at.protocolo)) continue;
+    usO.add(p.o.id); usA.add(p.at.protocolo);
+    const unico = p.nivel > 1 || (nO.get(p.o.id) === 1 && nA.get(p.at.protocolo) === 1);
+    const automatico = p.valorOk && unico && (p.nivel > 1 || p.qtdOk || p.convOk); // 1º nome: valor + (exames ou convênio)
+    const reforcos = [p.valorOk ? 'valor bate' : `valor diferente: orçamento ${brl(p.o.total)} × cadastro ${brl(p.valorRel)}`, p.qtdOk ? 'mesma qtd de exames' : '', p.convOk ? 'mesmo convênio' : '', p.dias != null && p.nivel < 3 ? (p.dias === 0 ? 'veio no mesmo dia' : `veio ${p.dias} dia(s) depois`) : ''].filter(Boolean);
+    const nome = p.nivel === 3 ? `nome igual${p.sim < 1 ? ' (' + Math.round(p.sim * 100) + '%)' : ''}` : `${p.tipo}: “${p.o.paciente}” → “${p.at.paciente}”`;
+    const aviso = p.nivel === 1 && p.valorOk && !unico ? ' · mais de um paciente com esse nome — confirme' : '';
+    const item = { orc: p.o, at: p.at, nivel: p.nivel, simNome: p.sim || 0, dif: p.dif, valorRel: p.valorRel, nomeCompleto: p.nivel < 3 ? p.at.paciente : null, motivo: `${nome} · ${reforcos.join(' · ')}${aviso}` };
+    (automatico ? auto : quase).push(item);
   }
   return { auto, quase };
 }
