@@ -392,7 +392,7 @@ export async function montarAtendimento(el, { perfil }) {
         // no simulador a distribuição só considera VOCÊ (conversa de teste nunca cai para a equipe)
         const atendente = st.cfg.wa?.distribuicao ? W.escolherAtendente((await D.usuarios().catch(() => st.users)).filter(u => u.id === perfil.uid), st.convs) : null;
         const tel = await W.simularEntrada({ tel: document.getElementById('sTel').value, nome: document.getElementById('sNome').value.trim(), texto, imagem }, { cfg: st.cfg, atendente });
-        fecharModal(); if (!st.sel) abrir(tel, { fixo: true }); toast('Mensagem recebida (teste)' + (atendente ? ' · distribuída para você' : ''), true); }
+        fecharModal(); if (!st.sel) abrir(tel); toast('Mensagem recebida (teste)' + (atendente ? ' · distribuída para você' : ''), true); }
       catch (err) { toast('Erro: ' + err.message); }
     };
   });
