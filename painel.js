@@ -1,0 +1,581 @@
+// painel.js — Painel Gerencial (admin): dashboard, solicitações, orçamentos, catálogo, usuários, exportar, configurações.
+import { exigirLogin, brl, fmtData, fmtDia, toast, escapeHtml, iniciais, primeiroNome, comprimirImagem, criarUsuario, resetSenha, norm, SETORES, SETOR_ORDEM } from './firebase.js';
+import { montarShell, setTitulo } from './shell.js';
+import { montarHistorico, montarLembretes, STATUS, paginador } from './historico.js';
+import { mnemonicoHtml, copiar, fichaExame, fotoZoom, numOrc, ICO, PERFIS_PADRAO, sugerirPerfis } from './ui.js';
+import { linhasDoPdf, parseRelatorio, cruzar } from './relatorio.js';
+import * as D from './dados.js';
+
+const { perfil } = await exigirLogin({ papel: 'admin' });
+const root = montarShell({ perfil, ativo: 'dash', titulo: 'Dashboard', painel: true });
+const $ = id => document.getElementById(id);
+const cfg = await D.config();
+const TITLES = { dash: ['Dashboard', 'produção da central de atendimento'], sol: ['Solicitações de exames', 'exames lidos nos pedidos que ainda não existem no AutoLAC'], orc: ['Orçamentos', 'histórico de todas as atendentes'], cat: ['Catálogo de exames', 'valores por convênio, prazos e visibilidade'], usr: ['Usuários', 'equipe, papéis e senhas'], exp: ['Exportar atendimentos', 'quem veio coletar, por período e atendente'], cfg: ['Configurações', 'regras do sistema e sua conta'], grp: ['Grupos de pedido', 'termos do pedido médico que abrem vários exames (Ferrograma, Lipidograma…)'], ia: ['Acurácia da IA', 'quanto a leitura automática acerta e o que a memória já aprendeu'] };
+
+// fila de solicitações em tempo real (badge + tela)
+let pendentes = [], solSel = null, renderSol = null;
+D.orcamentosParaLembrete({ dias: Number(cfg.lembreteDias) || 3 }).then(l => { const b = $('badgeLem'); if (b) { b.textContent = l.length; b.hidden = !l.length; } }).catch(() => {});
+D.ouvirSolicitacoes('pendente', list => { pendentes = list; const b = $('badgeSol'); if (b) { b.textContent = list.length; b.hidden = !list.length; } if (location.hash === '#sol' && renderSol) renderSol(); });
+
+// ---------- roteamento por hash ----------
+const views = { dash: viewDash, sol: viewSol, orc: viewOrc, cat: viewCat, cnv: viewCnv, grp: viewGrp, perf: viewPerf, crm: viewCrm, conv: viewConv, ia: viewIA, usr: viewUsr, exp: viewExp, cfg: viewCfg };
+async function rota() {
+  const k = (location.hash || '#dash').slice(1); const fn = views[k] || viewDash;
+  document.querySelectorAll('.nav[data-k]').forEach(a => a.classList.toggle('on', a.dataset.k === (k === 'orc' ? 'hist' : k)));
+  const [t, s] = TITLES[k] || TITLES.dash; setTitulo(t, s); root.innerHTML = '<div class="note" style="padding:30px">Carregando…</div>';
+  try { await fn(); } catch (e) { root.innerHTML = `<div class="card"><div class="card-b">Erro: ${escapeHtml(e.message)}</div></div>`; console.error(e); }
+}
+addEventListener('hashchange', rota); rota();
+
+// ===================== DASHBOARD =====================
+async function viewDash() {
+  const dias = 30; const rows = await D.orcamentosRecentes({ dias: 90 });
+  const ini = new Date(); ini.setDate(1); ini.setHours(0, 0, 0, 0);
+  const mes = rows.filter(r => (r.criadoEm?.toDate?.() || 0) >= ini);
+  const conv = mes.filter(r => r.status === 'convertido');
+  const totalOrc = mes.reduce((a, r) => a + (r.total || 0), 0), totalConv = conv.reduce((a, r) => a + (r.total || 0), 0);
+  const taxa = mes.length ? Math.round(conv.length / mes.length * 100) : 0;
+  // por atendente
+  const porAt = {}; for (const r of mes) { const k = r.atendenteUid; porAt[k] ??= { nome: r.atendenteNome, un: r.unidade, orc: 0, conv: 0 }; porAt[k].orc++; if (r.status === 'convertido') porAt[k].conv++; }
+  const rank = Object.values(porAt).sort((a, b) => b.orc - a.orc);
+  // por semana (últimas 8)
+  const sem = []; for (let i = 7; i >= 0; i--) { const d0 = new Date(); d0.setHours(0, 0, 0, 0); d0.setDate(d0.getDate() - d0.getDay() - 7 * i); const d1 = new Date(d0); d1.setDate(d1.getDate() + 7); const w = rows.filter(r => { const d = r.criadoEm?.toDate?.(); return d && d >= d0 && d < d1; }); sem.push([`${d0.getDate()}/${d0.getMonth() + 1}`, w.length, w.filter(r => r.status === 'convertido').length]); }
+  // por convênio
+  const pc = {}; for (const r of mes) { const k = r.convenioNome || r.convenio; pc[k] = (pc[k] || 0) + 1; } const convs = Object.entries(pc).sort((a, b) => b[1] - a[1]); const top = convs.slice(0, 4); const outros = convs.slice(4).reduce((a, c) => a + c[1], 0); if (outros) top.push(['Outros', outros]);
+  const mesNome = new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  root.innerHTML = `
+  <div class="kpis">
+    <div class="kpi k1"><div><b>${mes.length}</b><span>Orçamentos no mês</span><small>${mesNome}</small></div><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h5"/></svg></i></div>
+    <div class="kpi k2"><div><b>${conv.length}</b><span>Convertidos em coleta</span><small>${taxa}% de conversão</small></div><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12l4 4L19 6"/></svg></i></div>
+    <div class="kpi k3"><div><b>${brl(mes.length ? totalOrc / mes.length : 0)}</b><span>Ticket médio</span><small>${brl(totalOrc)} orçados · ${brl(totalConv)} convertidos</small></div><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M7 8h7a3 3 0 0 1 0 6H9a3 3 0 0 0 0 6h8"/></svg></i></div>
+    <div class="kpi k4"><div><b>${pendentes.length}</b><span>Exames em conferência</span><small id="kOnline">aguardando aprovação</small></div><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></i></div>
+  </div>
+  <div class="grid g-dash">
+    <div class="card"><div class="card-h"><h2>Orçamentos × Convertidos</h2><span class="cnt">por semana · 8 semanas</span></div><div class="card-b" style="position:relative"><svg class="chart" id="chLine" viewBox="0 0 640 260"></svg><div class="tip" id="tipLine"></div><div class="legend" style="margin-top:8px"><span><i style="background:var(--c1)"></i>Orçamentos</span><span><i style="background:var(--c3)"></i>Convertidos</span></div></div></div>
+    <div class="card"><div class="card-h"><h2>Por convênio</h2><span class="cnt">no mês</span></div><div class="card-b"><svg class="chart" id="chDonut" viewBox="0 0 240 200"></svg><div class="legend" id="lgDonut" style="margin-top:6px"></div></div></div>
+    <div class="cal"><div class="h"><span>${mesNome}</span></div><div class="g" id="calGrid"></div><div class="note" style="color:#fff;opacity:.85;margin-top:10px">Número = orçamentos no dia · vermelho: hoje</div></div>
+    <div class="card"><div class="card-h"><h2>Quem produz mais</h2><span class="cnt">orçamentos no mês</span></div><div class="card-b"><div class="rank" id="rank">${rank.map((a, i) => `<div class="row"><span class="av s">${escapeHtml(iniciais(a.nome))}</span><div><div class="nm"><span>${i + 1}º ${escapeHtml(a.nome)} <small style="color:var(--muted)">· ${escapeHtml(a.un || '')}</small></span><b>${a.orc}</b></div><div class="bar"><i style="width:${a.orc / (rank[0]?.orc || 1) * 100}%;${i === 0 ? 'background:var(--c3)' : ''}"></i></div></div><span class="pill ok">${a.orc ? Math.round(a.conv / a.orc * 100) : 0}%</span></div>`).join('') || '<span class="note">Sem orçamentos neste mês ainda.</span>'}</div></div></div>
+    <div class="card"><div class="card-h"><h2>Conversão por atendente</h2><span class="cnt">coletas ÷ orçamentos</span></div><div class="card-b"><svg class="chart" id="chBars" viewBox="0 0 320 ${Math.max(60, 24 + rank.length * 30)}"></svg></div></div>
+    <div class="card" id="cardIA"><div class="card-h"><h2>Acurácia da IA</h2><span class="cnt">últimos 30 dias · <a href="#ia" style="color:var(--blue)">ver detalhes</a></span></div><div class="card-b"><span class="note">Calculando…</span></div></div>
+    <div class="card" style="grid-column:1/-1"><div class="card-h"><h2>Equipe e orçamentos gerados</h2><span class="cnt" id="eqCnt"></span></div><div class="card-b" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;align-items:start">
+      <div><h3 style="margin:0 0 10px;font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Equipe agora</h3><div id="equipe" style="display:flex;flex-direction:column;gap:6px;max-height:520px;overflow:auto"><span class="note">Carregando…</span></div></div>
+      <div><h3 style="margin:0 0 10px;font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Orçamentos gerados</h3><div class="feed" style="max-height:520px;overflow:auto">${rows.slice(0, 15).map(r => `<div class="it"><span class="av s">${escapeHtml(iniciais(r.atendenteNome))}</span><div><b>${escapeHtml(r.atendenteNome)} ${r.status === 'convertido' ? 'converteu' : 'gravou'} o orçamento #${numOrc(r.numero)} ${r.paciente ? '· ' + escapeHtml(r.paciente) : ''}</b><small>${fmtData(r.criadoEm)} · ${escapeHtml(r.unidade || '')} · ${brl(r.total)}</small></div></div>`).join('') || '<span class="note">Nada ainda.</span>'}</div></div>
+    </div></div>
+  </div>`;
+  lineChart(sem); donut(top, mes.length); bars(rank); calendar(mes);
+  D.acuraciaIA({ dias: 30 }).then(a => { const c = $('cardIA')?.querySelector('.card-b'); if (c) c.innerHTML = resumoIA(a); }).catch(e => { const c = $('cardIA')?.querySelector('.card-b'); if (c) c.innerHTML = `<span class="note">${escapeHtml(e.message)}</span>`; });
+  // equipe: quem está online / pausa / almoço agora
+  D.usuarios().then(us => { const at = us.filter(u => u.ativo !== false); const on = at.filter(u => D.statusEfetivo(u) === 'online'); const k = $('kOnline'); if (k) k.innerHTML = `aguardando aprovação · <b>${on.length}/${at.length}</b> da equipe online`;
+    // lado esquerdo: equipe (online primeiro, depois pausa/almoço/ocupado, offline por último)
+    const ordem = { online: 0, ocupado: 1, pausa: 2, almoco: 3, finalizado: 4, offline: 5 };
+    const lista = at.map(u => ({ u, st: D.statusEfetivo(u) })).sort((a, b) => (ordem[a.st] ?? 9) - (ordem[b.st] ?? 9) || (a.u.nome || '').localeCompare(b.u.nome || ''));
+    const eq = $('equipe'); if (eq) eq.innerHTML = lista.map(({ u, st }) => `<div style="display:flex;align-items:center;gap:10px;padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);${st === 'offline' ? 'opacity:.6' : ''}"><span class="av s">${escapeHtml(iniciais(u.nome))}</span><b style="flex:1;font-size:.85rem">${escapeHtml(u.nome || u.email || '')}</b><span class="pill" style="padding:1px 8px"><span class="st-dot ${st}"></span>${D.STATUS_LABEL[st] || st}</span></div>`).join('') || '<span class="note">Ninguém cadastrado.</span>';
+    const c = $('eqCnt'); if (c) c.textContent = `${on.length} de ${at.length} online agora`; }).catch(() => {});
+}
+function lineChart(SEM) {
+  const W = 640, H = 260, L = 44, R = 16, T = 16, B = 34, max = Math.max(5, ...SEM.map(s => s[1])) * 1.15;
+  const x = i => L + i * (W - L - R) / Math.max(1, SEM.length - 1), y = v => T + (H - T - B) * (1 - v / max);
+  let s = '<g class="grid">'; const step = Math.max(1, Math.ceil(max / 4));
+  for (let v = 0; v <= max; v += step) s += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${Math.round(v)}</text>`; s += '</g>';
+  const path = (k, col) => { const pts = SEM.map((r, i) => [x(i), y(r[k])]); let d = `M${pts[0]}`; for (let i = 1; i < pts.length; i++) { const [x0, y0] = pts[i - 1], [x1, y1] = pts[i]; const c = (x1 - x0) / 2; d += ` C${x0 + c},${y0} ${x1 - c},${y1} ${x1},${y1}`; }
+    return `<path d="${d} L${pts.at(-1)[0]},${y(0)} L${pts[0][0]},${y(0)}Z" fill="${col}" opacity=".10"/><path d="${d}" fill="none" stroke="${col}" stroke-width="2.5"/>` + pts.map(([px, py], i) => `<circle cx="${px}" cy="${py}" r="5" fill="${col}" stroke="var(--surface)" stroke-width="2"/>${SEM[i][k] ? `<text x="${px}" y="${py - 11}" text-anchor="middle" style="fill:var(--text)">${SEM[i][k]}</text>` : ''}`).join(''); };
+  s += path(1, 'var(--c1)') + path(2, 'var(--c3)') + SEM.map((r, i) => `<text x="${x(i)}" y="${H - 10}" text-anchor="middle">${r[0]}</text>`).join('') + SEM.map((r, i) => `<rect data-i="${i}" x="${x(i) - 40}" y="${T}" width="80" height="${H - T - B}" fill="transparent"/>`).join('');
+  const svg = $('chLine'); svg.innerHTML = s; const tip = $('tipLine');
+  svg.addEventListener('mousemove', e => { const r = e.target.closest('[data-i]'); if (!r) { tip.style.opacity = 0; return; } const i = +r.dataset.i; tip.textContent = `semana de ${SEM[i][0]}: ${SEM[i][1]} orçamentos · ${SEM[i][2]} coletas`; const b = svg.getBoundingClientRect(); tip.style.left = (x(i) / W * b.width) + 'px'; tip.style.top = (y(SEM[i][1]) / H * b.height) + 'px'; tip.style.opacity = 1; });
+  svg.addEventListener('mouseleave', () => tip.style.opacity = 0);
+}
+function donut(CONV, total) {
+  const cols = ['var(--c1)', 'var(--c3)', 'var(--c4)', 'var(--c5)', 'var(--faint)']; const tot = CONV.reduce((a, c) => a + c[1], 0) || 1;
+  let a0 = -Math.PI / 2, s = ''; const cx = 120, cy = 100, r = 72, w = 22;
+  CONV.forEach((c, i) => { const a1 = a0 + c[1] / tot * Math.PI * 2 - 0.035; const p = (a, rr) => [cx + rr * Math.cos(a), cy + rr * Math.sin(a)]; const big = a1 - a0 > Math.PI ? 1 : 0; const [x0, y0] = p(a0, r), [x1, y1] = p(a1, r), [x2, y2] = p(a1, r - w), [x3, y3] = p(a0, r - w); s += `<path d="M${x0},${y0} A${r},${r} 0 ${big} 1 ${x1},${y1} L${x2},${y2} A${r - w},${r - w} 0 ${big} 0 ${x3},${y3}Z" fill="${cols[i]}"><title>${escapeHtml(c[0])}: ${c[1]}</title></path>`; a0 = a1 + 0.035; });
+  s += `<text x="${cx}" y="${cy - 4}" text-anchor="middle" style="font-size:22px;fill:var(--text);font-weight:900">${total}</text><text x="${cx}" y="${cy + 16}" text-anchor="middle">orçamentos</text>`;
+  $('chDonut').innerHTML = s; $('lgDonut').innerHTML = CONV.map((c, i) => `<span><i style="background:${cols[i]}"></i>${escapeHtml(c[0])} <b style="color:var(--text)">${Math.round(c[1] / tot * 100)}%</b></span>`).join('') || '<span class="note">Sem dados.</span>';
+}
+function bars(rank) {
+  const W = 320, L = 84, bh = 20, gap = 10; const data = rank.map(a => [a.nome, a.orc ? Math.round(a.conv / a.orc * 100) : 0]).sort((a, b) => b[1] - a[1]);
+  $('chBars').innerHTML = data.map((d, i) => { const y = 12 + i * (bh + gap), w = (W - L - 40) * d[1] / 100; return `<text x="${L - 8}" y="${y + 14}" text-anchor="end" style="fill:var(--text)">${escapeHtml(primeiroNome(d[0]))}</text><rect x="${L}" y="${y}" width="${w}" height="${bh}" rx="4" fill="${i === 0 ? 'var(--c3)' : 'var(--c1)'}"/><text x="${L + w + 6}" y="${y + 14}" style="fill:var(--text)">${d[1]}%</text>`; }).join('') || '<text x="10" y="30">Sem dados.</text>';
+}
+function calendar(mes) {
+  const hoje = new Date(); const y = hoje.getFullYear(), m = hoje.getMonth(); const first = new Date(y, m, 1).getDay(); const nd = new Date(y, m + 1, 0).getDate();
+  const porDia = {}; for (const r of mes) { const d = r.criadoEm?.toDate?.(); if (d) porDia[d.getDate()] = (porDia[d.getDate()] || 0) + 1; }
+  let s = ['DO', 'SE', 'TE', 'QA', 'QI', 'SX', 'SA'].map(d => `<div class="wd">${d}</div>`).join(''); for (let i = 0; i < first; i++) s += '<div></div>';
+  for (let d = 1; d <= nd; d++) s += `<div class="${d === hoje.getDate() ? 'tod' : ''} ${porDia[d] ? 'mk' : ''}" title="${porDia[d] || 0} orçamentos">${d}${porDia[d] ? `<small style="display:block;font-size:.6rem;opacity:.8">${porDia[d]}</small>` : ''}</div>`;
+  $('calGrid').innerHTML = s;
+}
+
+// ===================== GRUPOS DE PEDIDO =====================
+async function viewGrp() {
+  const cat = await D.catalogo(); const catMap = Object.fromEntries(cat.map(c => [c.mnemonico, c]));
+  let lista = await D.grupos(true); let edit = null; // grupo em edição (objeto) ou null
+  const desenhar = () => {
+    root.innerHTML = `<div class="grid" style="grid-template-columns:1.1fr 1fr;gap:16px">
+    <div class="card"><div class="card-h"><h2>Grupos cadastrados</h2><span class="cnt">${lista.length}</span><div class="sp"></div><button class="btn ghost sm" id="gNovo">+ Novo grupo</button>${lista.length ? '' : '<button class="btn blue sm" id="gPadrao">Criar grupos padrão</button>'}</div>
+      <div class="card-b">${lista.length ? `<table class="tbl"><thead><tr><th>Grupo</th><th>Grafias no pedido</th><th>Exames</th><th></th></tr></thead><tbody>${lista.map(g => `<tr class="${g.ativo === false ? 'fora' : ''}"><td><b>${escapeHtml(g.nome)}</b>${g.ativo === false ? ' <span class="pill crit">inativo</span>' : ''}</td><td><small class="note">${(g.termos || []).map(escapeHtml).join(' · ')}</small></td><td>${(g.mnemonicos || []).map(m => `<span class="mn" title="${escapeHtml(catMap[m]?.nome || 'não está no catálogo')}" ${catMap[m] ? '' : 'style="background:var(--crit-50);color:var(--crit)"'}>${escapeHtml(m)}</span>`).join(' ')}</td><td style="white-space:nowrap"><button class="ib" title="Editar" data-gedit="${g.id}">${ICO.lapis}</button><button class="ib red" title="Excluir" data-gdel="${g.id}">${ICO.lixo}</button></td></tr>`).join('')}</tbody></table>` : '<p class="note">Nenhum grupo ainda. Clique em “Criar grupos padrão” (Ferrograma, Lipidograma, Hepatograma, Ionograma, Proteinograma) ou em “Novo grupo”.</p>'}
+      <p class="note" style="margin-top:12px">Como funciona: quando a IA lê no pedido um termo igual a uma das grafias (ou o próprio nome do grupo), o orçamento abre uma linha por exame, já confirmadas. As atendentes também podem criar grupos direto na tela do orçamento, pelo botão “É um grupo”.</p></div></div>
+    <div class="card"><div class="card-h"><h2>${edit ? (edit.id ? 'Editar grupo' : 'Novo grupo') : 'Selecione um grupo'}</h2></div><div class="card-b">${edit ? `
+      <div class="form" style="grid-template-columns:1fr;gap:10px">
+        <label class="f">Nome<input class="in" id="eNome" value="${escapeHtml(edit.nome || '')}"></label>
+        <label class="f">Grafias que aparecem no pedido (uma por linha ou separadas por vírgula)<textarea class="in" id="eTermos" rows="3">${escapeHtml((edit.termos || []).join(', '))}</textarea></label>
+        <label class="f">Adicionar exame<div class="search"><input class="in" id="eBusca" placeholder="nome ou mnemônico" autocomplete="off"><div class="sug" id="eSug" hidden></div></div></label>
+        <div id="eLista" style="display:flex;gap:6px;flex-wrap:wrap;min-height:34px"></div>
+        <label class="chk" style="display:flex;gap:8px;align-items:center;font-weight:700"><input type="checkbox" id="eAtivo" ${edit.ativo !== false ? 'checked' : ''}> Ativo</label>
+        <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn ghost" id="eCancel">Cancelar</button><button class="btn blue" id="eSalvar">Salvar</button></div>
+      </div>` : '<p class="note">Escolha um grupo na lista ou crie um novo.</p>'}</div></div></div>`;
+    const sel = new Map((edit?.mnemonicos || []).filter(m => catMap[m]).map(m => [m, catMap[m]]));
+    const lst = () => { const el = $('eLista'); if (el) el.innerHTML = [...sel.values()].map(ex => `<span class="pill on" style="gap:6px">${escapeHtml(ex.mnemonico)} · ${escapeHtml(ex.nome)} <button class="ib" data-edel="${escapeHtml(ex.mnemonico)}">${ICO.x}</button></span>`).join('') || '<span class="note">Nenhum exame.</span>'; };
+    lst();
+    $('gNovo').onclick = () => { edit = { nome: '', termos: [], mnemonicos: [], ativo: true }; desenhar(); };
+    $('gPadrao') && ($('gPadrao').onclick = async () => { try { lista = await D.criarGruposPadrao(); toast('Grupos padrão criados', true); desenhar(); } catch (e) { toast('Erro: ' + e.message); } });
+    root.onclick = async e => {
+      const ed = e.target.closest('[data-gedit]'); if (ed) { edit = { ...lista.find(g => g.id === ed.dataset.gedit) }; desenhar(); return; }
+      const dl = e.target.closest('[data-gdel]'); if (dl) { const g = lista.find(x => x.id === dl.dataset.gdel); if (dl.dataset.armed !== '1') { dl.dataset.armed = '1'; dl.style.color = 'var(--red)'; toast(`Clique de novo para excluir o grupo ${g.nome}.`); setTimeout(() => { dl.dataset.armed = ''; }, 5000); return; } try { await D.excluirGrupo(g.id); lista = await D.grupos(true); if (edit?.id === g.id) edit = null; toast('Grupo excluído', true); desenhar(); } catch (err) { toast('Erro: ' + err.message); } return; }
+      const ad = e.target.closest('[data-eadd]'); if (ad) { sel.set(ad.dataset.eadd, catMap[ad.dataset.eadd]); $('eBusca').value = ''; $('eSug').hidden = true; lst(); return; }
+      const rm = e.target.closest('[data-edel]'); if (rm) { sel.delete(rm.dataset.edel); lst(); return; }
+    };
+    if (edit) {
+      $('eBusca').oninput = () => { const v = norm($('eBusca').value); const box = $('eSug'); if (v.length < 2) { box.hidden = true; return; } const toks = v.split(' ');
+        const hits = cat.filter(c => c.ativo !== false && toks.every(t => c.nomeBusca.includes(t) || c.mnemonico.includes(t))).slice(0, 10);
+        box.innerHTML = hits.map(c => `<button data-eadd="${c.mnemonico}"><span class="m">${c.mnemonico}</span><span>${escapeHtml(c.nome)}</span></button>`).join('') || '<div class="note" style="padding:8px 12px">Nada encontrado.</div>'; box.hidden = false; };
+      $('eCancel').onclick = () => { edit = null; desenhar(); };
+      $('eSalvar').onclick = async () => {
+        const nome = $('eNome').value.trim(); const termos = [nome, ...$('eTermos').value.split(/[,\n]/)].map(t => t.trim()).filter(Boolean);
+        if (!nome || !sel.size) { toast('Informe o nome e ao menos um exame.'); return; }
+        try { await D.salvarGrupo(edit.id || null, { nome, termos, mnemonicos: [...sel.keys()], ativo: $('eAtivo').checked }); lista = await D.grupos(true); edit = null; toast('Grupo salvo', true); desenhar(); } catch (err) { toast('Erro: ' + err.message); }
+      };
+    }
+  };
+  desenhar();
+}
+
+// ===================== ACURÁCIA DA IA =====================
+const RES_LABEL = { auto: 'Acertou sozinha', confirmado: 'Em dúvida, confirmada', corrigido: 'Corrigida pela atendente', conferencia: 'Foi para conferência', pendente: 'Ainda pendente', descartado: 'Removida (leu a mais)' };
+const RES_COR = { auto: 'var(--c3)', confirmado: 'var(--c1)', corrigido: 'var(--c2)', conferencia: 'var(--c4)', pendente: 'var(--faint)', descartado: 'var(--c5)' };
+function resumoIA(a) {
+  if (!a.leituras) return '<span class="note">Ainda não há leituras gravadas com este acompanhamento. A partir desta versão, cada exame lido pela IA registra se acertou, foi confirmado ou corrigido.</span>';
+  const tot = a.leituras + a.tot.descartado;
+  const barra = Object.keys(RES_LABEL).filter(k => a.tot[k]).map(k => `<i title="${RES_LABEL[k]}: ${a.tot[k]}" style="width:${a.tot[k] / tot * 100}%;background:${RES_COR[k]}"></i>`).join('');
+  return `<div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap"><b style="font-size:2rem;font-weight:900;color:${a.acerto >= 85 ? 'var(--ok)' : a.acerto >= 65 ? 'var(--warn)' : 'var(--crit)'}">${a.acerto}%</b><span class="note">de acerto em <b>${a.leituras}</b> exames lidos · ${a.orcamentos} pedidos · memória com <b>${a.memoria?.toLocaleString('pt-BR') ?? '—'}</b> grafias</span></div>
+  <div class="stack" style="margin:10px 0 6px">${barra}</div>
+  <div class="legend">${Object.keys(RES_LABEL).filter(k => a.tot[k]).map(k => `<span><i style="background:${RES_COR[k]}"></i>${RES_LABEL[k]} <b style="color:var(--text)">${a.tot[k]}</b></span>`).join('')}</div>`;
+}
+async function viewIA() {
+  let dias = 30;
+  const desenhar = async () => {
+    root.innerHTML = '<div class="note" style="padding:30px">Calculando…</div>';
+    const a = await D.acuraciaIA({ dias });
+    const maxSem = Math.max(1, ...a.semanas.map(s => s.leituras));
+    root.innerHTML = `
+    <div class="card"><div class="card-h"><h2>Leitura automática dos pedidos</h2><span class="cnt"><select id="iaDias" class="in" style="width:auto;padding:6px 10px">${[7, 30, 90, 180].map(d => `<option value="${d}" ${d === dias ? 'selected' : ''}>últimos ${d} dias</option>`).join('')}</select></span></div>
+      <div class="card-b">${resumoIA(a)}
+      <p class="note" style="margin-top:12px">Como ler: <b>acertou sozinha</b> = a IA leu e casou o exame certo sem ninguém mexer; <b>em dúvida, confirmada</b> = ficou em amarelo e a atendente confirmou que estava certo (conta como acerto); <b>corrigida</b> = a atendente trocou o exame (a memória aprende na hora e não repete); <b>conferência</b> = o exame não existe no AutoLAC ou não tem valor — não é erro de leitura.${a.msMedio ? ` Tempo médio de leitura: <b>${(a.msMedio / 1000).toFixed(1)} s</b>.` : ''}${Object.keys(a.modelos).length ? ' Modelos: ' + Object.entries(a.modelos).map(([m, n]) => `${m} (${n})`).join(', ') + '.' : ''}</p></div></div>
+    <div class="grid g2" style="margin-top:16px">
+      <div class="card"><div class="card-h"><h2>Evolução por semana</h2><span class="cnt">% de acerto e volume</span></div><div class="card-b">
+        ${a.semanas.length ? `<div class="wk">${a.semanas.map(s => { const p = s.leituras ? Math.round(s.certas / s.leituras * 100) : 0; return `<div class="col" title="semana de ${s.rotulo}: ${s.certas}/${s.leituras} certas"><b>${s.leituras ? p + '%' : ''}</b><i style="height:${Math.max(4, s.leituras / maxSem * 120)}px;background:${p >= 85 ? 'var(--c3)' : p >= 65 ? 'var(--c4)' : 'var(--c2)'}"></i><small>${s.rotulo}</small><small style="color:var(--faint)">${s.leituras}</small></div>`; }).join('')}</div>` : '<span class="note">Sem leituras no período.</span>'}</div></div>
+      <div class="card"><div class="card-h"><h2>Por atendente</h2><span class="cnt">quem mais confere e corrige</span></div><div class="card-b">
+        ${a.atendentes.length ? `<table class="tbl"><thead><tr><th>Atendente</th><th>Leituras</th><th>Acerto</th><th>Corrigiu</th><th>Conferência</th></tr></thead><tbody>${a.atendentes.map(t => `<tr><td><b>${escapeHtml(t.nome)}</b><br><small class="note">${t.orcamentos} pedidos</small></td><td>${t.leituras}</td><td><span class="pill ${t.acerto >= 85 ? 'ok' : t.acerto >= 65 ? 'warn' : 'crit'}">${t.acerto}%</span></td><td>${t.corrigido}</td><td>${t.conferencia}</td></tr>`).join('')}</tbody></table>` : '<span class="note">Sem dados.</span>'}</div></div>
+    </div>
+    <div class="card" style="margin-top:16px"><div class="card-h"><h2>Grafias que a IA mais erra</h2><span class="cnt">o que foi lido → o que a atendente escolheu</span></div><div class="card-b">
+      ${a.erros.length ? `<table class="tbl"><thead><tr><th>Lido no pedido</th><th>IA sugeriu</th><th>Correto</th><th>Vezes</th></tr></thead><tbody>${a.erros.map(e => `<tr><td>“${escapeHtml(e.lido || '')}”</td><td>${e.iaMn ? mnemonicoHtml(e.iaMn) : '<small class="note">não achou</small>'}</td><td><b>${escapeHtml(e.virou)}</b></td><td>${e.n}</td></tr>`).join('')}</tbody></table><p class="note" style="margin-top:10px">Cada correção já entra na memória (apelidos) e vira exemplo no prompt da IA quando se repete; se uma grafia continua aqui depois de várias vezes, vale conferir no Catálogo se o exame está com o nome/sinonímia certos.</p>` : '<span class="note">Nenhuma correção registrada no período — ótimo sinal.</span>'}</div></div>`;
+    $('iaDias').onchange = e => { dias = +e.target.value; desenhar(); };
+  };
+  await desenhar();
+}
+
+// ===================== SOLICITAÇÕES =====================
+async function viewSol() {
+  const convs = await D.convenios();
+  root.innerHTML = `<div class="sol"><div class="card"><div class="card-h"><h2>Fila de conferência</h2><span class="pill warn" id="solN"><i></i></span><div class="sp"></div><div class="tabs"><button class="pill on" data-tab="pendente">Pendentes</button><button class="pill" data-tab="aprovada">Aprovadas</button><button class="pill" data-tab="recusada">Recusadas</button></div></div><div class="card-b"><div class="solq" id="solq"></div></div></div>
+  <div class="card"><div class="card-h"><h2>Aprovar exame</h2><div class="sp"></div><span class="note" id="solRef"></span></div><div class="card-b" id="solForm"><div class="note">Selecione um exame na fila.</div></div></div></div>`;
+  let tab = 'pendente', lista = pendentes, offTab = null;
+  renderSol = () => {
+    if (tab === 'pendente') lista = pendentes;
+    $('solN').innerHTML = `<i></i>${lista.length} ${tab === 'pendente' ? 'pendentes' : tab + 's'}`;
+    $('solq').innerHTML = lista.map(s => { const cor = SETORES[s.setorSugerido]?.cor || 'var(--warn)'; if (s.tipo === 'valor_unitario') return `<div class="sq ${s.id === solSel ? 'on' : ''}" data-id="${s.id}"><span class="st" style="background:var(--blue)"></span><div><b>Liberar valores unitários no PDF</b><small>orçamento #${numOrc(s.orcamentoNumero)}${s.status !== 'pendente' ? ` · <b>${s.status}</b>` : ''}</small></div><div class="who"><span class="av s">${escapeHtml(iniciais(s.atendenteNome))}</span>${escapeHtml(primeiroNome(s.atendenteNome))}<br>${fmtData(s.criadoEm)}</div></div>`; return `<div class="sq ${s.id === solSel ? 'on' : ''}" data-id="${s.id}"><span class="st" style="background:${cor}"></span><div><b>${escapeHtml(s.sugestao?.nome || s.guiaDb?.nome || s.normalizadoIA || s.textoLido)}</b>${s.sugestao ? ' <span class="pill warn" title="a atendente preencheu dados">✎</span>' : ''}<small>lido no pedido: <span class="hand">${escapeHtml(s.textoLido)}</span>${s.motivo === 'fora_autolac' ? ` · <b style="color:var(--red)">fora do AutoLAC — possível nova negociação</b>` : s.guiaDb ? ` · <span class="mn">${escapeHtml(s.guiaDb.mnemonico)}</span> sem valor em ${escapeHtml(s.convenio)}` : ' · não está no catálogo'}${s.fotos?.length ? ' · 📷' : ''}${s.status !== 'pendente' ? ` · <b>${s.status}</b> ${s.mnemonico || ''}` : ''}</small></div><div class="who"><span class="av s">${escapeHtml(iniciais(s.atendenteNome))}</span>${escapeHtml(primeiroNome(s.atendenteNome))}<br>#${s.orcamentoNumero || '—'} · ${fmtData(s.criadoEm)}</div></div>`; }).join('') || '<div class="note" style="padding:20px;text-align:center">Nada aqui.</div>';
+  };
+  renderSol();
+  root.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', async () => { root.querySelectorAll('[data-tab]').forEach(x => x.classList.toggle('on', x === b)); tab = b.dataset.tab; if (offTab) { offTab(); offTab = null; } if (tab !== 'pendente') offTab = D.ouvirSolicitacoes(tab, l => { lista = l.slice(0, 100); renderSol(); }); else renderSol(); }));
+  $('solq').addEventListener('click', e => { const c = e.target.closest('[data-id]'); if (!c) return; solSel = c.dataset.id; renderSol(); form(lista.find(s => s.id === solSel)); });
+  async function form(s) {
+    if (!s) return; $('solRef').textContent = `orçamento #${s.orcamentoNumero || '—'} · ${s.atendenteNome}`;
+    if (s.tipo === 'valor_unitario') {
+      $('solForm').innerHTML = s.status !== 'pendente' ? `<div class="note">Pedido ${s.status}.</div>` : `<div class="form"><div class="full note" style="background:var(--warn-50);border:1px solid var(--warn);border-radius:8px;padding:8px 10px">A atendente <b>${escapeHtml(s.atendenteNome || '')}</b> pede para imprimir o orçamento <b>#${numOrc(s.orcamentoNumero)}</b> com o valor exame por exame (o padrão do PDF é só o total).</div>
+        <div class="full" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn ok" id="unOk">✓ Liberar valores unitários</button><button class="btn ghost" id="unNo">Negar</button><input class="in" id="unMotivo" placeholder="motivo (opcional)" style="flex:1;min-width:160px"></div></div>`;
+      if (s.status === 'pendente') { $('unOk').onclick = async () => { try { await D.liberarUnitario(s, true); toast(`Liberado — orçamento #${numOrc(s.orcamentoNumero)}`, true); solSel = null; $('solForm').innerHTML = '<div class="note">Selecione um item na fila.</div>'; } catch (e) { toast('Erro: ' + e.message); } };
+        $('unNo').onclick = async () => { try { await D.liberarUnitario(s, false, $('unMotivo').value.trim()); toast('Pedido negado; a atendente foi avisada.'); solSel = null; $('solForm').innerHTML = '<div class="note">Selecione um item na fila.</div>'; } catch (e) { toast('Erro: ' + e.message); } }; }
+      return;
+    }
+    if (s.status !== 'pendente') { $('solForm').innerHTML = `<div class="note">Solicitação ${s.status}${s.mnemonico ? ' como <b>' + s.mnemonico + '</b>' : ''}${s.motivo ? ' — motivo: ' + escapeHtml(s.motivo) : ''}.</div>`; return; }
+    const g = s.guiaDb; const at = s.sugestao || {}; // at = o que a atendente preencheu
+    const sug = at.mnemonico || g?.mnemonico || (norm(at.nome || s.normalizadoIA || s.textoLido).split(' ').map(w => w.slice(0, 3)).join('').slice(0, 8) + '-DB');
+    const conv = s.convenio; const nomeConv = D.nomeConv(convs.find(c => c.slug === conv)) || conv;
+    const vConv = at.valor != null ? at.valor : ''; const vPart = conv === 'particular' && at.valor != null ? at.valor : '';
+    $('solForm').innerHTML = `<div class="form">
+      ${s.motivo === 'fora_autolac' ? `<div class="full note" style="background:var(--crit-50);border:1px solid var(--red);border-radius:8px;padding:8px 10px;color:var(--red)"><b>Possível nova negociação:</b> o exame existe no catálogo antigo (${escapeHtml(g?.mnemonico || '')}) mas não está no AutoLAC. Ao aprovar, ele volta a ficar disponível com o valor e prazo informados.</div>` : ''}
+      ${s.fotos?.length ? `<div class="full"><span class="note">Foto do pedido enviada pela atendente — passe o mouse para ampliar, clique para tela cheia:</span><div class="foto-sol" id="fotoSol" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">${s.fotos.map(f => `<img src="${f}" alt="pedido" style="width:200px;border-radius:10px">`).join('')}</div></div>` : ''}
+      ${s.sugestao ? `<div class="full note" style="background:var(--warn-50);border:1px solid var(--warn);border-radius:8px;padding:8px 10px"><b>Preenchido pela atendente ${escapeHtml(primeiroNome(s.atendenteNome))}:</b> ${[at.nome && 'nome ' + escapeHtml(at.nome), at.mnemonico && 'mnemônico ' + escapeHtml(at.mnemonico), at.prazoDias != null && 'prazo ' + at.prazoDias + ' d.u.', at.valor != null && 'valor ' + brl(at.valor), at.obs && 'obs: ' + escapeHtml(at.obs)].filter(Boolean).join(' · ')} — confira e complete o que faltar.</div>` : ''}
+      <label class="f full">Nome do exame *<input class="in" id="apNome" value="${escapeHtml(at.nome || g?.nome || s.normalizadoIA || s.textoLido)}"></label>
+      <label class="f">Mnemônico AutoLAC *<input class="in" id="apM" value="${escapeHtml(sug)}" style="font-family:ui-monospace,monospace;text-transform:uppercase"></label>
+      <label class="f">Setor<select class="in" id="apSet">${SETOR_ORDEM.map(x => `<option ${x === (g?.setor || s.setorSugerido) ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
+      <label class="f">Prazo Célula (dias úteis) *<input class="in" type="number" min="0" id="apP" value="${at.prazoDias ?? g?.prazoDias ?? ''}"></label>
+      <label class="f">Código TUSS<input class="in" id="apTuss" placeholder="opcional"></label>
+      <label class="f">Valor PARTICULAR (R$) *<input class="in" type="number" step="0.01" min="0" id="apV1" value="${vPart}"></label>
+      <label class="f">Valor ${escapeHtml(nomeConv)} (R$)${conv === 'particular' ? '' : ' *'}<input class="in" type="number" step="0.01" min="0" id="apV2" value="${conv === 'particular' ? '' : vConv}" ${conv === 'particular' ? 'disabled placeholder="mesmo que o particular"' : ''}></label>
+      <label class="f full">Outras grafias que a IA deve reconhecer (separe por vírgula)<input class="in" id="apAp" value="${escapeHtml(s.normalizadoIA && s.normalizadoIA !== s.textoLido ? s.normalizadoIA : '')}"></label>
+      <div class="full" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn ok" id="apOk">✓ Aprovar e devolver ao orçamento</button><button class="btn ghost" id="apNo">Recusar</button><input class="in" id="apMotivo" placeholder="motivo da recusa (opcional)" style="flex:1;min-width:160px"></div>
+      <div class="full note">A atendente vê a atualização em tempo real; o exame entra no catálogo e as grafias viram apelidos.</div></div>`;
+    if ($('fotoSol')) $('fotoSol').querySelectorAll('img').forEach(im => { const w = document.createElement('div'); w.style.width = '200px'; im.replaceWith(w); w.appendChild(im); fotoZoom(w); });
+    $('apOk').onclick = async () => {
+      const mnemonico = $('apM').value.trim().toUpperCase(), nome = $('apNome').value.trim().toUpperCase(), prazoDias = parseInt($('apP').value), v1 = parseFloat($('apV1').value), v2 = parseFloat($('apV2').value);
+      if (!mnemonico || !nome || isNaN(prazoDias) || isNaN(v1) || (conv !== 'particular' && isNaN(v2))) { toast('Preencha mnemônico, nome, prazo e valores.'); return; }
+      const precos = { particular: v1 }; if (conv !== 'particular') precos[conv] = v2;
+      $('apOk').disabled = true;
+      try { await D.aprovarSolicitacao(s, { mnemonico, nome, setor: $('apSet').value, prazoDias, codigoTuss: $('apTuss').value.trim() || null, precos, apelidos: $('apAp').value.split(',').map(x => x.trim()).filter(Boolean) }); toast(`${mnemonico} aprovado — orçamento #${numOrc(s.orcamentoNumero)} atualizado`, true); solSel = null; $('solForm').innerHTML = '<div class="note">Selecione um exame na fila.</div>'; }
+      catch (e) { toast('Erro: ' + e.message); $('apOk').disabled = false; }
+    };
+    $('apNo').onclick = async () => { try { await D.recusarSolicitacao(s, $('apMotivo').value.trim()); toast('Solicitação recusada; a atendente foi avisada.'); solSel = null; $('solForm').innerHTML = '<div class="note">Selecione um exame na fila.</div>'; } catch (e) { toast('Erro: ' + e.message); } };
+  }
+}
+
+// ===================== ORÇAMENTOS =====================
+async function viewOrc() { montarHistorico(root, { perfil, admin: true, cfg }); }
+
+// ===================== CATÁLOGO =====================
+async function viewCat() {
+  const convs = await D.conveniosTodos(); const cat = await D.catalogo(true);
+  root.innerHTML = `<div class="card" style="margin-bottom:14px"><div class="card-b"><div class="filters">
+    <label class="f" style="grid-column:span 2">Buscar<input class="in" id="cq" placeholder="nome ou mnemônico"></label>
+    <label class="f">Convênio (valor exibido)<select class="in" id="cconv">${convs.map(c => `<option value="${c.slug}" ${c.slug === 'particular' ? 'selected' : ''}>${escapeHtml(D.nomeConv(c))}</option>`).join('')}</select></label>
+    <label class="f">Setor<select class="in" id="cset"><option value="">Todos</option>${SETOR_ORDEM.map(s => `<option>${s}</option>`).join('')}</select></label>
+    <label class="f">Situação<select class="in" id="csit"><option value="">Todos</option><option value="ativo">Visíveis</option><option value="oculto">Ocultos</option><option value="renal">Renal</option><option value="comvalor">Com valor no convênio</option><option value="semvalor">Sem valor no convênio</option><option value="semprazo">Sem prazo</option><option value="fora">Fora do AutoLAC (sem valor)</option><option value="autolac">Só AutoLAC</option></select></label>
+  </div></div></div>
+  <div class="card"><div class="card-h"><h2>Catálogo de exames</h2><span class="cnt" id="ccnt"></span><div class="sp"></div><span class="note" id="cinfo">Edite valor/prazo na linha e clique em Salvar · tudo fica na auditoria</span><button class="btn blue sm" id="cnovo">+ Incluir procedimento</button></div>
+  <div class="card-b" id="cform" hidden style="border-bottom:1px solid var(--line);background:var(--surface-2)"><div class="form">
+    <label class="f">Mnemônico AutoLAC *<input class="in" id="nMn" placeholder="ex.: ZINC-DB" style="font-family:ui-monospace,monospace;text-transform:uppercase"></label>
+    <label class="f">Nome do exame *<input class="in" id="nNome" placeholder="ex.: ZINCO SÉRICO"></label>
+    <label class="f">Setor<select class="in" id="nSet">${SETOR_ORDEM.map(x => `<option>${x}</option>`).join('')}</select></label>
+    <label class="f">Prazo Célula (dias úteis) *<input class="in" id="nPrazo" type="number" min="0"></label>
+    <label class="f">Código TUSS<input class="in" id="nTuss" placeholder="opcional"></label>
+    <label class="f">Valor PARTICULAR (R$) *<input class="in" id="nV1" type="number" step="0.01" min="0"></label>
+    <label class="f">Valor no convênio selecionado acima (R$)<input class="in" id="nV2" type="number" step="0.01" min="0" placeholder="opcional"></label>
+    <label class="f" style="justify-content:flex-end"><label class="switch"><input type="checkbox" id="nRenal"><i></i>Exame do pacote renal</label></label>
+    <div class="full" style="display:flex;gap:8px"><button class="btn ok" id="nSalvar">Incluir no catálogo</button><button class="btn ghost" id="nCancel">Cancelar</button></div></div></div>
+  <div class="card-b tbl-wrap"><table class="tbl"><thead><tr><th>Mnemônico</th><th>Exame</th><th>Setor</th><th>TUSS</th><th>Prazo (d.u.)</th><th class="num">Valor</th><th>Visível</th><th>Renal</th><th></th><th></th></tr></thead><tbody id="cbody"></tbody></table></div>
+  <div class="card-b" style="display:flex;gap:8px;justify-content:center;border-top:1px solid var(--line)"><button class="btn ghost sm" id="cmais">Mostrar mais</button></div></div>`;
+  let lim = 100;
+  const render = () => {
+    const q = $('cq').value.trim().toLowerCase(), conv = $('cconv').value, set = $('cset').value, sit = $('csit').value;
+    const rows = cat.filter(r => (!q || r.mnemonico.toLowerCase().includes(q) || r.nomeBusca.toLowerCase().includes(norm(q).toLowerCase())) && (!set || r.setor === set) &&
+      (!sit || (sit === 'ativo' && r.ativo !== false) || (sit === 'oculto' && r.ativo === false) || (sit === 'renal' && r.renal) || (sit === 'comvalor' && r.precos?.[conv] != null) || (sit === 'semvalor' && r.precos?.[conv] == null) || (sit === 'semprazo' && r.prazoDias == null) || (sit === 'fora' && r.foraAutolac) || (sit === 'autolac' && !r.foraAutolac)))
+      .sort((a, b) => (a.foraAutolac ? 1 : 0) - (b.foraAutolac ? 1 : 0) || a.nome.localeCompare(b.nome)); // fora do AutoLAC sempre no fim
+    $('ccnt').textContent = `${Math.min(lim, rows.length)} de ${rows.length} (catálogo: ${cat.length})`; $('cmais').hidden = rows.length <= lim;
+    $('cbody').innerHTML = rows.slice(0, lim).map(r => `<tr data-m="${r.mnemonico}" class="${r.foraAutolac ? 'fora' : ''}"><td>${mnemonicoHtml(r, { cor: SETORES[r.setor]?.cor || 'var(--ac)' })}</td><td><b>${escapeHtml(r.nome)}</b>${r.foraAutolac ? '<br><small style="color:var(--red);font-weight:800">fora do AutoLAC · sem valor</small>' : ''}${r.bancada ? `<br><small class="note">${escapeHtml(r.bancada)}${r.material ? ' · ' + escapeHtml(r.material) : ''}</small>` : ''}</td><td><span class="dot" style="background:${SETORES[r.setor]?.cor || 'var(--ac)'}"></span>${escapeHtml(r.setor)}</td><td>${r.codigoTuss || '—'}</td>
+      <td><input class="in" type="number" min="0" value="${r.prazoDias ?? ''}" data-f="prazoDias" style="width:70px"></td><td class="num"><input class="in" type="number" step="0.01" min="0" value="${r.precos?.[conv] ?? ''}" placeholder="sem valor" data-f="valor" style="width:105px;text-align:right"></td>
+      <td><label class="switch"><input type="checkbox" data-f="ativo" ${r.ativo !== false ? 'checked' : ''}><i></i></label></td><td><label class="switch"><input type="checkbox" data-f="renal" ${r.renal ? 'checked' : ''}><i></i></label></td><td><button class="btn blue sm" data-save="${r.mnemonico}">Salvar</button></td><td><button class="btn ghost sm" data-del="${r.mnemonico}" title="Excluir do catálogo" style="color:var(--red);border-color:var(--red-50)">Excluir</button></td></tr>`).join('');
+  };
+  ['cq', 'cconv', 'cset', 'csit'].forEach(id => $(id).addEventListener('input', () => { lim = 100; render(); })); $('cmais').onclick = () => { lim += 100; render(); }; render();
+  // incluir procedimento
+  $('cnovo').onclick = () => { $('cform').hidden = !$('cform').hidden; if (!$('cform').hidden) $('nMn').focus(); };
+  $('nCancel').onclick = () => { $('cform').hidden = true; };
+  $('nSalvar').onclick = async () => {
+    const mnemonico = $('nMn').value.trim().toUpperCase(), nome = $('nNome').value.trim(), prazo = parseInt($('nPrazo').value), v1 = parseFloat($('nV1').value), v2 = parseFloat($('nV2').value), conv = $('cconv').value;
+    if (!mnemonico || !nome || isNaN(prazo) || isNaN(v1)) { toast('Preencha mnemônico, nome, prazo e valor PARTICULAR.'); return; }
+    const precos = { particular: v1 }; if (!isNaN(v2) && conv !== 'particular') precos[conv] = v2;
+    $('nSalvar').disabled = true;
+    try { await D.criarExame({ mnemonico, nome, setor: $('nSet').value, prazoDias: prazo, codigoTuss: $('nTuss').value.trim() || null, precos, renal: $('nRenal').checked });
+      const novo = (await D.catalogo(true)).find(c => c.mnemonico === mnemonico); if (novo) cat.unshift(novo);
+      ['nMn', 'nNome', 'nPrazo', 'nTuss', 'nV1', 'nV2'].forEach(id => $(id).value = ''); $('nRenal').checked = false; $('cform').hidden = true; $('cq').value = mnemonico; render();
+      toast(`${mnemonico} incluído no catálogo`, true); }
+    catch (err) { toast(err.message); } $('nSalvar').disabled = false;
+  };
+  $('cbody').addEventListener('click', async e => {
+    const cp = e.target.closest('[data-copy]'); if (cp) { copiar(cp.dataset.copy); return; }
+    const fi = e.target.closest('[data-ficha]'); if (fi) { const r = cat.find(x => x.mnemonico === fi.dataset.ficha); if (r) fichaExame(r); return; }
+    // excluir (dois cliques: o primeiro pede confirmação)
+    const d = e.target.closest('[data-del]');
+    if (d) { const m = d.dataset.del;
+      if (d.dataset.arm !== '1') { d.dataset.arm = '1'; d.textContent = 'Confirmar exclusão?'; d.classList.replace('ghost', 'red'); setTimeout(() => { if (d.isConnected) { d.dataset.arm = ''; d.textContent = 'Excluir'; d.classList.replace('red', 'ghost'); } }, 4000); return; }
+      d.disabled = true; try { await D.excluirExame(m); const i = cat.findIndex(x => x.mnemonico === m); if (i >= 0) cat.splice(i, 1); render(); toast(`${m} excluído do catálogo (registrado na auditoria)`, true); } catch (err) { toast('Erro: ' + err.message); d.disabled = false; } return; }
+    const b = e.target.closest('[data-save]'); if (!b) return; const tr = b.closest('tr'); const m = b.dataset.save; const r = cat.find(x => x.mnemonico === m); const conv = $('cconv').value;
+    const prazo = tr.querySelector('[data-f=prazoDias]').value, valor = tr.querySelector('[data-f=valor]').value;
+    const mud = { ativo: tr.querySelector('[data-f=ativo]').checked, renal: tr.querySelector('[data-f=renal]').checked, prazoDias: prazo === '' ? null : parseInt(prazo), precos: { ...(r.precos || {}) } };
+    if (valor === '') delete mud.precos[conv]; else mud.precos[conv] = parseFloat(valor);
+    b.disabled = true; try { await D.editarExame(m, mud); Object.assign(r, mud); toast(`${m} salvo`, true); } catch (err) { toast('Erro: ' + err.message); } b.disabled = false;
+  });
+}
+
+// ===================== CONVÊNIOS =====================
+async function viewCnv() {
+  const convs = await D.conveniosTodos(); const cat = await D.catalogo();
+  const nExames = slug => cat.filter(c => c.precos?.[slug] != null).length;
+  root.innerHTML = `<div class="card"><div class="card-h"><h2>Catálogo de convênios</h2><span class="cnt">${convs.length} convênios · ${convs.filter(c => c.ativo !== false).length} visíveis</span><div class="sp"></div><span class="note">Oculto = não aparece para as atendentes (ex.: Tabela Custos); a gestão continua vendo tudo no catálogo. <b>Paciente paga (%)</b>: convênios com cobertura (ex.: IMPCG e UFMS cobrem 70% → paciente paga 30%) — a tabela fica intacta, só o valor do orçamento é reduzido. <b>✎ Nome</b>: nome fantasia que aparece para as atendentes e no PDF — o código e o nome do AutoLAC continuam iguais (preços, perfis e relatório seguem funcionando).</span></div>
+    <div class="card-b"><div class="filters" style="margin-bottom:10px"><label class="f" style="grid-column:span 2">Buscar<input class="in" id="vq" placeholder="nome do convênio"></label><label class="f">Situação<select class="in" id="vsit"><option value="">Todos</option><option value="on">Visíveis</option><option value="off">Ocultos</option></select></label></div>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Convênio</th><th>Código</th><th>Exames com valor</th><th title="Percentual da tabela que o paciente paga. 100 = tabela inteira">Paciente paga (%)</th><th>Visível para atendentes</th></tr></thead><tbody id="vbody"></tbody></table></div></div></div>`;
+  const render = () => {
+    const q = norm($('vq').value), sit = $('vsit').value;
+    const rows = convs.filter(c => (!q || norm(D.nomeConv(c)).includes(q) || norm(c.nome).includes(q)) && (!sit || (sit === 'on' ? c.ativo !== false : c.ativo === false)));
+    $('vbody').innerHTML = rows.map(c => `<tr class="${c.ativo === false ? 'fora' : ''}"><td>${editando === c.id ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><input class="in" data-nomein="${c.id}" maxlength="80" style="min-width:220px;flex:1" value="${escapeHtml(D.nomeConv(c))}" placeholder="${escapeHtml(c.nome)}"><button class="btn ok sm" data-nomesave="${c.id}">Salvar</button>${c.apelido ? `<button class="btn ghost sm" data-nomerest="${c.id}" title="Voltar ao nome do AutoLAC">Restaurar</button>` : ''}<button class="btn ghost sm" data-nomecanc="1">Cancelar</button></div>` : `<b>${escapeHtml(D.nomeConv(c))}</b> <button class="btn ghost sm" data-nomeed="${c.id}" title="Editar o nome (nome fantasia)" style="padding:2px 8px">✎</button>${c.ativo === false ? ' <span class="pill crit">oculto</span>' : ''}${c.apelido ? `<small class="note" style="display:block">AutoLAC: ${escapeHtml(c.nome)}</small>` : ''}`}</td><td><span class="mn">${escapeHtml(c.slug || c.id)}</span></td><td>${nExames(c.slug || c.id)}</td><td><input class="in" type="number" min="1" max="100" step="1" style="width:72px;text-align:center;font-weight:800" data-rep="${c.id}" value="${repDe(c)}" title="Percentual da tabela que o paciente paga">${repDe(c) < 100 ? `<small class="note" style="display:block">convênio cobre ${100 - repDe(c)}%</small>` : ''}</td><td><label class="switch"><input type="checkbox" data-vis="${c.id}" ${c.ativo !== false ? 'checked' : ''}><i></i></label></td></tr>`).join('') || '<tr><td colspan="5" class="note">Nenhum convênio.</td></tr>';
+  };
+  function repDe(c) { const p = Number(c.repassePct); return p > 0 && p < 100 ? p : 100; }
+  let editando = null; // id do convênio com o nome em edição
+  ['vq', 'vsit'].forEach(id => $(id).addEventListener('input', render)); render();
+  // nome fantasia: grava só o campo "apelido"; o "nome" oficial (AutoLAC) e o código (slug) não mudam
+  async function salvarNome(c, valor) {
+    let v = String(valor ?? '').replace(/\s+/g, ' ').trim();
+    if (v && v.length < 2) { toast('Nome muito curto.'); return; }
+    if (!v || norm(v) === norm(c.nome)) v = null; // vazio ou igual ao oficial = volta ao nome do AutoLAC
+    if ((c.apelido || null) === v) { editando = null; render(); return; }
+    try { await D.editarConvenio(c.id, { apelido: v }); c.apelido = v; editando = null; render(); toast(v ? `Convênio renomeado para “${v}”` : `Voltou ao nome do AutoLAC: ${c.nome}`, true); } catch (err) { toast('Erro: ' + err.message); }
+  }
+  $('vbody').addEventListener('click', e => {
+    const ed = e.target.closest('[data-nomeed]'); if (ed) { editando = ed.dataset.nomeed; render(); const i = $('vbody').querySelector('[data-nomein]'); i?.focus(); i?.select(); return; }
+    if (e.target.closest('[data-nomecanc]')) { editando = null; render(); return; }
+    const sv = e.target.closest('[data-nomesave]'); if (sv) { const c = convs.find(x => x.id === sv.dataset.nomesave); salvarNome(c, $('vbody').querySelector('[data-nomein]').value); return; }
+    const rs = e.target.closest('[data-nomerest]'); if (rs) { salvarNome(convs.find(x => x.id === rs.dataset.nomerest), ''); }
+  });
+  $('vbody').addEventListener('keydown', e => {
+    const i = e.target.closest('[data-nomein]'); if (!i) return;
+    if (e.key === 'Enter') { e.preventDefault(); salvarNome(convs.find(x => x.id === i.dataset.nomein), i.value); }
+    if (e.key === 'Escape') { editando = null; render(); }
+  });
+  $('vbody').addEventListener('change', async e => {
+    const r = e.target.closest('[data-rep]');
+    if (r) { // repasse ao paciente (%)
+      const c = convs.find(x => x.id === r.dataset.rep); const p = Math.max(1, Math.min(100, Math.round(Number(r.value) || 100)));
+      try { await D.editarConvenio(c.id, { repassePct: p }); c.repassePct = p; render(); toast(p === 100 ? `${c.nome}: paciente paga a tabela inteira` : `${c.nome}: convênio cobre ${100 - p}% — paciente paga ${p}% da tabela`, true); } catch (err) { r.value = repDe(c); toast('Erro: ' + err.message); }
+      return;
+    }
+    const i = e.target.closest('[data-vis]'); if (!i) return; const c = convs.find(x => x.id === i.dataset.vis);
+    try { await D.editarConvenio(c.id, { ativo: i.checked }); c.ativo = i.checked; render(); toast(`${c.nome}: ${i.checked ? 'visível' : 'oculto'} para as atendentes`, true); } catch (err) { i.checked = !i.checked; toast('Erro: ' + err.message); }
+  });
+}
+
+// ===================== CONVERSÕES (relatório de atendimento do AutoLAC) =====================
+async function viewConv() {
+  root.innerHTML = `<div class="card" style="margin-bottom:14px"><div class="card-h"><h2>Conversões pelo relatório de atendimento</h2><div class="sp"></div><span class="note">AutoLAC → Relatórios → “Atendimento por recepcionista” (PDF)</span></div>
+    <div class="card-b" style="display:flex;flex-direction:column;gap:10px">
+      <div class="drop" id="rdrop">Arraste aqui o PDF do relatório ou clique para escolher<br><small>O arquivo é lido só no seu navegador e não fica guardado no sistema — apenas o resumo da importação.</small><input type="file" id="rfile" accept="application/pdf" hidden></div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><label class="f">Cruzar com orçamentos dos últimos<select class="in" id="rdias"><option value="30">30 dias</option><option value="60">60 dias</option><option value="90" selected>90 dias</option><option value="180">180 dias</option></select></label><span class="note" id="rst"></span></div>
+    </div></div>
+    <div id="rres"></div>`;
+  $('rdrop').onclick = () => $('rfile').click();
+  ['dragover', 'dragleave', 'drop'].forEach(ev => $('rdrop').addEventListener(ev, e => { e.preventDefault(); $('rdrop').classList.toggle('over', ev === 'dragover'); if (ev === 'drop' && e.dataTransfer.files[0]) processar(e.dataTransfer.files[0]); }));
+  $('rfile').addEventListener('change', e => e.target.files[0] && processar(e.target.files[0]));
+  async function processar(file) {
+    $('rst').textContent = 'Lendo o PDF…'; $('rres').innerHTML = '';
+    try {
+      const { linhas, paginas } = await linhasDoPdf(file); const rel = parseRelatorio(linhas);
+      $('rst').textContent = `${paginas} página(s) · ${rel.registros.length} guias · ${rel.atendimentos.length} atendimentos · período ${rel.periodo || '—'} · cruzando…`;
+      const orcs = await D.orcamentosRecentes({ dias: +$('rdias').value, max: 2000 });
+      const { auto, quase } = cruzar(rel.atendimentos, orcs);
+      // marca automaticamente os que bateram nome + valor
+      let feitos = 0;
+      for (const m of auto) { try { await D.converterViaRelatorio(m.orc.id, { protocolo: m.at.protocolo, data: m.at.data, valor: m.valorRel, atendente: m.at.atendente, arquivo: file.name, nivelNome: m.nivel, nomeCompleto: m.nomeCompleto, nomeDigitado: m.nomeCompleto ? m.orc.paciente : null }); m.orc.status = 'convertido'; feitos++; } catch (e) { m.erro = e.message; } }
+      const somaRel = rel.registros.reduce((a, r) => a + r.valor, 0);
+      D.registrarImportacao({ arquivo: file.name, paginas, guias: rel.registros.length, atendimentos: rel.atendimentos.length, periodo: rel.periodo || null, valorTotal: somaRel, convertidos: feitos, quase: quase.length }).catch(() => {});
+      $('rst').textContent = `Pronto: ${feitos} orçamento(s) marcados como convertidos automaticamente · ${quase.length} para conferir.`;
+      const linha = (m, btn) => `<tr><td><b>#${numOrc(m.orc.numero)}</b><br><small class="note">${escapeHtml(m.orc.atendenteNome || '')} · ${fmtData(m.orc.criadoEm)}</small></td><td><b>${escapeHtml(m.orc.paciente)}</b><br><small class="note">relatório: ${escapeHtml(m.at.paciente)} · ${escapeHtml(m.at.atendente)} · prot. ${m.at.protocolo}</small></td><td class="num">${brl(m.orc.total)}<br><small class="note">cadastro ${brl(m.valorRel)}</small></td><td>${escapeHtml(m.motivo)}</td><td>${btn}</td></tr>`;
+      $('rres').innerHTML = `<div class="card" style="margin-bottom:14px"><div class="card-h"><h2>Convertidos automaticamente</h2><span class="cnt">${auto.length}</span></div><div class="card-b tbl-wrap"><table class="tbl"><thead><tr><th>Orçamento</th><th>Paciente</th><th class="num">Valor</th><th>Critério</th><th></th></tr></thead><tbody>${auto.map(m => linha(m, m.erro ? `<span class="pill crit">erro: ${escapeHtml(m.erro)}</span>` : '<span class="pill ok">✓ convertido</span>')).join('') || '<tr><td colspan="5" class="note">Nenhum orçamento com nome e valor batendo.</td></tr>'}</tbody></table></div></div>
+        <div class="card"><div class="card-h"><h2>Confira e confirme</h2><span class="cnt">${quase.length}</span><div class="sp"></div><span class="note">valor diferente ou só o 1º nome no orçamento — veja o critério e confirme ou recuse</span></div><div class="card-b tbl-wrap"><table class="tbl"><thead><tr><th>Orçamento</th><th>Paciente</th><th class="num">Valor</th><th>Critério</th><th></th></tr></thead><tbody id="rquase">${quase.map((m, i) => linha(m, `<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"><button class="btn ok sm" data-conf="${i}">Marcar convertido</button><button class="btn red sm" data-recusar="${i}" title="Não é o mesmo atendimento: não converte e não sugere de novo">Recusar conversão</button></div>`)).join('') || '<tr><td colspan="5" class="note">Nada para conferir.</td></tr>'}</tbody></table></div></div>
+        <p class="note" style="margin-top:10px">Total do relatório: ${brl(somaRel)} em ${rel.registros.length} guias. Atendimentos sem orçamento no sistema não aparecem aqui (pacientes que vieram direto).</p>`;
+      $('rquase')?.addEventListener('click', async e => {
+        const r = e.target.closest('[data-recusar]');
+        if (r) { const m = quase[+r.dataset.recusar]; r.disabled = true; try { await D.recusarConversao(m.orc.id, m.at.protocolo); r.parentElement.replaceWith(Object.assign(document.createElement('span'), { className: 'pill crit', textContent: '✕ conversão recusada' })); toast(`Orçamento #${numOrc(m.orc.numero)} continua em aberto — este atendimento não será sugerido de novo.`, true); } catch (err) { toast('Erro: ' + err.message); r.disabled = false; } return; }
+        const b = e.target.closest('[data-conf]'); if (!b) return; const m = quase[+b.dataset.conf]; b.disabled = true;
+        try { await D.converterViaRelatorio(m.orc.id, { protocolo: m.at.protocolo, data: m.at.data, valor: m.valorRel, atendente: m.at.atendente, arquivo: file.name, confirmadoManual: true, nivelNome: m.nivel, nomeCompleto: m.nomeCompleto, nomeDigitado: m.nomeCompleto ? m.orc.paciente : null }); b.parentElement.replaceWith(Object.assign(document.createElement('span'), { className: 'pill ok', textContent: '✓ convertido' })); toast(`Orçamento #${numOrc(m.orc.numero)} — Convertido com sucesso!`, true); } catch (err) { toast('Erro: ' + err.message); b.disabled = false; } });
+    } catch (e) { $('rst').textContent = 'Erro ao ler o PDF: ' + e.message; }
+    $('rfile').value = '';
+  }
+}
+
+// ===================== CRM DE PACIENTES =====================
+async function viewCrm() {
+  const hoje = new Date(); const ini = new Date(hoje.getFullYear(), hoje.getMonth() - 2, 1);
+  root.innerHTML = `<div id="cLem"></div><div class="card" style="margin-bottom:14px"><div class="card-b"><div class="filters">
+    <label class="f">De<input class="in" type="date" id="cDe" value="${ini.toISOString().slice(0, 10)}"></label><label class="f">Até<input class="in" type="date" id="cAte" value="${hoje.toISOString().slice(0, 10)}"></label>
+    <label class="f">Convertido<select class="in" id="cConv"><option value="">Todos</option><option value="sim">Sim — veio coletar</option><option value="nao">Não — em aberto</option></select></label>
+    <label class="f">Buscar<input class="in" id="cQ" placeholder="nome ou telefone"></label>
+    <label class="f">&nbsp;<button class="btn blue" id="cGo" style="justify-content:center">Atualizar</button></label></div></div></div>
+  <div class="card"><div class="card-h"><h2>CRM de pacientes</h2><span class="cnt" id="cCnt"></span><div class="sp"></div><button class="btn ghost sm" id="cCsv">Exportar .csv</button></div>
+  <div class="card-b"><div class="tbl-wrap" id="cWrap" style="max-height:640px;overflow:auto"><table class="tbl"><thead><tr><th>Paciente</th><th>Telefone</th><th>Orçamentos</th><th>Último</th><th>Convênio</th><th>Atendente</th><th class="num">Total orçado</th><th>Convertido</th><th></th></tr></thead><tbody id="cBody"><tr><td colspan="9" class="note">Carregando…</td></tr></tbody></table></div><div id="cPag"></div></div></div>`;
+  let pacientes = [], pagC = 0; const POR = 20;
+  montarLembretes($('cLem'), { perfil, cfg }).then(n => { const b = $('badgeLem'); if (b) { b.textContent = n; b.hidden = !n; } });
+  const montar = async () => {
+    const de = new Date($('cDe').value + 'T00:00:00'), ate = new Date($('cAte').value + 'T23:59:59'); const dias = Math.ceil((Date.now() - de) / 86400000) + 1;
+    const rows = (await D.orcamentosRecentes({ dias, max: 3000 })).filter(r => { const d = r.criadoEm?.toDate?.(); return d && d >= de && d <= ate && r.paciente; });
+    const map = new Map();
+    for (const r of rows) {
+      const k = r.telefoneDigitos || (r.pacienteBusca || norm(r.paciente)); if (!map.has(k)) map.set(k, { nome: r.paciente, tel: r.telefone || '', telD: r.telefoneDigitos || '', n: 0, total: 0, convertido: false, ultimo: null, ultimoNum: null, convenio: r.convenioNome || r.convenio, atendente: r.atendenteNome, orcs: [] });
+      const p = map.get(k); p.n++; p.total += r.total || 0; if (r.status === 'convertido') p.convertido = true; p.orcs.push(r);
+      const d = r.criadoEm?.toDate?.(); if (d && (!p.ultimo || d > p.ultimo)) { p.ultimo = d; p.ultimoNum = r.numero; p.convenio = r.convenioNome || r.convenio; p.atendente = r.atendenteNome; p.nome = r.paciente; if (r.telefone) { p.tel = r.telefone; } }
+    }
+    pacientes = [...map.values()].sort((a, b) => (b.ultimo || 0) - (a.ultimo || 0)); pagC = 0; render();
+  };
+  const filtrados = () => { const q = norm($('cQ').value), qd = $('cQ').value.replace(/\D/g, ''), cv = $('cConv').value; return pacientes.filter(p => (!q || norm(p.nome).includes(q) || (qd && p.telD.includes(qd))) && (!cv || (cv === 'sim' ? p.convertido : !p.convertido))); };
+  const render = () => {
+    const list = filtrados(); $('cCnt').textContent = `${list.length} pacientes · ${list.filter(p => p.convertido).length} convertidos`;
+    const paginas = Math.max(1, Math.ceil(list.length / POR)); pagC = Math.min(pagC, paginas - 1); $('cPag').innerHTML = paginador(pagC, paginas, list.length, 'cpag'); // 20 por página
+    $('cBody').innerHTML = list.slice(pagC * POR, pagC * POR + POR).map(p => `<tr><td><b>${escapeHtml(p.nome)}</b></td><td>${escapeHtml(p.tel || '—')}</td><td>${p.n}</td><td>${p.ultimo ? p.ultimo.toLocaleDateString('pt-BR') : '—'} <small class="note">#${numOrc(p.ultimoNum)}</small></td><td>${escapeHtml(p.convenio || '')}</td><td>${escapeHtml(p.atendente || '')}</td><td class="num">${brl(p.total)}</td><td>${p.convertido ? '<span class="pill ok">✓ sim</span>' : '<span class="pill warn">não</span>'}</td><td style="white-space:nowrap">${p.telD ? `<a class="btn ghost sm" target="_blank" href="https://wa.me/55${p.telD}?text=${encodeURIComponent('Olá ' + primeiroNome(p.nome) + ', aqui é do Laboratório Célula. Seu orçamento #' + numOrc(p.ultimoNum) + ' continua válido — podemos agendar sua coleta?')}">WhatsApp</a>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="note">Nenhum paciente no filtro.</td></tr>';
+  };
+  $('cGo').onclick = montar; ['cQ', 'cConv'].forEach(id => $(id).addEventListener('input', () => { pagC = 0; render(); }));
+  $('cPag').addEventListener('click', e => { const b = e.target.closest('[data-cpag]'); if (!b) return; pagC = +b.dataset.cpag; render(); $('cWrap').scrollTop = 0; });
+  $('cCsv').onclick = () => {
+    const list = filtrados(); if (!list.length) return toast('Nada para exportar.');
+    const lin = [['Paciente', 'Telefone', 'Orçamentos', 'Último orçamento', 'Nº', 'Convênio', 'Atendente', 'Total orçado', 'Convertido'], ...list.map(p => [p.nome, p.tel, p.n, p.ultimo ? p.ultimo.toLocaleDateString('pt-BR') : '', numOrc(p.ultimoNum), p.convenio || '', p.atendente || '', p.total.toFixed(2).replace('.', ','), p.convertido ? 'SIM' : 'NÃO'])];
+    const csv = '﻿' + lin.map(l => l.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\r\n');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = `crm-pacientes_${$('cDe').value}_${$('cAte').value}.csv`; a.click();
+  };
+  montar();
+}
+
+// ===================== PERFIS DE CHECK-UP =====================
+async function viewPerf() {
+  const c = await D.config(true); let perfis = Array.isArray(c.perfis) && c.perfis.length ? c.perfis.map(p => ({ ...p })) : PERFIS_PADRAO.map(p => ({ ...p }));
+  const cat = await D.catalogo(); const convsP = (await D.conveniosTodos()).filter(c => /^PERFIL/i.test(c.nome)); // tabelas "PERFIL …" dos convênios
+  root.innerHTML = `<div class="card"><div class="card-h"><h2>Perfis de check-up</h2><span class="cnt">${perfis.length} perfis</span><div class="sp"></div><span class="note">Aparecem no PDF do orçamento: os 3 mais ligados aos exames (pelas palavras-chave) + os demais numa linha</span><button class="btn ghost sm" id="pfMontar" title="Cria o que falta a partir das tabelas PERFIL dos convênios e liga cada perfil à sua tabela">Montar pelos convênios</button><button class="btn blue sm" id="pfNovo">+ Novo perfil</button></div>
+    <div class="card-b" id="pfList"></div>
+    <div class="card-b" style="border-top:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn ok" id="pfSalvar">Salvar todos</button><button class="btn ghost sm" id="pfPadrao">Restaurar os do site</button><span class="note">Teste: <input class="in" id="pfTeste" placeholder="ex.: hemograma, vitamina d, ferritina" style="width:280px;display:inline-block"> <span id="pfRes"></span></span></div></div>`;
+  const cores = { azul: 'Azul', verde: 'Verde', vermelho: 'Vermelho' };
+  const render = () => {
+    $('pfList').innerHTML = perfis.map((p, i) => `<div class="form" data-i="${i}" style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;grid-template-columns:2fr 1fr 1fr auto auto;align-items:end">
+      <label class="f">Nome<input class="in" data-k="nome" value="${escapeHtml(p.nome || '')}"></label>
+      <label class="f">Categoria (etiqueta)<input class="in" data-k="categoria" value="${escapeHtml(p.categoria || '')}"></label>
+      <label class="f">Cor no PDF<select class="in" data-k="cor">${Object.entries(cores).map(([k, v]) => `<option value="${k}" ${p.cor === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+      <label class="f" style="justify-content:flex-end"><label class="switch"><input type="checkbox" data-k="ativo" ${p.ativo !== false ? 'checked' : ''}><i></i>Ativo</label></label>
+      <div style="display:flex;gap:4px"><button class="ib" title="Subir" data-up="${i}">↑</button><button class="ib" title="Descer" data-down="${i}">↓</button><button class="ib red" title="Excluir" data-del="${i}">${ICO.lixo}</button></div>
+      <label class="f full">Descrição (1 a 2 linhas, como no site)<input class="in" data-k="descricao" value="${escapeHtml(p.descricao || '')}"></label>
+      <label class="f full">Tabela do convênio (preço do pacote)<select class="in" data-k="convenio"><option value="">— sem tabela —</option>${convsP.map(c => `<option value="${c.slug}" ${p.convenio === c.slug ? 'selected' : ''}>${escapeHtml(D.nomeConv(c))}</option>`).join('')}</select>${infoTabela(p.convenio)}</label>
+      <label class="f full">Palavras-chave dos exames que puxam este perfil (separe por vírgula; sem acento; pode ser parte da palavra, ex.: "triglicer")<input class="in" data-k="palavras" value="${escapeHtml(p.palavras || '')}"></label></div>`).join('');
+  };
+  // resumo da tabela ligada: nº de exames e valor do pacote; avisa quando a composição não está cadastrada
+  function infoTabela(slug) {
+    if (!slug) return '<small class="note">Sem tabela: o perfil só aparece como sugestão no PDF.</small>';
+    const ex = cat.filter(e => e.precos?.[slug] != null); const tot = ex.reduce((a, e) => a + e.precos[slug], 0);
+    const lista = ex.map(e => e.nome).join(', ');
+    return `<small class="note" title="${escapeHtml(lista)}">${ex.length} exame(s) · pacote ${brl(tot)}${ex.length ? ' · ' + escapeHtml(lista.slice(0, 140)) + (lista.length > 140 ? '…' : '') : ''}</small>${ex.length > 0 && ex.length < 3 ? '<small style="display:block;color:var(--red);font-weight:700">⚠ Composição incompleta: a tabela tem só ' + ex.length + ' exame com o valor do pacote. Cadastre os exames do perfil nessa tabela para ele entrar completo no orçamento.</small>' : ''}`;
+  }
+  const chave = n => norm(n).replace(/^PERFIL\s+/, '').replace(/MASCULINO/g, 'MASC').replace(/[^A-Z0-9]/g, '');
+  const ler = () => { root.querySelectorAll('[data-i]').forEach(box => { const p = perfis[+box.dataset.i]; box.querySelectorAll('[data-k]').forEach(inp => { p[inp.dataset.k] = inp.type === 'checkbox' ? inp.checked : inp.value.trim(); }); if (!p.id) p.id = norm(p.nome).toLowerCase().replace(/\s+/g, '-') || 'perfil' + Date.now(); }); };
+  render();
+  $('pfList').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; ler();
+    if (b.dataset.del != null) { perfis.splice(+b.dataset.del, 1); }
+    if (b.dataset.up != null) { const i = +b.dataset.up; if (i > 0) [perfis[i - 1], perfis[i]] = [perfis[i], perfis[i - 1]]; }
+    if (b.dataset.down != null) { const i = +b.dataset.down; if (i < perfis.length - 1) [perfis[i + 1], perfis[i]] = [perfis[i], perfis[i + 1]]; }
+    render(); });
+  $('pfList').addEventListener('change', e => { if (e.target.dataset.k === 'convenio') { ler(); render(); } }); // atualiza o resumo da tabela
+  $('pfMontar').onclick = () => { ler(); let novos = 0, ligados = 0;
+    for (const c of convsP.filter(x => x.ativo !== false)) {
+      let p = perfis.find(x => x.convenio === c.slug) || perfis.find(x => chave(x.nome) === chave(c.nome));
+      if (!p) { // falta: usa o modelo do site se houver; senão monta pelo nome e pelos exames da tabela
+        const mod = PERFIS_PADRAO.find(x => x.convenio === c.slug);
+        const ex = cat.filter(e => e.precos?.[c.slug] != null);
+        p = mod ? { ...mod } : { id: c.slug.replace(/_/g, '-'), nome: D.nomeConv(c).toLowerCase().replace(/(^|\s)\S/g, t => t.toUpperCase()), categoria: '', cor: 'azul', descricao: '', ativo: true,
+          palavras: ex.length >= 3 ? [...new Set(ex.map(e => norm(e.nome.replace(/\[.*?\]/g, '').split(' - ')[0]).toLowerCase()))].join(', ') : '' };
+        const k = perfis.findIndex(x => x.id === 'personalizado'); perfis.splice(k < 0 ? perfis.length : k, 0, p); novos++;
+      }
+      if (p.convenio !== c.slug) { p.convenio = c.slug; ligados++; }
+    }
+    render(); toast(novos || ligados ? `${novos} perfil(is) criado(s) · ${ligados} ligado(s) à tabela — confira e clique em Salvar todos` : 'Todos os perfis dos convênios já estão aqui', true); };
+  $('pfNovo').onclick = () => { ler(); perfis.push({ id: 'perfil' + Date.now(), nome: 'Perfil Novo', categoria: '', cor: 'azul', descricao: '', palavras: '', ativo: true }); render(); };
+  $('pfPadrao').onclick = () => { perfis = PERFIS_PADRAO.map(p => ({ ...p })); render(); toast('Perfis do site restaurados — clique em Salvar todos'); };
+  $('pfSalvar').onclick = async () => { ler(); try { await D.salvarConfig({ perfis }); toast('Perfis salvos — já valem para os próximos PDFs', true); } catch (e) { toast('Erro: ' + e.message); } };
+  $('pfTeste').addEventListener('input', () => { ler(); const nomes = $('pfTeste').value.split(',').map(x => x.trim()).filter(Boolean); if (!nomes.length) { $('pfRes').textContent = ''; return; } const r = sugerirPerfis(perfis, nomes, 3); $('pfRes').innerHTML = r.escolhidos.map(p => `<span class="pill ${r.indicado?.id === p.id ? 'ok' : ''}">${escapeHtml(p.nome)}${r.indicado?.id === p.id ? ' ★' : ''}</span>`).join(' '); });
+}
+
+// ===================== USUÁRIOS =====================
+async function viewUsr() {
+  const us = await D.usuarios(); const rows = await D.orcamentosRecentes({ dias: 30 });
+  const prod = {}; for (const r of rows) { prod[r.atendenteUid] ??= { o: 0, c: 0 }; prod[r.atendenteUid].o++; if (r.status === 'convertido') prod[r.atendenteUid].c++; }
+  root.innerHTML = `<div class="g-usr"><div class="card"><div class="card-h"><h2>Equipe</h2><span class="cnt">${us.length} usuários · ${us.filter(u => u.ativo !== false).length} ativos</span></div><div class="card-b"><div class="users" id="users">${us.map(u => { const p = prod[u.id] || { o: 0, c: 0 }; return `<div class="uc"><div class="hd"><span class="av">${u.fotoBase64 ? `<img src="${u.fotoBase64}">` : escapeHtml(iniciais(u.nome))}</span><div><b>${escapeHtml(u.nome)}</b><small>${u.papel === 'admin' ? 'Administrador(a)' : 'Atendente'} · ${escapeHtml(u.unidade || '')}</small></div><div style="flex:1"></div><span class="pill" data-st="${u.id}" title="status ao vivo (offline automático sem batimento há 3 min)"><span class="st-dot ${D.statusEfetivo(u)}"></span>${D.STATUS_LABEL[D.statusEfetivo(u)] || ''}</span><span class="pill ${u.ativo !== false ? 'ok' : ''}"><i></i>${u.ativo !== false ? 'ativo' : 'inativo'}</span></div>
+    <div class="stats"><span><b>${p.o}</b>orçamentos/30d</span><span><b>${p.o ? Math.round(p.c / p.o * 100) : 0}%</b>conversão</span></div>
+    <div class="acts"><select class="in" data-papel="${u.id}" style="padding:5px 8px;font-size:.8rem"><option value="atendente" ${u.papel !== 'admin' ? 'selected' : ''}>Atendente</option><option value="admin" ${u.papel === 'admin' ? 'selected' : ''}>Admin</option></select><input class="in" data-un="${u.id}" value="${escapeHtml(u.unidade || '')}" placeholder="unidade" style="padding:5px 8px;font-size:.8rem;width:120px"><button class="btn blue sm" data-salvar="${u.id}">Salvar</button><button class="btn ghost sm" data-pw="${escapeHtml(u.email)}" title="Envia o link de redefinição por e-mail">E-mail de senha</button><button class="btn ghost sm" data-ativo="${u.id}" data-v="${u.ativo !== false ? 0 : 1}">${u.ativo !== false ? 'Desativar' : 'Reativar'}</button>${u.id !== perfil.uid ? `<button class="btn ghost sm" data-excl="${u.id}" style="color:var(--red)">Excluir</button>` : ''}</div>
+    <div class="acts" style="margin-top:6px"><input class="in" type="text" data-nova="${u.id}" placeholder="nova senha (6+)" autocomplete="new-password" style="padding:5px 8px;font-size:.8rem;width:150px"><button class="btn blue sm" data-defsenha="${u.id}">Definir senha</button></div></div>`; }).join('')}</div></div></div>
+  <div class="card"><div class="card-h"><h2>Novo usuário</h2></div><div class="card-b" style="display:flex;flex-direction:column;gap:10px">
+    <div class="upl" id="uplAv" style="border:2px dashed var(--blue-100);border-radius:14px;padding:12px;text-align:center;font-weight:700;color:var(--muted);cursor:pointer;background:var(--blue-50)">Foto de perfil (opcional)<input type="file" accept="image/*" hidden id="avFile"></div>
+    <div style="display:flex;justify-content:center"><span class="av l" id="avPrev">?</span></div>
+    <label class="f">Nome *<input class="in" id="nuNome"></label><label class="f">E-mail *<input class="in" id="nuEmail" type="email"></label>
+    <label class="f">Papel<select class="in" id="nuPapel"><option value="atendente">Atendente</option><option value="admin">Administrador(a)</option></select></label>
+    <label class="f">Unidade<input class="in" id="nuUn" value="${escapeHtml(cfg.unidadePadrao || 'Coophavila')}" list="uns"><datalist id="uns">${(cfg.unidades || ['Coophavila', 'Matriz', 'Nova Lima', 'Guaicurus', 'Central de atendimento']).map(u => `<option value="${escapeHtml(u)}">`).join('')}</datalist></label>
+    <label class="f">Senha inicial * (mín. 6)<input class="in" id="nuSenha" type="text" autocomplete="off"></label>
+    <button class="btn blue" id="btnNU" style="justify-content:center">Criar usuário</button><span class="note">A pessoa pode trocar a senha em "Minha conta"; você pode enviar o link de redefinição a qualquer momento.</span></div></div></div>`;
+  // status ao vivo: atualiza as bolinhas a cada 45 s enquanto a aba estiver aberta
+  const iv = setInterval(async () => { if (location.hash !== '#usr') return clearInterval(iv); try { for (const u of await D.usuarios()) { const el = root.querySelector(`[data-st="${u.id}"]`); if (el) { const st = D.statusEfetivo(u); el.innerHTML = `<span class="st-dot ${st}"></span>${D.STATUS_LABEL[st] || ''}`; } } } catch {} }, 45000);
+  let foto = null; $('uplAv').onclick = () => $('avFile').click();
+  $('avFile').addEventListener('change', async e => { if (!e.target.files[0]) return; foto = await comprimirImagem(e.target.files[0], 200, .8); $('avPrev').innerHTML = `<img src="${foto}">`; });
+  $('nuNome').addEventListener('input', e => { if (!foto) $('avPrev').textContent = iniciais(e.target.value) || '?'; });
+  $('btnNU').onclick = async () => { const nome = $('nuNome').value.trim(), email = $('nuEmail').value.trim(), senha = $('nuSenha').value; if (!nome || !email || senha.length < 6) { toast('Preencha nome, e-mail e senha (6+).'); return; } $('btnNU').disabled = true;
+    try { await criarUsuario({ email, senha, nome, papel: $('nuPapel').value, unidade: $('nuUn').value.trim(), fotoBase64: foto }); toast(`Usuário ${nome} criado`, true); viewUsr(); } catch (e) { toast(e.code === 'auth/email-already-in-use' ? 'Este e-mail já tem conta.' : 'Erro: ' + e.message); $('btnNU').disabled = false; } };
+  $('users').addEventListener('click', async e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.pw) { try { await resetSenha(b.dataset.pw); toast(`E-mail de redefinição enviado para ${b.dataset.pw}`, true); } catch (err) { toast(err.message); } }
+    if (b.dataset.salvar) { const id = b.dataset.salvar; try { await D.editarUsuario(id, { papel: root.querySelector(`[data-papel="${id}"]`).value, unidade: root.querySelector(`[data-un="${id}"]`).value.trim() }); toast('Salvo', true); } catch (err) { toast(err.message); } }
+    if (b.dataset.ativo) { try { await D.editarUsuario(b.dataset.ativo, { ativo: b.dataset.v === '1' }); viewUsr(); } catch (err) { toast(err.message); } }
+    if (b.dataset.defsenha) { const id = b.dataset.defsenha; const inp = root.querySelector(`[data-nova="${id}"]`); const senha = inp.value; if (senha.length < 6) { toast('A senha precisa ter 6 ou mais caracteres.'); inp.focus(); return; }
+      b.disabled = true; try { await D.definirSenha(id, senha); inp.value = ''; toast('Senha definida — a pessoa já entra com a nova senha.', true); } catch (err) { toast(err.message); } b.disabled = false; }
+    if (b.dataset.excl) { const id = b.dataset.excl; const u = us.find(x => x.id === id);
+      if (b.dataset.arm !== '1') { b.dataset.arm = '1'; b.textContent = 'Confirmar exclusão?'; setTimeout(() => { if (b.isConnected) { b.dataset.arm = ''; b.textContent = 'Excluir'; } }, 5000); return; }
+      b.disabled = true; try { const r = await D.excluirUsuario(id); toast(r.soft ? `${u.nome} desativado(a) e removido(a) da lista (publique as Cloud Functions para apagar também o login)` : `${u.nome} excluído(a) — login e perfil removidos`, true); viewUsr(); } catch (err) { toast(err.message); b.disabled = false; } }
+  });
+}
+
+// ===================== EXPORTAR =====================
+async function viewExp() {
+  const hoje = new Date(); const ini = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+  root.innerHTML = `<div class="card" style="margin-bottom:14px"><div class="card-b"><div class="filters">
+    <label class="f">De<input class="in" type="date" id="eDe" value="${ini.toISOString().slice(0, 10)}"></label><label class="f">Até<input class="in" type="date" id="eAte" value="${hoje.toISOString().slice(0, 10)}"></label>
+    <label class="f">Unidade<input class="in" id="eUn" placeholder="todas"></label><label class="f">Atendente<select class="in" id="eAt"><option value="">Todas</option></select></label>
+    <label class="f">Status<select class="in" id="eSt"><option value="convertido">Convertidos</option><option value="">Todos</option><option value="gravado">Gravados</option><option value="enviado">Enviados</option><option value="perdido">Perdidos</option><option value="aguardando_conferencia">Aguardando conferência</option></select></label>
+    <label class="f">&nbsp;<button class="btn blue" id="eGo" style="justify-content:center">Gerar relatório</button></label></div></div></div>
+  <div class="card"><div class="card-h"><h2>Atendimentos</h2><span class="cnt" id="eCnt"></span><div class="sp"></div><button class="btn ghost sm" id="eCsv">Baixar CSV</button><button class="btn ghost sm" id="eXls">Baixar Excel</button><button class="btn ghost sm" id="ePdf">Imprimir / PDF</button></div>
+  <div class="card-b tbl-wrap"><table class="tbl" id="eTbl"><thead><tr><th>Nº</th><th>Criado</th><th>Convertido</th><th>Paciente</th><th>Telefone</th><th>Convênio</th><th>Atendente</th><th>Unidade</th><th>Exames</th><th class="num">Valor</th><th>Status</th></tr></thead><tbody id="eBody"><tr><td colspan="11" class="note">Clique em Gerar relatório.</td></tr></tbody></table></div></div>`;
+  let rows = [];
+  const gerar = async () => {
+    const de = new Date($('eDe').value + 'T00:00:00'), ate = new Date($('eAte').value + 'T23:59:59'); const dias = Math.ceil((Date.now() - de) / 86400000) + 1;
+    const all = await D.orcamentosRecentes({ dias }); const st = $('eSt').value, un = $('eUn').value.trim().toLowerCase(), at = $('eAt').value;
+    const ids = new Map(all.map(r => [r.atendenteUid, r.atendenteNome])); const cur = $('eAt').value; $('eAt').innerHTML = '<option value="">Todas</option>' + [...ids].map(([u, n]) => `<option value="${u}">${escapeHtml(n)}</option>`).join(''); $('eAt').value = cur;
+    rows = all.filter(r => { const d = r.criadoEm?.toDate?.(); return d && d >= de && d <= ate && (!st || r.status === st) && (!un || (r.unidade || '').toLowerCase().includes(un)) && (!at || r.atendenteUid === at); });
+    $('eCnt').textContent = `${rows.length} registros · ${brl(rows.reduce((a, r) => a + (r.total || 0), 0))}`;
+    $('eBody').innerHTML = rows.map(r => `<tr><td><b>#${r.numero}</b></td><td>${fmtData(r.criadoEm)}</td><td>${r.convertidoEm ? fmtData(r.convertidoEm) : '—'}</td><td>${escapeHtml(r.paciente || '')}</td><td>${escapeHtml(r.telefone || '')}</td><td>${escapeHtml(r.convenioNome || r.convenio)}</td><td>${escapeHtml(r.atendenteNome)}</td><td>${escapeHtml(r.unidade || '')}</td><td>${(r.mnemonicos || []).join(', ')}</td><td class="num">${brl(r.total)}</td><td>${(STATUS[r.status] || [r.status])[0]}</td></tr>`).join('') || '<tr><td colspan="11" class="note">Nenhum registro.</td></tr>';
+  };
+  $('eGo').onclick = gerar;
+  const linhas = () => [['Nº', 'Criado', 'Convertido', 'Paciente', 'Telefone', 'Convênio', 'Atendente', 'Unidade', 'Exames', 'Valor', 'Status'], ...rows.map(r => [r.numero, fmtData(r.criadoEm), r.convertidoEm ? fmtData(r.convertidoEm) : '', r.paciente || '', r.telefone || '', r.convenioNome || r.convenio, r.atendenteNome, r.unidade || '', (r.mnemonicos || []).join(' '), (r.total || 0).toFixed(2).replace('.', ','), (STATUS[r.status] || [r.status])[0]])];
+  const baixar = (conteudo, nome, tipo) => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([conteudo], { type: tipo })); a.download = nome; a.click(); };
+  $('eCsv').onclick = () => { if (!rows.length) return toast('Gere o relatório primeiro.'); baixar('﻿' + linhas().map(l => l.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\r\n'), `atendimentos_${$('eDe').value}_${$('eAte').value}.csv`, 'text/csv;charset=utf-8'); };
+  $('eXls').onclick = () => { if (!rows.length) return toast('Gere o relatório primeiro.'); const html = `<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body><table>${linhas().map(l => '<tr>' + l.map(v => `<td>${escapeHtml(v)}</td>`).join('') + '</tr>').join('')}</table></body></html>`; baixar(html, `atendimentos_${$('eDe').value}_${$('eAte').value}.xls`, 'application/vnd.ms-excel'); };
+  $('ePdf').onclick = () => { if (!rows.length) return toast('Gere o relatório primeiro.'); const w = window.open('', '_blank'); w.document.write(`<html><head><meta charset="utf-8"><title>Atendimentos</title><style>body{font-family:Nunito,Arial,sans-serif;padding:24px;color:#1b2540}h1{color:#1e40af;margin:0}h1 small{display:block;color:#64748b;font-size:.8rem;font-weight:600}table{width:100%;border-collapse:collapse;font-size:11px;margin-top:16px}th{background:#eaf1ff;color:#1e40af;text-align:left}th,td{padding:5px 6px;border-bottom:1px solid #e6e9f0}.r{text-align:right}img{height:40px}</style></head><body><img src="${location.origin}${location.pathname.replace(/[^/]*$/, '')}img/logo-celula.png"><h1>Relatório de atendimentos<small>${$('eDe').value.split('-').reverse().join('/')} a ${$('eAte').value.split('-').reverse().join('/')} · ${$('eCnt').textContent} · gerado por ${escapeHtml(perfil.nome)}</small></h1><table><tr>${linhas()[0].map(h => `<th>${h}</th>`).join('')}</tr>${linhas().slice(1).map(l => '<tr>' + l.map((v, i) => `<td class="${i === 9 ? 'r' : ''}">${escapeHtml(v)}</td>`).join('') + '</tr>').join('')}</table><script>setTimeout(()=>print(),400)<\/script></body></html>`); w.document.close(); };
+  gerar();
+}
+
+// ===================== CONFIGURAÇÕES =====================
+async function viewCfg() {
+  const c = await D.config(true);
+  root.innerHTML = `<div class="g2"><div class="card"><div class="card-h"><h2>Regras do sistema</h2></div><div class="card-b form">
+    <label class="f">Dias úteis somados ao prazo DB<input class="in" id="cPrazo" type="number" value="${c.prazoExtraDiasUteis ?? 2}"></label>
+    <label class="f">Confiança mínima da IA (%)<input class="in" id="cConf" type="number" value="${c.confiancaMinima ?? 85}"></label>
+    <label class="f">Validade do orçamento (dias)<input class="in" id="cVal" type="number" value="${c.validadeDias ?? 7}"></label>
+    <label class="f">Lembrar paciente após (dias sem coleta)<input class="in" id="cLemD" type="number" min="1" value="${c.lembreteDias ?? 3}"></label>
+    <label class="f">Unidade padrão<input class="in" id="cUn" value="${escapeHtml(c.unidadePadrao || 'Coophavila')}"></label>
+    <label class="f full">Unidades (separe por vírgula)<input class="in" id="cUns" value="${escapeHtml((c.unidades || ['Coophavila', 'Matriz', 'Nova Lima', 'Guaicurus', 'Central de atendimento']).join(', '))}"></label>
+    <label class="f full">E-mails que entram como administrador no primeiro acesso<input class="in" id="cAdm" value="${escapeHtml((c.admins || []).join(', '))}"></label>
+    <div class="full"><button class="btn blue" id="cSalvar">Salvar</button></div></div></div>
+  <div class="card"><div class="card-h"><h2>Base de exames</h2></div><div class="card-b"><p class="note">Versão da base: <b>${escapeHtml(c.versaoBase || '')}</b> · origem: ${escapeHtml(c.origem || '')}</p><p class="note">Pacote renal (HIPERRIM): <b>${(c.pacoteRenal || []).length}</b> mnemônicos.</p>
+    <p class="note">Cadastro AutoLAC: ${c.autolacAtualizadoEm ? `<b>${c.autolacExames}</b> exames atualizados em ${fmtData(c.autolacAtualizadoEm)} · <b>${c.autolacFora}</b> fora do AutoLAC` : '<b>ainda não importado</b>'}</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn blue sm" id="cImp">Importar cadastro do AutoLAC (data/autolac.json)</button><span class="note" id="cImpSt"></span></div>
+    <p class="note" style="margin-top:6px">Atualiza prazos de entrega, bancada, material, método, preparo e meios de coleta de todos os exames; os que não estão no AutoLAC ficam no fim do catálogo como “sem valor”.</p>
+    <hr style="border:none;border-top:1px solid var(--line);margin:14px 0">
+    <p class="note" id="cNum">Numeração dos orçamentos: carregando…</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn ghost sm" id="cZerar" style="color:var(--red)">Reiniciar numeração em #00001</button></div>
+    <hr style="border:none;border-top:1px solid var(--line);margin:14px 0"><a class="btn ghost sm" href="conta.html">Minha conta (foto e senha)</a></div></div></div>`;
+  D.contadores().then(k => { $('cNum').innerHTML = `Numeração dos orçamentos: próximo será <b>#${numOrc((k.orcamento || 0) + 1)}</b> (${k.orcamento || 0} emitidos nesta sequência)`; }).catch(() => {});
+  $('cImp').onclick = async () => {
+    if ($('cImp').dataset.arm !== '1') { $('cImp').dataset.arm = '1'; $('cImp').textContent = 'Confirmar importação? (clique de novo)'; setTimeout(() => { $('cImp').dataset.arm = ''; $('cImp').textContent = 'Importar cadastro do AutoLAC (data/autolac.json)'; }, 5000); return; }
+    $('cImp').disabled = true; $('cImpSt').textContent = 'Baixando data/autolac.json…';
+    try { const json = await (await fetch('data/autolac.json?v=' + Date.now())).json(); $('cImpSt').textContent = `${json.exames.length} exames no arquivo · gravando…`;
+      const n = await D.importarAutolac(json, (f, t) => $('cImpSt').textContent = `Gravando ${f} de ${t}…`); $('cImpSt').textContent = `Concluído: ${n} exames atualizados.`; toast('Cadastro AutoLAC importado', true); }
+    catch (e) { $('cImpSt').textContent = 'Erro: ' + e.message; toast('Erro na importação: ' + e.message); $('cImp').disabled = false; }
+  };
+  $('cZerar').onclick = async () => {
+    if ($('cZerar').dataset.arm !== '1') { $('cZerar').dataset.arm = '1'; $('cZerar').textContent = 'Confirmar: o próximo orçamento será #00001 (clique de novo)'; setTimeout(() => { $('cZerar').dataset.arm = ''; $('cZerar').textContent = 'Reiniciar numeração em #00001'; }, 5000); return; }
+    try { await D.zerarNumeracao(); toast('Numeração reiniciada: o próximo orçamento será #00001', true); viewCfg(); } catch (e) { toast('Erro: ' + e.message); }
+  };
+  $('cSalvar').onclick = async () => { try { await D.salvarConfig({ prazoExtraDiasUteis: +$('cPrazo').value, confiancaMinima: +$('cConf').value, validadeDias: +$('cVal').value, lembreteDias: Math.max(1, +$('cLemD').value || 3), unidadePadrao: $('cUn').value.trim(), unidades: $('cUns').value.split(',').map(x => x.trim()).filter(Boolean), admins: $('cAdm').value.split(',').map(x => x.trim().toLowerCase()).filter(Boolean) }); toast('Configurações salvas', true); } catch (e) { toast('Erro: ' + e.message); } };
+}
