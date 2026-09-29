@@ -430,8 +430,8 @@ async function viewCrm() {
 // ===================== PERFIS DE CHECK-UP =====================
 async function viewPerf() {
   const c = await D.config(true); let perfis = Array.isArray(c.perfis) && c.perfis.length ? c.perfis.map(p => ({ ...p })) : PERFIS_PADRAO.map(p => ({ ...p }));
-  const cat = await D.catalogo();
-  root.innerHTML = `<div class="card"><div class="card-h"><h2>Perfis de check-up</h2><span class="cnt">${perfis.length} perfis</span><div class="sp"></div><span class="note">Aparecem no PDF do orçamento: os 3 mais ligados aos exames (pelas palavras-chave) + os demais numa linha</span><button class="btn blue sm" id="pfNovo">+ Novo perfil</button></div>
+  const cat = await D.catalogo(); const convsP = (await D.conveniosTodos()).filter(c => /^PERFIL/i.test(c.nome)); // tabelas "PERFIL …" dos convênios
+  root.innerHTML = `<div class="card"><div class="card-h"><h2>Perfis de check-up</h2><span class="cnt">${perfis.length} perfis</span><div class="sp"></div><span class="note">Aparecem no PDF do orçamento: os 3 mais ligados aos exames (pelas palavras-chave) + os demais numa linha</span><button class="btn ghost sm" id="pfMontar" title="Cria o que falta a partir das tabelas PERFIL dos convênios e liga cada perfil à sua tabela">Montar pelos convênios</button><button class="btn blue sm" id="pfNovo">+ Novo perfil</button></div>
     <div class="card-b" id="pfList"></div>
     <div class="card-b" style="border-top:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn ok" id="pfSalvar">Salvar todos</button><button class="btn ghost sm" id="pfPadrao">Restaurar os do site</button><span class="note">Teste: <input class="in" id="pfTeste" placeholder="ex.: hemograma, vitamina d, ferritina" style="width:280px;display:inline-block"> <span id="pfRes"></span></span></div></div>`;
   const cores = { azul: 'Azul', verde: 'Verde', vermelho: 'Vermelho' };
@@ -443,8 +443,17 @@ async function viewPerf() {
       <label class="f" style="justify-content:flex-end"><label class="switch"><input type="checkbox" data-k="ativo" ${p.ativo !== false ? 'checked' : ''}><i></i>Ativo</label></label>
       <div style="display:flex;gap:4px"><button class="ib" title="Subir" data-up="${i}">↑</button><button class="ib" title="Descer" data-down="${i}">↓</button><button class="ib red" title="Excluir" data-del="${i}">${ICO.lixo}</button></div>
       <label class="f full">Descrição (1 a 2 linhas, como no site)<input class="in" data-k="descricao" value="${escapeHtml(p.descricao || '')}"></label>
+      <label class="f full">Tabela do convênio (preço do pacote)<select class="in" data-k="convenio"><option value="">— sem tabela —</option>${convsP.map(c => `<option value="${c.slug}" ${p.convenio === c.slug ? 'selected' : ''}>${escapeHtml(D.nomeConv(c))}</option>`).join('')}</select>${infoTabela(p.convenio)}</label>
       <label class="f full">Palavras-chave dos exames que puxam este perfil (separe por vírgula; sem acento; pode ser parte da palavra, ex.: "triglicer")<input class="in" data-k="palavras" value="${escapeHtml(p.palavras || '')}"></label></div>`).join('');
   };
+  // resumo da tabela ligada: nº de exames e valor do pacote; avisa quando a composição não está cadastrada
+  function infoTabela(slug) {
+    if (!slug) return '<small class="note">Sem tabela: o perfil só aparece como sugestão no PDF.</small>';
+    const ex = cat.filter(e => e.precos?.[slug] != null); const tot = ex.reduce((a, e) => a + e.precos[slug], 0);
+    const lista = ex.map(e => e.nome).join(', ');
+    return `<small class="note" title="${escapeHtml(lista)}">${ex.length} exame(s) · pacote ${brl(tot)}${ex.length ? ' · ' + escapeHtml(lista.slice(0, 140)) + (lista.length > 140 ? '…' : '') : ''}</small>${ex.length > 0 && ex.length < 3 ? '<small style="display:block;color:var(--red);font-weight:700">⚠ Composição incompleta: a tabela tem só ' + ex.length + ' exame com o valor do pacote. Cadastre os exames do perfil nessa tabela para ele entrar completo no orçamento.</small>' : ''}`;
+  }
+  const chave = n => norm(n).replace(/^PERFIL\s+/, '').replace(/MASCULINO/g, 'MASC').replace(/[^A-Z0-9]/g, '');
   const ler = () => { root.querySelectorAll('[data-i]').forEach(box => { const p = perfis[+box.dataset.i]; box.querySelectorAll('[data-k]').forEach(inp => { p[inp.dataset.k] = inp.type === 'checkbox' ? inp.checked : inp.value.trim(); }); if (!p.id) p.id = norm(p.nome).toLowerCase().replace(/\s+/g, '-') || 'perfil' + Date.now(); }); };
   render();
   $('pfList').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; ler();
@@ -452,6 +461,20 @@ async function viewPerf() {
     if (b.dataset.up != null) { const i = +b.dataset.up; if (i > 0) [perfis[i - 1], perfis[i]] = [perfis[i], perfis[i - 1]]; }
     if (b.dataset.down != null) { const i = +b.dataset.down; if (i < perfis.length - 1) [perfis[i + 1], perfis[i]] = [perfis[i], perfis[i + 1]]; }
     render(); });
+  $('pfList').addEventListener('change', e => { if (e.target.dataset.k === 'convenio') { ler(); render(); } }); // atualiza o resumo da tabela
+  $('pfMontar').onclick = () => { ler(); let novos = 0, ligados = 0;
+    for (const c of convsP.filter(x => x.ativo !== false)) {
+      let p = perfis.find(x => x.convenio === c.slug) || perfis.find(x => chave(x.nome) === chave(c.nome));
+      if (!p) { // falta: usa o modelo do site se houver; senão monta pelo nome e pelos exames da tabela
+        const mod = PERFIS_PADRAO.find(x => x.convenio === c.slug);
+        const ex = cat.filter(e => e.precos?.[c.slug] != null);
+        p = mod ? { ...mod } : { id: c.slug.replace(/_/g, '-'), nome: D.nomeConv(c).toLowerCase().replace(/(^|\s)\S/g, t => t.toUpperCase()), categoria: '', cor: 'azul', descricao: '', ativo: true,
+          palavras: ex.length >= 3 ? [...new Set(ex.map(e => norm(e.nome.replace(/\[.*?\]/g, '').split(' - ')[0]).toLowerCase()))].join(', ') : '' };
+        const k = perfis.findIndex(x => x.id === 'personalizado'); perfis.splice(k < 0 ? perfis.length : k, 0, p); novos++;
+      }
+      if (p.convenio !== c.slug) { p.convenio = c.slug; ligados++; }
+    }
+    render(); toast(novos || ligados ? `${novos} perfil(is) criado(s) · ${ligados} ligado(s) à tabela — confira e clique em Salvar todos` : 'Todos os perfis dos convênios já estão aqui', true); };
   $('pfNovo').onclick = () => { ler(); perfis.push({ id: 'perfil' + Date.now(), nome: 'Perfil Novo', categoria: '', cor: 'azul', descricao: '', palavras: '', ativo: true }); render(); };
   $('pfPadrao').onclick = () => { perfis = PERFIS_PADRAO.map(p => ({ ...p })); render(); toast('Perfis do site restaurados — clique em Salvar todos'); };
   $('pfSalvar').onclick = async () => { ler(); try { await D.salvarConfig({ perfis }); toast('Perfis salvos — já valem para os próximos PDFs', true); } catch (e) { toast('Erro: ' + e.message); } };
