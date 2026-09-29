@@ -1,5 +1,5 @@
 // dados.js — acesso ao Firestore: catálogo, convênios, apelidos (aprendizado), solicitações, orçamentos.
-import { db, auth, norm, slug } from './firebase.js';
+import { db, auth, norm, slug, primeiroNome } from './firebase.js';
 import { collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, startAfter, onSnapshot, increment, serverTimestamp, writeBatch, getCountFromServer, arrayUnion, runTransaction } from 'https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js';
 
 let _cat = null, _catAt = 0, _cfg = null, _convs = null, _convsAt = 0;
@@ -429,8 +429,8 @@ export async function marcarLembrete(id) {
 /** Texto do lembrete pelo WhatsApp (o envio é manual: abre a conversa já com a mensagem). */
 export function mensagemLembrete(o, { atendente, validadeDias = 7 } = {}) {
   const criado = o.criadoEm?.toDate?.() || new Date(); const val = new Date(criado.getTime() + validadeDias * 86400000);
-  const primeiro = (o.paciente || '').split(' ')[0]; const tot = Number(o.total || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-  return `Olá, ${primeiro}! Aqui é ${(atendente || 'a equipe').split(' ')[0]}, da Célula Diagnósticos. 😊\nSeu orçamento nº ${String(o.numero).padStart(5, '0')} (${o.qtd || o.itens?.length || 0} exames · ${tot}) continua válido até ${val.toLocaleDateString('pt-BR')}.\nPosso te ajudar a agendar a coleta? Atendemos por ordem de chegada em 8 unidades em Campo Grande — é só responder por aqui.`;
+  const primeiro = primeiroNome(o.paciente); const tot = Number(o.total || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  return `Olá, ${primeiro}! Aqui é ${primeiroNome(atendente) || 'a equipe'}, da Célula Diagnósticos. 😊\nSeu orçamento nº ${String(o.numero).padStart(5, '0')} (${o.qtd || o.itens?.length || 0} exames · ${tot}) continua válido até ${val.toLocaleDateString('pt-BR')}.\nPosso te ajudar a agendar a coleta? Atendemos por ordem de chegada em 8 unidades em Campo Grande — é só responder por aqui.`;
 }
 export const linkWhatsApp = (tel, texto) => `https://wa.me/55${String(tel).replace(/\D/g, '').replace(/^55/, '')}?text=${encodeURIComponent(texto)}`;
 
