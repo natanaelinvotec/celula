@@ -70,15 +70,16 @@ export async function montarAtendimento(el, { perfil }) {
   /** Solta a conversa aberta: volta a tela para o estado inicial (chat e painel do paciente vazios). */
   function fechar() {
     fecharEditor(true); offC?.(); offM?.(); offO?.(); offC = offM = offO = null;
-    st.sel = null; st.conv = null; st.fixo = false; st.msgs = []; st.orc = null; st.hist = []; st.notaModo = false;
+    st.sel = null; st.conv = null; st.fixo = false; st.naLista = false; st.msgs = []; st.orc = null; st.hist = []; st.notaModo = false;
     $('chat').innerHTML = '<div class="at-vazio">💬<br>Escolha uma conversa à esquerda.</div>'; $('ctx').innerHTML = '';
   }
   function lista({ manual = false } = {}) {
     const cont = { fila: st.convs.filter(c => c.status === 'fila').length, meus: st.convs.filter(c => c.atendenteUid === perfil.uid && c.status === 'aberta').length, aguardando: st.convs.filter(c => c.status === 'aguardando' && (admin || c.atendenteUid === perfil.uid)).length };
     let l = filtradas();
+    if (st.sel && l.some(c => c.id === st.sel)) st.naLista = true; // só "some da tela" o que já esteve nesta lista
     // A conversa aberta saiu da aba: se ainda é minha/visível (ex.: assumi da fila), a aba acompanha;
     // se encerrou ou foi para outra atendente, a tela limpa. Com busca digitada ou editor aberto, não mexe.
-    if (st.sel && !st.busca.trim() && !st.editando && !st.fixo && !l.some(c => c.id === st.sel)) {
+    if (st.sel && !st.busca.trim() && !st.editando && !st.fixo && (st.naLista || manual) && !l.some(c => c.id === st.sel)) {
       const c = st.convs.find(x => x.id === st.sel) || (st.conv?.id === st.sel ? st.conv : null), mine = c && c.atendenteUid === perfil.uid;
       const destino = !c ? null : c.status === 'fila' ? 'fila' : c.status === 'aberta' && mine ? 'meus' : c.status === 'aguardando' && (mine || admin) ? 'aguardando' : null;
       if (manual || (c && !destino)) fechar(); // trocou de aba na mão, encerrou ou foi para outra atendente
@@ -98,7 +99,7 @@ export async function montarAtendimento(el, { perfil }) {
   // ---------- conversa ----------
   /** fixo: aberta pela busca ou pelos lembretes — não some da tela só porque não pertence à aba atual. */
   function abrir(tel, { fixo = false } = {}) {
-    fecharEditor(true); st.sel = tel; st.conv = null; st.fixo = fixo; st.msgs = []; st.orc = null; st.hist = []; st.notaModo = false; offC?.(); offM?.(); offO?.(); offO = null; lista();
+    fecharEditor(true); st.sel = tel; st.conv = null; st.fixo = fixo; st.naLista = false; st.msgs = []; st.orc = null; st.hist = []; st.notaModo = false; offC?.(); offM?.(); offO?.(); offO = null; lista();
     offC = W.ouvirConversa(tel, c => { const antes = st.conv?.orcamentoId, mudou = st.conv && c && (st.conv.status !== c.status || st.conv.atendenteUid !== c.atendenteUid); st.conv = c; if (!c) return; if (mudou) { lista(); if (st.sel !== tel) return; } cabecalho(); rodape(); contexto(); if (c.orcamentoId !== antes) ligarOrc(); if (c.naoLidas && (c.atendenteUid === perfil.uid)) W.marcarLida(tel); });
     offM = W.ouvirMensagens(tel, m => { st.msgs = m; mensagens(); });
     W.orcamentosDoTelefone(tel).then(h => { st.hist = h; contexto(); }).catch(() => {});
@@ -378,7 +379,7 @@ export async function montarAtendimento(el, { perfil }) {
 
   // ---------- simulador (admin) ----------
   $('bSim')?.addEventListener('click', () => {
-    modal(`<div class="modal-b"><h2 style="margin:0 0 4px">🧪 Simulador de WhatsApp</h2><p class="note" style="margin:0 0 12px">Grava uma mensagem como se o paciente tivesse escrito. Use só dados de teste.</p>
+    modal(`<div class="modal-b"><h2 style="margin:0 0 4px">🧪 Simulador de WhatsApp</h2><p class="note" style="margin:0 0 12px">Grava uma mensagem como se o paciente tivesse escrito. Use só dados de teste. Com a distribuição ligada, a conversa de teste vai só para você — nunca para a equipe.</p>
       <div class="form" style="grid-template-columns:1fr 1fr"><label class="f">Telefone<input class="in" id="sTel" value="${st.conv?.id ? W.fmtTelWa(st.conv.id) : '(67) 9 0000-0001'}"></label><label class="f">Nome no WhatsApp<input class="in" id="sNome" value="${escapeHtml(st.conv?.nome || 'Paciente Teste')}"></label>
       <label class="f full">Mensagem<textarea class="in" id="sTxt" rows="2" placeholder="ex.: Boa tarde, quanto fica esse pedido? Particular"></textarea></label>
       <label class="f full">Foto do pedido (opcional)<input class="in" type="file" id="sImg" accept="image/*"></label></div>
@@ -388,9 +389,10 @@ export async function montarAtendimento(el, { perfil }) {
       const f = document.getElementById('sImg').files[0]; const texto = document.getElementById('sTxt').value.trim(); if (!texto && !f) { toast('Escreva algo ou escolha uma foto.'); return; }
       try { const imagem = f ? await comprimirImagem(f, 1400, .8) : null;
         st.cfg = await D.config(true).catch(() => st.cfg) || {}; // mesmas regras que o servidor usará: horário, boas-vindas, distribuição
-        const atendente = st.cfg.wa?.distribuicao ? W.escolherAtendente(await D.usuarios().catch(() => st.users), st.convs) : null;
+        // no simulador a distribuição só considera VOCÊ (conversa de teste nunca cai para a equipe)
+        const atendente = st.cfg.wa?.distribuicao ? W.escolherAtendente((await D.usuarios().catch(() => st.users)).filter(u => u.id === perfil.uid), st.convs) : null;
         const tel = await W.simularEntrada({ tel: document.getElementById('sTel').value, nome: document.getElementById('sNome').value.trim(), texto, imagem }, { cfg: st.cfg, atendente });
-        fecharModal(); if (!st.sel) abrir(tel); toast('Mensagem recebida (teste)', true); }
+        fecharModal(); if (!st.sel) abrir(tel, { fixo: true }); toast('Mensagem recebida (teste)' + (atendente ? ' · distribuída para você' : ''), true); }
       catch (err) { toast('Erro: ' + err.message); }
     };
   });
