@@ -44,9 +44,9 @@ root.innerHTML = `
 <div class="orc">
   <aside class="left">
     <section class="card"><div class="card-h"><h2>1 · Convênio e paciente</h2></div><div class="card-b" style="display:flex;flex-direction:column;gap:10px">
-      <label class="f">Convênio *<select class="in" id="conv">${convs.map(c => `<option value="${c.slug}" ${c.slug === 'particular' ? 'selected' : ''}>${escapeHtml(c.nome)}${norm(c.nome) === 'PARTICULAR' ? ' — preferencial' : ''}${ehPerfil(c) ? ' ★' : ''}</option>`).join('')}</select></label>
+      <label class="f">Convênio *<select class="in" id="conv">${convs.map(c => `<option value="${c.slug}" ${c.slug === 'particular' ? 'selected' : ''}>${escapeHtml(D.nomeConv(c))}${norm(c.nome) === 'PARTICULAR' ? ' — preferencial' : ''}${ehPerfil(c) ? ' ★' : ''}</option>`).join('')}</select></label>
       <label class="chk" style="display:flex;gap:8px;align-items:center;font-weight:700;cursor:pointer"><input type="checkbox" id="duplo"> Orçamento com dois convênios</label>
-      <label class="f" id="conv2Wrap" hidden>Convênio 2 — para o que o 1º não cobre<select class="in" id="conv2">${convs.map(c => `<option value="${c.slug}" ${norm(c.nome) === 'TABELA SOCIAL' ? 'selected' : ''}>${escapeHtml(c.nome)}${ehPerfil(c) ? ' ★' : ''}</option>`).join('')}</select><small hidden class="note" style="text-transform:none;letter-spacing:0;font-weight:600;margin-top:4px">Os exames que já estavam ficam no 1º; os próximos entram em: <label style="display:inline-flex;gap:4px;align-items:center;margin:0 6px 0 2px;cursor:pointer"><input type="radio" name="lancarEm" value="1"> 1º</label><label style="display:inline-flex;gap:4px;align-items:center;cursor:pointer"><input type="radio" name="lancarEm" value="2" checked> 2º</label>. Sem valor numa tabela, cai para a outra. Perfil (★) entra completo e sobressai. Para trocar um exame de tabela, clique no botão da coluna “Tabela”.</small></label>
+      <label class="f" id="conv2Wrap" hidden>Convênio 2 — para o que o 1º não cobre<select class="in" id="conv2">${convs.map(c => `<option value="${c.slug}" ${norm(c.nome) === 'TABELA SOCIAL' ? 'selected' : ''}>${escapeHtml(D.nomeConv(c))}${ehPerfil(c) ? ' ★' : ''}</option>`).join('')}</select><small hidden class="note" style="text-transform:none;letter-spacing:0;font-weight:600;margin-top:4px">Os exames que já estavam ficam no 1º; os próximos entram em: <label style="display:inline-flex;gap:4px;align-items:center;margin:0 6px 0 2px;cursor:pointer"><input type="radio" name="lancarEm" value="1"> 1º</label><label style="display:inline-flex;gap:4px;align-items:center;cursor:pointer"><input type="radio" name="lancarEm" value="2" checked> 2º</label>. Sem valor numa tabela, cai para a outra. Perfil (★) entra completo e sobressai. Para trocar um exame de tabela, clique no botão da coluna “Tabela”.</small></label>
       <label class="f">Paciente *<input class="in" id="pac" placeholder="Nome do interessado (obrigatório)" autocomplete="off" required></label>
       <label class="f">Celular / WhatsApp *<input class="in" id="tel" placeholder="(67) 9 9999-9999 (obrigatório)" inputmode="tel" required></label>
     </div></section>
@@ -85,9 +85,9 @@ root.innerHTML = `
 </div>`;
 
 D.contar('apelidos').then(n => $('memN').textContent = n.toLocaleString('pt-BR')).catch(() => $('memN').textContent = '—');
-st.convSlug = $('conv').value; st.convenio = convs.find(c => c.slug === st.convSlug)?.nome;
+st.convSlug = $('conv').value; st.convenio = D.nomeConv(convs.find(c => c.slug === st.convSlug));
 $('conv').addEventListener('change', async () => {
-  const antes = st.convSlug; st.convSlug = $('conv').value; const c = convs.find(x => x.slug === st.convSlug); st.convenio = c?.nome;
+  const antes = st.convSlug; st.convSlug = $('conv').value; const c = convs.find(x => x.slug === st.convSlug); st.convenio = D.nomeConv(c);
   limparPerfil(antes);
   if (ehPerfil(c)) { await carregarPerfil(c, 1); return; }
   await reprecificar(); render(); toast('Valores recalculados pela tabela ' + st.convenio);
@@ -95,14 +95,14 @@ $('conv').addEventListener('change', async () => {
 $('duplo').addEventListener('change', async () => {
   st.duplo = $('duplo').checked; $('conv2Wrap').hidden = !st.duplo;
   if (st.duplo) {
-    st.convSlug2 = $('conv2').value; st.convenio2 = convs.find(c => c.slug === st.convSlug2)?.nome; if (st.convSlug2 === st.convSlug) { toast('Escolha um 2º convênio diferente do 1º.'); }
+    st.convSlug2 = $('conv2').value; st.convenio2 = D.nomeConv(convs.find(c => c.slug === st.convSlug2)); if (st.convSlug2 === st.convSlug) { toast('Escolha um 2º convênio diferente do 1º.'); }
     st.lancarEm = 2; syncLancarEm(); // daqui em diante o que entrar vai para o 2º
     const c2 = convs.find(c => c.slug === st.convSlug2); if (ehPerfil(c2)) { await carregarPerfil(c2, 2); return; }
   } else { const antes2 = st.convSlug2; st.convSlug2 = null; limparPerfil(antes2); st.lancarEm = 1; for (const it of st.itens) { it.tab = 1; it.tabFixo = false; it.tabLanc = 1; } }
   await reprecificar(); render(); toast(st.duplo ? `Dois convênios: ${st.convenio} + ${st.convenio2} — os próximos exames entram em ${st.convenio2}` : 'Voltou para um convênio só', true);
 });
 $('conv2').addEventListener('change', async () => {
-  const antes = st.convSlug2; st.convSlug2 = $('conv2').value; st.convenio2 = convs.find(c => c.slug === st.convSlug2)?.nome;
+  const antes = st.convSlug2; st.convSlug2 = $('conv2').value; st.convenio2 = D.nomeConv(convs.find(c => c.slug === st.convSlug2));
   limparPerfil(antes); for (const it of st.itens) if (!it.tabFixo) it.tab = it.tabLanc === 2 ? 2 : 1;
   const c2 = convs.find(c => c.slug === st.convSlug2); if (ehPerfil(c2)) { await carregarPerfil(c2, 2); return; }
   await reprecificar(); render(); toast('2º convênio: ' + st.convenio2);
@@ -146,7 +146,7 @@ function perfisIncompletos() {
   const out = [];
   for (const [slug, mns] of Object.entries(st.perfis)) {
     if (slug !== st.convSlug && !(st.duplo && slug === st.convSlug2)) continue;
-    const faltam = mns.filter(m => !jaTem(m)); if (faltam.length) out.push({ slug, nome: convs.find(c => c.slug === slug)?.nome || slug, faltam });
+    const faltam = mns.filter(m => !jaTem(m)); if (faltam.length) out.push({ slug, nome: D.nomeConv(convs.find(c => c.slug === slug)) || slug, faltam });
   }
   return out;
 }
@@ -534,8 +534,8 @@ function montarDados(status) {
   const itens = st.itens.map(i => ({ mnemonico: i.ex?.mnemonico || null, nome: i.ex?.nome || i.normalizado || i.lido, setor: i.ex?.setor || null, valor: i.valor ?? null, prazoDias: i.prazoDias ?? null, lido: i.lido || null, status: i.status, solicitacaoId: i.solId || null, iaMn: i.iaMn ?? null, resultado: resultadoLeitura(i), tabela: slugDe(i) || null, tabelaNome: nomeDe(i) || null, qtd: Number(i.qtd) || 1, valorTotal: i.valor != null ? vTot(i) : null, grupo: i.grupo || null, valorTabela: i.valorTabela ?? i.valor ?? null, repassePct: i.repassePct ?? 100, tabLanc: i.tabLanc || 1, viaPerfil: i.viaPerfil || null }));
   const pend = st.itens.some(i => i.status !== 'ok');
   const repassePct = st.itens.find(i => i.tab !== 2 && i.valor != null)?.repassePct ?? 100, repassePct2 = st.itens.find(i => i.tab === 2 && i.valor != null)?.repassePct ?? 100;
-  return { status: status || (pend ? 'aguardando_conferencia' : 'gravado'), unidade: perfil.unidade, atendenteNome: perfil.nome, convenio: st.convSlug, convenioNome: st.convenio, renal: st.renal,
-    duplo: !!st.duplo, convenio2: st.duplo ? st.convSlug2 : null, convenio2Nome: st.duplo ? st.convenio2 : null, repassePct, repassePct2: st.duplo ? repassePct2 : null,
+  return { status: status || (pend ? 'aguardando_conferencia' : 'gravado'), unidade: perfil.unidade, atendenteNome: perfil.nome, convenio: st.convSlug, convenioNome: st.convenio, convenioOficial: convs.find(c => c.slug === st.convSlug)?.nome || null, renal: st.renal,
+    duplo: !!st.duplo, convenio2: st.duplo ? st.convSlug2 : null, convenio2Nome: st.duplo ? st.convenio2 : null, convenio2Oficial: st.duplo ? convs.find(c => c.slug === st.convSlug2)?.nome || null : null, repassePct, repassePct2: st.duplo ? repassePct2 : null,
     totalConv1: st.itens.filter(i => i.tab !== 2).reduce((a, i) => a + vTot(i), 0), totalConv2: st.itens.filter(i => i.tab === 2).reduce((a, i) => a + vTot(i), 0),
     paciente: $('pac').value.trim() || null, pacienteBusca: norm($('pac').value), telefone: $('tel').value.trim() || null, telefoneDigitos: soDigitos($('tel').value),
     itens, total: st.itens.reduce((a, i) => a + vTot(i), 0), qtd: itens.length, mnemonicos: itens.map(i => i.mnemonico).filter(Boolean),
