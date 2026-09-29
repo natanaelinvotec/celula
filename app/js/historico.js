@@ -1,5 +1,5 @@
 // historico.js — lista/filtros de orçamentos (usada pela atendente e pelo painel).
-import { brl, fmtData, toast, escapeHtml, norm, iniciais } from './firebase.js';
+import { brl, fmtData, toast, escapeHtml, norm, iniciais, primeiroNome } from './firebase.js';
 import * as D from './dados.js';
 import { gerarPdf, numOrc, ICO, copiar, rotuloQtd } from './ui.js';
 
@@ -26,7 +26,7 @@ export async function montarLembretes(el, { perfil, cfg = {} }) {
     if (!lista.length) { el.innerHTML = ''; return; }
     const paginas = Math.ceil(lista.length / POR); pag = Math.min(pag, paginas - 1);
     el.querySelector('#lemCnt').textContent = cnt();
-    el.querySelector('#lemLista').innerHTML = lista.slice(pag * POR, pag * POR + POR).map(o => `<div class="lem-it" data-id="${o.id}"><div><b>#${numOrc(o.numero)} · ${escapeHtml(o.paciente)}</b><small>${idade(o)} dias · ${escapeHtml(o.telefone || '')} · ${escapeHtml(o.convenioNome || o.convenio || '')} · ${brl(o.total)} · atendente ${escapeHtml((o.atendenteNome || '').split(' ')[0])}${o.lembretes ? ` · ${o.lembretes}º lembrete já enviado` : ''}</small></div>
+    el.querySelector('#lemLista').innerHTML = lista.slice(pag * POR, pag * POR + POR).map(o => `<div class="lem-it" data-id="${o.id}"><div><b>#${numOrc(o.numero)} · ${escapeHtml(o.paciente)}</b><small>${idade(o)} dias · ${escapeHtml(o.telefone || '')} · ${escapeHtml(o.convenioNome || o.convenio || '')} · ${brl(o.total)} · atendente ${escapeHtml(primeiroNome(o.atendenteNome))}${o.lembretes ? ` · ${o.lembretes}º lembrete já enviado` : ''}</small></div>
       <a class="btn ok sm" target="_blank" rel="noopener" href="${D.linkWhatsApp(o.telefoneDigitos || o.telefone, D.mensagemLembrete(o, { atendente: perfil.nome, validadeDias }))}">${ICO.zap || ''} WhatsApp</a>
       <button class="btn ghost sm" data-lem="${o.id}">✓ Enviado</button></div>`).join('');
     el.querySelector('#lemLista').scrollTop = 0;
