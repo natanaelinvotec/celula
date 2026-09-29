@@ -5,6 +5,7 @@ import * as D from './dados.js';
 import * as W from './wa.js';
 import { numOrc, UNIDADES, CENTRAL, PERFIS_PADRAO, maiorJejum, modal, fecharModal, telaCheia, rotuloQtd } from './ui.js';
 
+const tipoArq = (mime = '') => mime.includes('pdf') ? { ic: '📄', rt: 'PDF' } : mime.startsWith('audio/') ? { ic: '🎤', rt: 'Áudio' } : mime.startsWith('video/') ? { ic: '🎬', rt: 'Vídeo' } : mime.startsWith('image/') ? { ic: '🖼️', rt: 'Imagem' } : { ic: '📎', rt: 'Arquivo' };
 const MOTIVOS = ['Orçamento enviado — aguardando paciente', 'Agendou / vai coletar', 'Achou caro', 'Convênio não cobre', 'Só dúvida / informação', 'Resultado de exames', 'Engano / spam'];
 const CORES = ['#7c4dbf', '#2563eb', '#1f9e9c', '#b8730f', '#d31a21', '#563085', '#0f766e', '#9d174d'];
 const corDe = s => CORES[[...String(s)].reduce((a, c) => a + c.charCodeAt(0), 0) % CORES.length];
@@ -96,7 +97,7 @@ export async function montarAtendimento(el, { perfil }) {
       if (m.direcao === 'nota') return sep + `<div class="at-m nota">📝 <b>Nota interna</b> · ${escapeHtml(primeiroNome(m.autorNome))}<br>${fmtTxt(m.texto)}<div class="t">${hora(m.em)}</div></div>`;
       const cls = m.direcao === 'entrada' ? '' : m.autor === 'bot' ? 'bot' : 'out';
       const quem = m.direcao === 'entrada' ? 'Paciente' : m.autor === 'bot' ? '🤖 Assistente Célula' : escapeHtml(primeiroNome(m.autorNome));
-      const img = m.imagem || m.midiaUrl; const arq = m.arquivo ? `<button class="at-doc" data-doc="${m.id}" title="Abrir o PDF">📄 <b>${escapeHtml(m.arquivo.nome || 'arquivo')}</b><small>PDF · clique para abrir</small></button>` : '';
+      const img = m.imagem || m.midiaUrl; const arq = m.arquivo ? `<button class="at-doc" data-doc="${m.id}" title="Abrir o anexo">${tipoArq(m.arquivo.mime).ic} <b>${escapeHtml(m.arquivo.nome || 'arquivo')}</b><small>${tipoArq(m.arquivo.mime).rt}${m.arquivo.tamanho ? ' · ' + Math.round(m.arquivo.tamanho / 1024) + ' KB' : ''} · clique para abrir</small></button>` : '';
       const tick = m.direcao === 'saida' ? (m.status === 'erro' ? ' ⚠ não enviada' : m.status === 'simulado' ? ' · teste' : m.status === 'read' ? ' ✓✓' : m.status === 'delivered' ? ' ✓✓' : m.status === 'sent' ? ' ✓' : ' …') : '';
       return sep + `<div class="at-m ${cls}"><div class="who">${quem}</div>${img ? `<img class="at-img" src="${img}" data-zoom alt="imagem enviada">` : ''}${arq}${m.texto ? `<div>${fmtTxt(m.texto)}</div>` : ''}
         ${img && m.direcao === 'entrada' ? `<div class="at-ia"><button class="btn blue sm" data-ler="${m.id}">✨ Ler pedido com IA</button></div>` : ''}<div class="t">${hora(m.em)}${tick}</div></div>`;
@@ -169,7 +170,10 @@ export async function montarAtendimento(el, { perfil }) {
       const m = st.msgs.find(x => x.id === ler.dataset.ler); try { localStorage.setItem('waPedido', JSON.stringify({ tel: st.sel, nome: st.conv?.nome || '', fotos: [m.imagem || m.midiaUrl] })); } catch { toast('Imagem grande demais para passar ao orçamento.'); return; }
       abrirEditor(urlNovoOrc(m.id) + '&embed=1'); return;
     }
-    const dc = e.target.closest('[data-doc]'); if (dc) { const m = st.msgs.find(x => x.id === dc.dataset.doc); if (m?.arquivo?.dataUrl) { const b64 = m.arquivo.dataUrl.split(',')[1]; const bin = Uint8Array.from(atob(b64), ch => ch.charCodeAt(0)); window.open(URL.createObjectURL(new Blob([bin], { type: m.arquivo.mime || 'application/pdf' })), '_blank'); } return; }
+    const dc = e.target.closest('[data-doc]'); if (dc) { const m = st.msgs.find(x => x.id === dc.dataset.doc); const aba = window.open('', '_blank');
+      try { let blob; if (m?.arquivo?.dataUrl) { const b64 = m.arquivo.dataUrl.split(',')[1]; blob = new Blob([Uint8Array.from(atob(b64), ch => ch.charCodeAt(0))], { type: m.arquivo.mime || 'application/pdf' }); }
+        else if (m?.midiaKey) { dc.disabled = true; blob = await W.baixarMidia(m.midiaKey, st.cfg); }
+        if (blob) aba.location = URL.createObjectURL(blob); else aba.close(); } catch (er) { aba.close(); toast('Não foi possível abrir o anexo: ' + er.message); } finally { dc.disabled = false; } return; }
     const b = e.target.closest('[data-ac]'); if (!b) { if (e.target.id === 'bEnv') enviarTxt(); return; }
     const tel = st.sel; const ac = b.dataset.ac;
     try {
@@ -201,10 +205,24 @@ export async function montarAtendimento(el, { perfil }) {
     document.getElementById('modalBg').addEventListener('click', async ev => { const p = ev.target.closest('[data-para]'); if (!p) return; const u = us.find(x => x.id === p.dataset.para); try { await W.transferir(st.sel, u, perfil); fecharModal(); toast(`Transferida para ${u.nome}`, true); } catch (err) { toast('Erro: ' + err.message); } });
   }
   function encerrarModal() {
-    modal(`<div class="modal-b"><h2 style="margin:0 0 4px">Encerrar atendimento</h2><p class="note" style="margin:0 0 10px">O motivo alimenta o CRM (por que converteu ou não).</p>${MOTIVOS.map((m, i) => `<label class="at-mot"><input type="radio" name="mot" value="${escapeHtml(m)}" ${i === 0 && st.orc ? 'checked' : ''}> ${escapeHtml(m)}</label>`).join('')}
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn ghost sm" id="mCanc">Cancelar</button><button class="btn blue sm" id="mOk">Encerrar</button></div></div>`, { largura: 440 });
+    const c = st.conv, o = st.orc, podeNps = !!restante(c);
+    const orcAberto = o && !['convertido', 'perdido'].includes(o.status);
+    modal(`<div class="modal-b"><h2 style="margin:0 0 4px">Encerrar atendimento</h2><p class="note" style="margin:0 0 10px">O motivo alimenta o CRM (por que converteu ou não).</p>${MOTIVOS.map((m, i) => `<label class="at-mot"><input type="radio" name="mot" value="${escapeHtml(m)}" ${i === 0 && o ? 'checked' : ''}> ${escapeHtml(m)}</label>`).join('')}
+      ${orcAberto ? `<label class="at-mot" id="mPerdL" hidden style="border-style:dashed"><input type="checkbox" id="mPerd" checked> Marcar o orçamento #${numOrc(o.numero)} como <b>perdido</b> no CRM</label>` : ''}
+      ${podeNps ? '<label class="at-mot" style="border-style:dashed"><input type="checkbox" id="mNps" checked> Enviar pesquisa de satisfação (nota de 0 a 10)</label>' : ''}
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn ghost sm" id="mCanc">Cancelar</button><button class="btn blue sm" id="mOk">Encerrar</button></div></div>`, { largura: 460 });
+    const perdas = ['Achou caro', 'Convênio não cobre'];
+    const sync = () => { const l = document.getElementById('mPerdL'); if (l) l.hidden = !perdas.includes(document.querySelector('[name=mot]:checked')?.value); };
+    document.querySelectorAll('[name=mot]').forEach(r => r.onchange = sync); sync();
     document.getElementById('mCanc').onclick = fecharModal;
-    document.getElementById('mOk').onclick = async () => { const v = document.querySelector('[name=mot]:checked')?.value; if (!v) { toast('Escolha o motivo.'); return; } try { await W.encerrar(st.sel, v, perfil); fecharModal(); toast('Atendimento encerrado', true); } catch (err) { toast('Erro: ' + err.message); } };
+    document.getElementById('mOk').onclick = async ev => { const v = document.querySelector('[name=mot]:checked')?.value; if (!v) { toast('Escolha o motivo.'); return; }
+      const nps = document.getElementById('mNps')?.checked && !['Engano / spam'].includes(v); ev.target.disabled = true;
+      try {
+        if (nps) await W.enviar(st.sel, W.NPS_TEXTO, perfil, st.cfg);
+        await W.encerrar(st.sel, v, perfil, { nps });
+        if (orcAberto && perdas.includes(v) && document.getElementById('mPerd')?.checked) await W.marcarPerdido(o.id, v);
+        fecharModal(); toast('Atendimento encerrado' + (nps ? ' · pesquisa enviada' : ''), true);
+      } catch (err) { ev.target.disabled = false; toast('Erro: ' + err.message); } };
   }
 
   // ---------- editor de orçamento na coluna do paciente (orcamento.html em modo compacto) ----------
