@@ -28,6 +28,8 @@ export const brl = v => (v == null ? '—' : Number(v).toLocaleString('pt-BR', {
 export const fmtData = ts => { const d = ts?.toDate ? ts.toDate() : ts ? new Date(ts) : null; return d ? d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'; };
 export const fmtDia = ts => { const d = ts?.toDate ? ts.toDate() : ts ? new Date(ts) : null; return d ? d.toLocaleDateString('pt-BR') : '—'; };
 export const soDigitos = s => (s || '').replace(/\D/g, '');
+/** Primeiro nome para exibir; mantém o título junto ("Dra. Flávia Souza" → "Dra. Flávia", "Dr. João" → "Dr. João"). */
+export const primeiroNome = n => { const p = String(n || '').trim().split(/\s+/); return p.length > 1 && /^(dra?|sra?|srta|prof[aª]?|enf[aª]?)\.?$/i.test(p[0]) ? p[0] + ' ' + p[1] : p[0] || ''; };
 export const iniciais = n => (n || '?').trim().split(/\s+/).slice(0, 2).map(p => p[0]).join('').toUpperCase();
 export const SETORES = {
   'Próprio': { cor: 'var(--pro)', label: 'Realizado na Célula' }, 'Análises Clínicas': { cor: 'var(--ac)', label: 'DB · Análises Clínicas' },
