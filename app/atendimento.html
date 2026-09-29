@@ -60,7 +60,12 @@
 .at-flag{background:var(--warn-50);color:var(--warn);border-radius:10px;padding:7px 10px;font-size:.78rem;font-weight:700;margin-top:8px}
 .hist div{display:flex;justify-content:space-between;gap:6px;font-size:.8rem;padding:5px 0;border-bottom:1px solid var(--line)}
 .at-mot{display:flex;gap:8px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:10px;margin-top:6px;font-weight:700;font-size:.86rem;cursor:pointer}
-@media (max-width:1280px){.at{grid-template-columns:280px 1fr}.at-ctx{display:none}}
+.at.editando{grid-template-columns:270px 1fr minmax(560px,46%)}
+.at.editando .at-ctx{padding:0;gap:0;display:flex;flex-direction:column}
+.at-ed-h{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}.at-ed-h .sp{flex:1}
+.at-ed{flex:1;width:100%;border:0;background:var(--bg)}
+.at-doc{display:flex;flex-direction:column;align-items:flex-start;gap:1px;border:1px solid var(--blue-100);background:var(--surface);border-radius:10px;padding:8px 12px;margin:2px 0 4px;cursor:pointer;text-align:left}.at-doc small{color:var(--muted);font-size:.72rem}
+@media (max-width:1280px){.at{grid-template-columns:280px 1fr}.at-ctx{display:none}.at.editando{grid-template-columns:1fr minmax(520px,55%)}.at.editando .at-list{display:none}.at.editando .at-ctx{display:flex}}
 @media (max-width:900px){.main{height:auto}.at{grid-template-columns:1fr;height:80vh}.at-list{max-height:40vh}}
 </style>
 </head>
