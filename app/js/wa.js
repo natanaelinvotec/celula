@@ -45,10 +45,14 @@ export async function devolverFila(tel, perfil) {
   await updateDoc(conv(tel), { status: 'fila', atendenteUid: null, atendenteNome: null, atualizadoEm: serverTimestamp() });
   await sistema(tel, `${perfil.nome} devolveu para a fila`);
 }
-export async function encerrar(tel, motivo, perfil) {
-  await updateDoc(conv(tel), { status: 'encerrada', motivo, encerradaEm: serverTimestamp(), encerradaPor: perfil.nome, naoLidas: 0, atualizadoEm: serverTimestamp() });
-  await sistema(tel, `Encerrada por ${perfil.nome} — ${motivo}`);
+export const NPS_TEXTO = 'Sua opinião é muito importante para nós! 💙\nDe *0 a 10*, que nota você dá para o nosso atendimento de hoje? (responda só com o número)';
+/** Encerra. Com { nps: true } a pesquisa já foi enviada: a próxima resposta numérica vira a nota (não reabre a conversa). */
+export async function encerrar(tel, motivo, perfil, { nps = false } = {}) {
+  await updateDoc(conv(tel), { status: 'encerrada', motivo, encerradaEm: serverTimestamp(), encerradaPor: perfil.nome, naoLidas: 0, npsPendente: !!nps, atualizadoEm: serverTimestamp() });
+  await sistema(tel, `Encerrada por ${perfil.nome} — ${motivo}${nps ? ' · pesquisa de satisfação enviada' : ''}`);
 }
+/** Motivo de perda vindo do atendimento → orçamento vinculado fica "perdido" no CRM, com o porquê. */
+export const marcarPerdido = (orcId, motivo) => updateDoc(doc(db, 'orcamentos', orcId), { status: 'perdido', motivoPerda: motivo, perdidoVia: 'whatsapp', atualizadoEm: serverTimestamp() });
 export const marcarLida = tel => updateDoc(conv(tel), { naoLidas: 0 }).catch(() => {});
 export const vincularOrcamento = (tel, id, numero) => updateDoc(conv(tel), { orcamentoId: id, orcamentoNumero: numero || null, atualizadoEm: serverTimestamp() });
 
@@ -81,18 +85,34 @@ export async function enviar(tel, texto, perfil, cfg, extra = null) {
   return ref.id;
 }
 
+/** Anexo grande guardado no R2 pelo servidor: baixa com o token da atendente (o link sozinho não abre). */
+export async function baixarMidia(key, cfg) {
+  if (!cfg?.wa?.endpoint) throw new Error('servidor do WhatsApp não configurado');
+  const r = await fetch(cfg.wa.endpoint.replace(/\/$/, '') + '/midia/' + encodeURIComponent(key), { headers: { authorization: 'Bearer ' + await auth.currentUser.getIdToken() } });
+  if (!r.ok) throw new Error(await r.text() || r.status);
+  return r.blob();
+}
+
 /** SIMULADOR (admin): grava uma mensagem de entrada no mesmo formato que o servidor gravará. */
 export async function simularEntrada({ tel, nome, texto, imagem }) {
   tel = telWa(tel); if (tel.length < 12) throw new Error('telefone inválido');
-  let nova = false;
+  let nova = false, npsNota = null, bv = false;
   await runTransaction(db, async tx => {
     const r = await tx.get(conv(tel)); const c = r.exists() ? r.data() : null;
+    const n = !imagem && c?.status === 'encerrada' && c.npsPendente && /^\s*(10|\d)\s*$/.exec(texto || '');
+    if (n) { npsNota = Number(n[1]); tx.update(conv(tel), { nps: npsNota, npsPendente: false, npsEm: serverTimestamp(), npsAtendenteUid: c.atendenteUid || null, npsAtendenteNome: c.atendenteNome || c.encerradaPor || null, ultimaMsg: `⭐ Nota ${npsNota} na pesquisa`, ultimaEm: serverTimestamp(), ultimaDirecao: 'entrada', janelaAte: new Date(Date.now() + JANELA_MS), atualizadoEm: serverTimestamp(), ...(npsNota <= 6 ? { status: 'fila', atendenteUid: null, atendenteNome: null, naoLidas: 1, motivo: null } : {}) }); return; }
+    bv = !c || !(c.status === 'encerrada' && Date.now() - ms(c.encerradaEm) < 6 * 3600e3);
     const base = { telefone: tel, ultimaMsg: texto || '📷 Foto', ultimaEm: serverTimestamp(), ultimaDirecao: 'entrada', janelaAte: new Date(Date.now() + JANELA_MS), atualizadoEm: serverTimestamp() };
     if (!c || c.status === 'encerrada') { nova = true; tx.set(conv(tel), { ...base, nome: nome || c?.nome || '', status: 'fila', atendenteUid: null, atendenteNome: null, naoLidas: 1, criadoEm: serverTimestamp(), primeiraEntradaEm: serverTimestamp(), primeiraRespostaEm: null, orcamentoId: c?.orcamentoId || null, orcamentoNumero: c?.orcamentoNumero || null, motivo: null, simulado: true }); }
     else tx.update(conv(tel), { ...base, ...(nome ? { nome } : {}), naoLidas: increment(1), status: c.status === 'aguardando' ? 'aberta' : c.status });
   });
   await addDoc(msgs(tel), { direcao: 'entrada', tipo: imagem ? 'image' : 'text', texto: texto || '', imagem: imagem || null, em: serverTimestamp(), simulado: true });
-  if (nova) await addDoc(msgs(tel), { direcao: 'saida', autor: 'bot', tipo: 'text', texto: 'Olá, seja bem-vindo(a) ao Laboratório Célula! 😊\nPara agilizar, me envie a *foto do pedido médico* e diga se é *particular* ou qual o *convênio*. Uma atendente já vai te responder.', status: 'simulado', em: serverTimestamp() });
+  if (npsNota !== null) {
+    if (npsNota <= 6) await sistema(tel, `⚠ Nota ${npsNota} na pesquisa de satisfação. Retorne ao paciente.`);
+    await addDoc(msgs(tel), { direcao: 'saida', autor: 'bot', tipo: 'text', texto: npsNota >= 9 ? 'Muito obrigado pela avaliação! 💙 Estamos sempre à disposição.' : 'Obrigado pela avaliação! Vamos usar sua opinião para melhorar. 💙', status: 'simulado', em: serverTimestamp() });
+    return tel;
+  }
+  if (nova && bv) await addDoc(msgs(tel), { direcao: 'saida', autor: 'bot', tipo: 'text', texto: 'Olá, seja bem-vindo(a) ao Laboratório Célula! 😊\nPara agilizar, me envie a *foto do pedido médico* e diga se é *particular* ou qual o *convênio*. Uma atendente já vai te responder.', status: 'simulado', em: serverTimestamp() });
   return tel;
 }
 
