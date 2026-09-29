@@ -58,24 +58,38 @@ export async function montarAtendimento(el, { perfil }) {
     if (q) l = [...st.convs, ...st.enc].filter(c => (c.nome || '').toLowerCase().includes(q) || (qd && (c.id.includes(qd) || String(c.orcamentoNumero || '').includes(qd.replace(/^0+/, '')))));
     return l;
   }
-  function lista() {
+  /** Solta a conversa aberta: volta a tela para o estado inicial (chat e painel do paciente vazios). */
+  function fechar() {
+    fecharEditor(true); offC?.(); offM?.(); offO?.(); offC = offM = offO = null;
+    st.sel = null; st.conv = null; st.msgs = []; st.orc = null; st.hist = []; st.notaModo = false;
+    $('chat').innerHTML = '<div class="at-vazio">💬<br>Escolha uma conversa à esquerda.</div>'; $('ctx').innerHTML = '';
+  }
+  function lista({ manual = false } = {}) {
     const cont = { fila: st.convs.filter(c => c.status === 'fila').length, meus: st.convs.filter(c => c.atendenteUid === perfil.uid && c.status === 'aberta').length, aguardando: st.convs.filter(c => c.status === 'aguardando' && (admin || c.atendenteUid === perfil.uid)).length };
+    let l = filtradas();
+    // A conversa aberta saiu da aba: se ainda é minha/visível (ex.: assumi da fila), a aba acompanha;
+    // se encerrou ou foi para outra atendente, a tela limpa. Com busca digitada ou editor aberto, não mexe.
+    if (st.sel && !st.busca.trim() && !st.editando && !l.some(c => c.id === st.sel)) {
+      const c = st.convs.find(x => x.id === st.sel) || (st.conv?.id === st.sel ? st.conv : null), mine = c && c.atendenteUid === perfil.uid;
+      const destino = !c ? null : c.status === 'fila' ? 'fila' : c.status === 'aberta' && mine ? 'meus' : c.status === 'aguardando' && (mine || admin) ? 'aguardando' : null;
+      if (manual || (c && !destino)) fechar(); // trocou de aba na mão, encerrou ou foi para outra atendente
+      else if (destino) { st.aba = destino; l = filtradas(); } // ainda ativa: a aba acompanha (c ausente = ainda carregando)
+    }
     $('tabs').innerHTML = ABAS.map(([k, n]) => `<button class="at-tab ${st.aba === k ? 'on' : ''}" data-aba="${k}">${n}${cont[k] != null ? ` <em>${cont[k]}</em>` : ''}</button>`).join('');
-    const l = filtradas();
     $('lista').innerHTML = l.map(c => { const j = c.status !== 'encerrada' ? restante(c) : null; return `<div class="at-cv ${st.sel === c.id ? 'on' : ''}" data-tel="${c.id}">
       <span class="av" style="background:${corDe(c.id)}">${escapeHtml(iniciais(c.nome || '?'))}</span>
       <div style="min-width:0"><div class="nm">${escapeHtml(c.nome || W.fmtTelWa(c.id))}</div><div class="pv">${c.ultimaDirecao === 'saida' ? 'Você: ' : ''}${escapeHtml(c.ultimaMsg || '')}</div>
         <div class="chips">${j ? `<span class="ch jan">⏱ ${j}</span>` : c.status !== 'encerrada' ? '<span class="ch fech">janela fechada</span>' : ''}${c.orcamentoNumero ? `<span class="ch orc">#${numOrc(c.orcamentoNumero)}</span>` : ''}${c.status === 'fila' ? '<span class="ch">na fila</span>' : ''}${c.atendenteNome && st.aba !== 'meus' && c.status !== 'fila' ? `<span class="ch">${escapeHtml(primeiroNome(c.atendenteNome))}</span>` : ''}${c.status === 'encerrada' && c.motivo ? `<span class="ch">${escapeHtml(c.motivo.split(' — ')[0])}</span>` : ''}${c.simulado ? '<span class="ch sim">teste</span>' : ''}</div></div>
       <div class="rt">${hora(c.ultimaEm)}${c.naoLidas ? `<span class="un">${c.naoLidas}</span>` : ''}</div></div>`; }).join('') || `<div class="at-vazio" style="padding:30px 10px">${st.aba === 'fila' ? 'Fila vazia 🎉' : 'Nada aqui.'}</div>`;
   }
-  $('tabs').addEventListener('click', e => { const b = e.target.closest('[data-aba]'); if (!b) return; st.aba = b.dataset.aba; lista(); });
+  $('tabs').addEventListener('click', e => { const b = e.target.closest('[data-aba]'); if (!b) return; st.aba = b.dataset.aba; lista({ manual: true }); });
   $('busca').addEventListener('input', e => { st.busca = e.target.value; lista(); });
   $('lista').addEventListener('click', e => { const d = e.target.closest('[data-tel]'); if (d) abrir(d.dataset.tel); });
 
   // ---------- conversa ----------
   function abrir(tel) {
     fecharEditor(true); st.sel = tel; st.msgs = []; st.orc = null; st.hist = []; st.notaModo = false; offC?.(); offM?.(); offO?.(); offO = null; lista();
-    offC = W.ouvirConversa(tel, c => { const antes = st.conv?.orcamentoId; st.conv = c; if (!c) return; cabecalho(); rodape(); contexto(); if (c.orcamentoId !== antes) ligarOrc(); if (c.naoLidas && (c.atendenteUid === perfil.uid)) W.marcarLida(tel); });
+    offC = W.ouvirConversa(tel, c => { const antes = st.conv?.orcamentoId, mudou = st.conv && c && (st.conv.status !== c.status || st.conv.atendenteUid !== c.atendenteUid); st.conv = c; if (!c) return; if (mudou) { lista(); if (st.sel !== tel) return; } cabecalho(); rodape(); contexto(); if (c.orcamentoId !== antes) ligarOrc(); if (c.naoLidas && (c.atendenteUid === perfil.uid)) W.marcarLida(tel); });
     offM = W.ouvirMensagens(tel, m => { st.msgs = m; mensagens(); });
     W.orcamentosDoTelefone(tel).then(h => { st.hist = h; contexto(); }).catch(() => {});
     $('chat').innerHTML = `<div class="at-h" id="cH"></div><div class="at-msgs" id="msgs"></div><div class="at-pop" id="pop" hidden></div><div class="at-comp" id="comp"></div>`;
