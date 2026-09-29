@@ -100,7 +100,8 @@ export function cruzar(atendimentos, orcamentos) {
       const difs = cand.map(v => Math.abs(v - tot)); const dif = Math.min(...difs); const valorRel = cand[difs.indexOf(dif)];
       const valorOk = dif <= 0.05, valorPerto = tot > 0 && dif / tot <= 0.15;
       const qtdOk = !!o.qtd && (o.qtd === at.qtdTotal || at.guias.some(g => g.qtd === o.qtd));
-      const cO = norm(o.convenioNome || o.convenio), convOk = !!cO && at.guias.some(g => { const cR = norm(g.convenio); return cR && (cR === cO || cO.includes(cR) || cR.includes(cO)); });
+      const cOs = [o.convenioOficial || o.convenioNome || o.convenio, o.convenio2Oficial || o.convenio2Nome].map(norm).filter(Boolean); // nome oficial (AutoLAC), não o nome fantasia
+      const convOk = cOs.some(cO => at.guias.some(g => { const cR = norm(g.convenio); return cR && (cR === cO || cO.includes(cR) || cR.includes(cO)); }));
       if (cmp.nivel === 1 && !(valorOk || valorPerto || qtdOk || convOk)) continue; // só o 1º nome e nada mais bate: não sugere
       const score = cmp.nivel * 1000 + (valorOk ? 300 : valorPerto ? 100 : 0) + (qtdOk ? 60 : 0) + (convOk ? 40 : 0) + (cmp.sim || 0) * 10 - Math.min(dias ?? 30, 90) * 0.1;
       pares.push({ o, at, ...cmp, dif, valorRel, valorOk, valorPerto, qtdOk, convOk, dias, score });

@@ -207,7 +207,7 @@ async function viewSol() {
     if (s.status !== 'pendente') { $('solForm').innerHTML = `<div class="note">Solicitação ${s.status}${s.mnemonico ? ' como <b>' + s.mnemonico + '</b>' : ''}${s.motivo ? ' — motivo: ' + escapeHtml(s.motivo) : ''}.</div>`; return; }
     const g = s.guiaDb; const at = s.sugestao || {}; // at = o que a atendente preencheu
     const sug = at.mnemonico || g?.mnemonico || (norm(at.nome || s.normalizadoIA || s.textoLido).split(' ').map(w => w.slice(0, 3)).join('').slice(0, 8) + '-DB');
-    const conv = s.convenio; const nomeConv = (convs.find(c => c.slug === conv) || {}).nome || conv;
+    const conv = s.convenio; const nomeConv = D.nomeConv(convs.find(c => c.slug === conv)) || conv;
     const vConv = at.valor != null ? at.valor : ''; const vPart = conv === 'particular' && at.valor != null ? at.valor : '';
     $('solForm').innerHTML = `<div class="form">
       ${s.motivo === 'fora_autolac' ? `<div class="full note" style="background:var(--crit-50);border:1px solid var(--red);border-radius:8px;padding:8px 10px;color:var(--red)"><b>Possível nova negociação:</b> o exame existe no catálogo antigo (${escapeHtml(g?.mnemonico || '')}) mas não está no AutoLAC. Ao aprovar, ele volta a ficar disponível com o valor e prazo informados.</div>` : ''}
@@ -244,7 +244,7 @@ async function viewCat() {
   const convs = await D.conveniosTodos(); const cat = await D.catalogo(true);
   root.innerHTML = `<div class="card" style="margin-bottom:14px"><div class="card-b"><div class="filters">
     <label class="f" style="grid-column:span 2">Buscar<input class="in" id="cq" placeholder="nome ou mnemônico"></label>
-    <label class="f">Convênio (valor exibido)<select class="in" id="cconv">${convs.map(c => `<option value="${c.slug}" ${c.slug === 'particular' ? 'selected' : ''}>${escapeHtml(c.nome)}</option>`).join('')}</select></label>
+    <label class="f">Convênio (valor exibido)<select class="in" id="cconv">${convs.map(c => `<option value="${c.slug}" ${c.slug === 'particular' ? 'selected' : ''}>${escapeHtml(D.nomeConv(c))}</option>`).join('')}</select></label>
     <label class="f">Setor<select class="in" id="cset"><option value="">Todos</option>${SETOR_ORDEM.map(s => `<option>${s}</option>`).join('')}</select></label>
     <label class="f">Situação<select class="in" id="csit"><option value="">Todos</option><option value="ativo">Visíveis</option><option value="oculto">Ocultos</option><option value="renal">Renal</option><option value="comvalor">Com valor no convênio</option><option value="semvalor">Sem valor no convênio</option><option value="semprazo">Sem prazo</option><option value="fora">Fora do AutoLAC (sem valor)</option><option value="autolac">Só AutoLAC</option></select></label>
   </div></div></div>
@@ -307,16 +307,36 @@ async function viewCat() {
 async function viewCnv() {
   const convs = await D.conveniosTodos(); const cat = await D.catalogo();
   const nExames = slug => cat.filter(c => c.precos?.[slug] != null).length;
-  root.innerHTML = `<div class="card"><div class="card-h"><h2>Catálogo de convênios</h2><span class="cnt">${convs.length} convênios · ${convs.filter(c => c.ativo !== false).length} visíveis</span><div class="sp"></div><span class="note">Oculto = não aparece para as atendentes (ex.: Tabela Custos); a gestão continua vendo tudo no catálogo. <b>Paciente paga (%)</b>: convênios com cobertura (ex.: IMPCG e UFMS cobrem 70% → paciente paga 30%) — a tabela fica intacta, só o valor do orçamento é reduzido.</span></div>
+  root.innerHTML = `<div class="card"><div class="card-h"><h2>Catálogo de convênios</h2><span class="cnt">${convs.length} convênios · ${convs.filter(c => c.ativo !== false).length} visíveis</span><div class="sp"></div><span class="note">Oculto = não aparece para as atendentes (ex.: Tabela Custos); a gestão continua vendo tudo no catálogo. <b>Paciente paga (%)</b>: convênios com cobertura (ex.: IMPCG e UFMS cobrem 70% → paciente paga 30%) — a tabela fica intacta, só o valor do orçamento é reduzido. <b>✎ Nome</b>: nome fantasia que aparece para as atendentes e no PDF — o código e o nome do AutoLAC continuam iguais (preços, perfis e relatório seguem funcionando).</span></div>
     <div class="card-b"><div class="filters" style="margin-bottom:10px"><label class="f" style="grid-column:span 2">Buscar<input class="in" id="vq" placeholder="nome do convênio"></label><label class="f">Situação<select class="in" id="vsit"><option value="">Todos</option><option value="on">Visíveis</option><option value="off">Ocultos</option></select></label></div>
     <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Convênio</th><th>Código</th><th>Exames com valor</th><th title="Percentual da tabela que o paciente paga. 100 = tabela inteira">Paciente paga (%)</th><th>Visível para atendentes</th></tr></thead><tbody id="vbody"></tbody></table></div></div></div>`;
   const render = () => {
     const q = norm($('vq').value), sit = $('vsit').value;
-    const rows = convs.filter(c => (!q || norm(c.nome).includes(q)) && (!sit || (sit === 'on' ? c.ativo !== false : c.ativo === false)));
-    $('vbody').innerHTML = rows.map(c => `<tr class="${c.ativo === false ? 'fora' : ''}"><td><b>${escapeHtml(c.nome)}</b>${c.ativo === false ? ' <span class="pill crit">oculto</span>' : ''}</td><td><span class="mn">${escapeHtml(c.slug || c.id)}</span></td><td>${nExames(c.slug || c.id)}</td><td><input class="in" type="number" min="1" max="100" step="1" style="width:72px;text-align:center;font-weight:800" data-rep="${c.id}" value="${repDe(c)}" title="Percentual da tabela que o paciente paga">${repDe(c) < 100 ? `<small class="note" style="display:block">convênio cobre ${100 - repDe(c)}%</small>` : ''}</td><td><label class="switch"><input type="checkbox" data-vis="${c.id}" ${c.ativo !== false ? 'checked' : ''}><i></i></label></td></tr>`).join('') || '<tr><td colspan="5" class="note">Nenhum convênio.</td></tr>';
+    const rows = convs.filter(c => (!q || norm(D.nomeConv(c)).includes(q) || norm(c.nome).includes(q)) && (!sit || (sit === 'on' ? c.ativo !== false : c.ativo === false)));
+    $('vbody').innerHTML = rows.map(c => `<tr class="${c.ativo === false ? 'fora' : ''}"><td>${editando === c.id ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><input class="in" data-nomein="${c.id}" maxlength="80" style="min-width:220px;flex:1" value="${escapeHtml(D.nomeConv(c))}" placeholder="${escapeHtml(c.nome)}"><button class="btn ok sm" data-nomesave="${c.id}">Salvar</button>${c.apelido ? `<button class="btn ghost sm" data-nomerest="${c.id}" title="Voltar ao nome do AutoLAC">Restaurar</button>` : ''}<button class="btn ghost sm" data-nomecanc="1">Cancelar</button></div>` : `<b>${escapeHtml(D.nomeConv(c))}</b> <button class="btn ghost sm" data-nomeed="${c.id}" title="Editar o nome (nome fantasia)" style="padding:2px 8px">✎</button>${c.ativo === false ? ' <span class="pill crit">oculto</span>' : ''}${c.apelido ? `<small class="note" style="display:block">AutoLAC: ${escapeHtml(c.nome)}</small>` : ''}`}</td><td><span class="mn">${escapeHtml(c.slug || c.id)}</span></td><td>${nExames(c.slug || c.id)}</td><td><input class="in" type="number" min="1" max="100" step="1" style="width:72px;text-align:center;font-weight:800" data-rep="${c.id}" value="${repDe(c)}" title="Percentual da tabela que o paciente paga">${repDe(c) < 100 ? `<small class="note" style="display:block">convênio cobre ${100 - repDe(c)}%</small>` : ''}</td><td><label class="switch"><input type="checkbox" data-vis="${c.id}" ${c.ativo !== false ? 'checked' : ''}><i></i></label></td></tr>`).join('') || '<tr><td colspan="5" class="note">Nenhum convênio.</td></tr>';
   };
   function repDe(c) { const p = Number(c.repassePct); return p > 0 && p < 100 ? p : 100; }
+  let editando = null; // id do convênio com o nome em edição
   ['vq', 'vsit'].forEach(id => $(id).addEventListener('input', render)); render();
+  // nome fantasia: grava só o campo "apelido"; o "nome" oficial (AutoLAC) e o código (slug) não mudam
+  async function salvarNome(c, valor) {
+    let v = String(valor ?? '').replace(/\s+/g, ' ').trim();
+    if (v && v.length < 2) { toast('Nome muito curto.'); return; }
+    if (!v || norm(v) === norm(c.nome)) v = null; // vazio ou igual ao oficial = volta ao nome do AutoLAC
+    if ((c.apelido || null) === v) { editando = null; render(); return; }
+    try { await D.editarConvenio(c.id, { apelido: v }); c.apelido = v; editando = null; render(); toast(v ? `Convênio renomeado para “${v}”` : `Voltou ao nome do AutoLAC: ${c.nome}`, true); } catch (err) { toast('Erro: ' + err.message); }
+  }
+  $('vbody').addEventListener('click', e => {
+    const ed = e.target.closest('[data-nomeed]'); if (ed) { editando = ed.dataset.nomeed; render(); const i = $('vbody').querySelector('[data-nomein]'); i?.focus(); i?.select(); return; }
+    if (e.target.closest('[data-nomecanc]')) { editando = null; render(); return; }
+    const sv = e.target.closest('[data-nomesave]'); if (sv) { const c = convs.find(x => x.id === sv.dataset.nomesave); salvarNome(c, $('vbody').querySelector('[data-nomein]').value); return; }
+    const rs = e.target.closest('[data-nomerest]'); if (rs) { salvarNome(convs.find(x => x.id === rs.dataset.nomerest), ''); }
+  });
+  $('vbody').addEventListener('keydown', e => {
+    const i = e.target.closest('[data-nomein]'); if (!i) return;
+    if (e.key === 'Enter') { e.preventDefault(); salvarNome(convs.find(x => x.id === i.dataset.nomein), i.value); }
+    if (e.key === 'Escape') { editando = null; render(); }
+  });
   $('vbody').addEventListener('change', async e => {
     const r = e.target.closest('[data-rep]');
     if (r) { // repasse ao paciente (%)
