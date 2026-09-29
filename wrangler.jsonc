@@ -1,0 +1,8 @@
+// Configuração explícita do site estático (mesma coisa que o Cloudflare detecta sozinho no main:
+// Worker "celulams", Framework Static, Output Directory ".").
+// Necessária para os ramos de teste, cujo comando é `wrangler versions upload` (não detecta sozinho).
+{
+  "name": "celulams",
+  "compatibility_date": "2026-09-01",
+  "assets": { "directory": "." }
+}
