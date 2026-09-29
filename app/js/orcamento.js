@@ -9,8 +9,31 @@ const { perfil } = await exigirLogin();
 const root = montarShell({ perfil, ativo: 'novo', titulo: 'Novo orçamento por IA', subtitulo: 'fotografe o pedido, confira e grave' });
 const $ = id => document.getElementById(id);
 const CONF_MIN = 0.85;
+// Modo compacto (embed=1): aberto dentro da tela de Atendimento, na coluna do paciente. Mesmo editor, sem menu/topo.
+const EMBED = new URLSearchParams(location.search).get('embed') === '1';
+const EMBED_TEL = new URLSearchParams(location.search).get('wa');
+if (EMBED) {
+  document.body.classList.add('embed');
+  document.head.insertAdjacentHTML('beforeend', `<style>
+    body.embed .side, body.embed .main > .top { display:none !important }
+    body.embed .app { display:block } body.embed #conteudo { padding:10px !important }
+    body.embed .summary { gap:6px; margin-bottom:10px } body.embed .tile { padding:6px 10px } body.embed .tile b { font-size:1.05rem }
+    body.embed .left { grid-template-columns:1fr } body.embed .left > .note { display:none }
+    body.embed .left .preview, body.embed .left .preview img { max-height:170px }
+    body.embed #btnCam, body.embed #btnUp, body.embed #drop, body.embed #btnTransf, body.embed #btnUnit, body.embed #btnZap, body.embed #btnLimpar { display:none !important }
+    html:has(body.embed), body.embed { overflow-x:hidden } body.embed #conteudo, body.embed .card, body.embed .grid, body.embed .left { min-width:0; max-width:100% }
+    body.embed .tbl { width:100% } body.embed .tbl td, body.embed .tbl th { padding:5px 4px; font-size:.72rem; overflow-wrap:anywhere } body.embed .tbl th { font-size:.58rem; letter-spacing:0; overflow-wrap:normal; white-space:nowrap }
+    body.embed .tbl td small { font-size:.62rem } body.embed .mn { font-size:.62rem; padding:2px 5px }
+    body.embed .conf { font-size:.64rem; gap:3px } body.embed .conf i { width:22px } body.embed .pz { font-size:.62rem; padding:1px 5px; white-space:normal }
+    body.embed .in.qtd { width:38px; padding:4px 2px; font-size:.75rem } body.embed .tbl .ib, body.embed .tbl button { padding:4px; min-width:0 } body.embed .card-h { padding:10px 14px } body.embed .card-b { padding:12px 14px }
+    body.embed .foot .card-b { gap:8px 10px; flex-wrap:wrap } body.embed .foot .sp { display:none }
+    body.embed #btnSalvar { flex:1 1 100%; justify-content:center; order:9 } body.embed #btnPdf { margin-left:auto }
+    body.embed .mnwrap .ib { display:none } body.embed .tbl-wrap { overflow-x:hidden }
+  </style>`);
+}
 
 // ---------- estado ----------
+let WA_TEL = new URLSearchParams(location.search).get('wa'); // veio do Atendimento (WhatsApp)
 const st = { id: null, numero: null, itens: [], fotos: [], convenio: null, convSlug: null, renal: false, manuais: {}, leitura: null, offSol: null, descartados: [], duplo: false, convSlug2: null, convenio2: null, manuais2: {}, lancarEm: 1, perfis: {} };
 // lancarEm: tabela em que os NOVOS exames entram (1 = 1º convênio; vira 2 quando a caixinha é marcada). perfis: {slug: [mnemônicos]} das tabelas PERFIL em uso.
 // dois convênios: cada item tem `tab` (1 ou 2). Sem o modo duplo, tudo é 1.
@@ -84,6 +107,7 @@ root.innerHTML = `
   </section>
 </div>`;
 
+if (EMBED) $('btnSalvar').textContent = 'Gravar e enviar PDF';
 D.contar('apelidos').then(n => $('memN').textContent = n.toLocaleString('pt-BR')).catch(() => $('memN').textContent = '—');
 st.convSlug = $('conv').value; st.convenio = D.nomeConv(convs.find(c => c.slug === st.convSlug));
 $('conv').addEventListener('change', async () => {
@@ -494,6 +518,7 @@ async function gravarAgora(status) {
   st.id = await D.gravarOrcamento(dados, st.id);
   if (!st.numero) { const d = await new Promise(r => { const off = D.ouvirOrcamento(st.id, x => { off(); r(x); }); }); st.numero = d.numero; st.preToken = d.preToken || null; $('numLbl').textContent = '#' + numOrc(st.numero); }
   if (!st.offSol) st.offSol = D.ouvirSolicitacoesDoOrcamento(st.id, onSolicitacoes);
+  if (WA_TEL && !st._waLig) { st._waLig = true; import('./wa.js').then(W => W.vincularOrcamento(WA_TEL, st.id, st.numero)).then(() => toast('Orçamento ligado à conversa do WhatsApp', true)).catch(() => { st._waLig = false; }); }
   return st.id;
 }
 async function enviarConferencia(it) {
@@ -560,7 +585,7 @@ $('btnSalvar').addEventListener('click', async () => {
   st._salvando = true; $('btnSalvar').disabled = true;
   try {
     await garantirOrcamento(st.itens.some(i => i.status === 'conferencia') ? 'aguardando_conferencia' : 'gravado'); toast(`Orçamento #${numOrc(st.numero)} gravado — gerando PDF…`, true);
-    await baixarPdf();
+    if (EMBED) await enviarAoAtendimento(); else await baixarPdf();
   } catch (e) { toast('Erro ao gravar: ' + e.message); }
   finally { st._salvando = false; $('btnSalvar').disabled = false; }
 });
@@ -571,6 +596,15 @@ async function baixarPdf() {
   catch (e) { toast('Não consegui gerar o PDF: ' + e.message); }
 }
 $('btnPdf').addEventListener('click', baixarPdf);
+/** Modo compacto: gera o PDF (sem baixar) e devolve à tela de Atendimento, que anexa na conversa. */
+async function enviarAoAtendimento() {
+  if (!st.preToken) st.preToken = await D.garantirPreToken(st.id, { preToken: st.preToken });
+  const dados = montarDados();
+  const pdf = await gerarPdf({ ...dados, id: st.id, preToken: st.preToken, numero: st.numero, unitarioLiberado: !!st.unitario }, { validadeDias: cfg.validadeDias || 7, unitario: !!st.unitario, baixar: false });
+  parent.postMessage({ tipo: 'waOrcamentoPronto', tel: EMBED_TEL, id: st.id, numero: st.numero, nome: `Orcamento-${numOrc(st.numero)}.pdf`, pdf: pdf.output('datauristring'),
+    orc: { id: st.id, numero: st.numero, total: dados.total, convenio: dados.convenio, convenioNome: dados.convenioNome, duplo: dados.duplo, convenio2Nome: dados.convenio2Nome, preToken: st.preToken, itens: dados.itens.map(i => ({ nome: i.nome, qtd: i.qtd, prazoDias: i.prazoDias, status: i.status })) } }, location.origin);
+  toast(`Orçamento #${numOrc(st.numero)} gravado — PDF enviado para a conversa`, true);
+}
 // ---------- valores unitários: pede liberação à gestão; quando aprovada, o PDF sai exame por exame ----------
 $('btnUnit').addEventListener('click', async () => {
   if (!st.itens.length) { toast('Adicione ao menos um exame.'); return; }
@@ -609,7 +643,7 @@ $('btnZap').addEventListener('click', async () => {
   const tel = soDigitos($('tel').value); window.open(`https://wa.me/${tel ? '55' + tel : ''}?text=${encodeURIComponent(txt)}`, '_blank');
   if (st.id) D.mudarStatus(st.id, 'enviado').catch(() => {});
 });
-$('btnLimpar').addEventListener('click', () => { if (st.offSol) st.offSol(); Object.assign(st, { id: null, numero: null, itens: [], fotos: [], leitura: null, offSol: null, _fotosSol: null, unitario: false, unitPedido: false, preToken: null, descartados: [], duplo: false, convSlug2: null, convenio2: null, manuais2: {}, lancarEm: 1, perfis: {} }); $('duplo').checked = false; $('conv2Wrap').hidden = true; $('btnUnit').textContent = 'Valores unitários'; $('btnUnit').classList.add('ghost'); $('btnUnit').classList.remove('blue'); history.replaceState(null, '', location.pathname); $('prevWrap').hidden = true; $('prev').innerHTML = ''; $('btnRun').disabled = true; $('btnRun').textContent = 'Analisar pedido com a IA'; $('numLbl').textContent = 'novo'; $('leituraInfo').textContent = ''; $('pac').value = ''; $('tel').value = ''; $('pac').style.borderColor = ''; $('tel').style.borderColor = ''; render(); });
+$('btnLimpar').addEventListener('click', () => { if (st.offSol) st.offSol(); Object.assign(st, { id: null, numero: null, itens: [], fotos: [], leitura: null, offSol: null, _fotosSol: null, unitario: false, unitPedido: false, preToken: null, descartados: [], duplo: false, convSlug2: null, convenio2: null, manuais2: {}, lancarEm: 1, perfis: {} }); $('duplo').checked = false; $('conv2Wrap').hidden = true; $('btnUnit').textContent = 'Valores unitários'; $('btnUnit').classList.add('ghost'); $('btnUnit').classList.remove('blue'); history.replaceState(null, '', location.pathname); WA_TEL = null; $('prevWrap').hidden = true; $('prev').innerHTML = ''; $('btnRun').disabled = true; $('btnRun').textContent = 'Analisar pedido com a IA'; $('numLbl').textContent = 'novo'; $('leituraInfo').textContent = ''; $('pac').value = ''; $('tel').value = ''; $('pac').style.borderColor = ''; $('tel').style.borderColor = ''; render(); });
 render();
 
 // ---------- abrir um orçamento existente para editar (orcamento.html?id=...) ----------
@@ -629,4 +663,19 @@ if (idEdit) (async () => {
     st.offSol = D.ouvirSolicitacoesDoOrcamento(st.id, onSolicitacoes);
     render(); $('leituraInfo').textContent = `Editando o orçamento #${numOrc(o.numero)} de ${o.atendenteNome || ''}`; toast(`Orçamento #${numOrc(o.numero)} carregado para edição`, true);
   } catch (e) { toast('Erro ao abrir: ' + e.message); }
+})();
+
+// ---------- vindo do Atendimento (WhatsApp): paciente e foto do pedido já preenchidos ----------
+if (WA_TEL && !idEdit) (async () => {
+  try {
+    const W = await import('./wa.js'); const q = new URLSearchParams(location.search);
+    $('pac').value = q.get('nome') || ''; $('tel').value = W.fmtTelWa(WA_TEL);
+    const d = JSON.parse(localStorage.getItem('waPedido') || 'null'); localStorage.removeItem('waPedido');
+    if (d?.tel === WA_TEL && d.fotos?.length) {
+      const files = await Promise.all(d.fotos.filter(Boolean).map(async (u, i) => { const b = await (await fetch(u)).blob(); return new File([b], `pedido-whatsapp-${i + 1}.jpg`, { type: b.type || 'image/jpeg' }); }));
+      await addFotos(files);
+      if (EMBED && files.length && !$('btnRun').disabled) setTimeout(() => $('btnRun').click(), 300); // compacto: já analisa (convênio pode ser trocado depois; os valores se recalculam)
+    }
+    $('leituraInfo').textContent = 'Pedido recebido pelo WhatsApp — confira o convênio e clique em Analisar. Ao gravar, o orçamento se liga à conversa.';
+  } catch (e) { toast('Não consegui trazer a foto do WhatsApp: ' + e.message); }
 })();

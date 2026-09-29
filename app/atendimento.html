@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Atendimento · Célula Diagnósticos</title>
+<link rel="icon" href="img/favicon.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap">
+<link rel="stylesheet" href="css/app.css">
+<style>
+/* Atendimento WhatsApp — estilos só desta página */
+:root{--wa:#e7f7ee;--note:#fff7d6}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--wa:#14301f;--note:#3a320f}}
+:root[data-theme="dark"]{--wa:#14301f;--note:#3a320f}
+.main{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+#conteudo{flex:1;min-height:0;display:flex;flex-direction:column;padding:0 18px 14px}
+.at-top{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 10px}
+.at-top .sp{flex:1}.kp{display:flex;gap:6px;flex-wrap:wrap}
+.kp span{background:var(--surface);border:1px solid var(--line);border-radius:99px;padding:5px 12px;font-size:.8rem;font-weight:700;color:var(--muted)}.kp b{color:var(--text)}.kp .w b{color:var(--warn)}
+.at{flex:1;min-height:0;display:grid;grid-template-columns:310px 1fr 340px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow)}
+.at-list{border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.at-tabs{display:flex;gap:4px;padding:10px 10px 6px}
+.at-tab{flex:1;border:0;background:var(--surface-2);border-radius:10px;padding:7px 2px;font-size:.76rem;font-weight:800;color:var(--muted);white-space:nowrap}.at-tab.on{background:var(--blue);color:#fff}.at-tab em{font-style:normal;opacity:.85}
+.at-srch{margin:2px 10px 8px;padding:7px 10px!important;width:auto!important;min-width:0;box-sizing:border-box;font-size:.8rem}
+.at-convs{overflow:auto;flex:1}
+.at-cv{display:grid;grid-template-columns:auto 1fr auto;gap:10px;padding:11px 12px;border-bottom:1px solid var(--line);cursor:pointer;border-left:3px solid transparent}
+.at-cv:hover{background:var(--surface-2)}.at-cv.on{background:var(--blue-50);border-left-color:var(--blue)}
+.at-cv .nm,.at-h .nm{font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.at-cv .pv{color:var(--muted);font-size:.8rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.at-cv .rt{text-align:right;font-size:.72rem;color:var(--faint);display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.at .av{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:.78rem;color:#fff;flex:none}
+.un{background:var(--ok);color:#fff;border-radius:99px;font-size:.68rem;font-weight:800;padding:0 6px}
+.chips{display:flex;gap:4px;margin-top:4px;flex-wrap:wrap}.ch{font-size:.66rem;font-weight:800;border-radius:6px;padding:1px 6px;background:var(--surface-2);color:var(--muted);border:1px solid var(--line)}
+.ch.orc{background:var(--blue-50);color:var(--blue);border-color:var(--blue-100)}.ch.jan{background:var(--warn-50);color:var(--warn);border-color:transparent}.ch.fech{background:var(--crit-50);color:var(--crit);border-color:transparent}.ch.sim{background:var(--note);color:var(--warn);border-color:transparent}
+.at-chat{display:flex;flex-direction:column;min-height:0;min-width:0;position:relative}
+.at-h{display:flex;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}.at-h small{color:var(--muted)}.at-h .sp{flex:1}
+.at-msgs{flex:1;overflow:auto;padding:14px 16px;display:flex;flex-direction:column;gap:8px;background:var(--bg)}
+.at-day{align-self:center;font-size:.72rem;font-weight:800;color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:99px;padding:2px 10px}
+.at-m{max-width:74%;padding:8px 12px;border-radius:14px;background:var(--surface);border:1px solid var(--line);overflow-wrap:anywhere}
+.at-m.out{align-self:flex-end;background:var(--blue-50);border-color:var(--blue-100)}.at-m.bot{align-self:flex-end;background:var(--wa);border-color:transparent}
+.at-m .who{font-size:.7rem;font-weight:800;color:var(--muted);margin-bottom:2px}.at-m .t{font-size:.66rem;color:var(--faint);text-align:right;margin-top:3px}
+.at-m.nota{align-self:center;max-width:82%;background:var(--note);border:1px dashed #d9b64a;font-size:.84rem}
+.at-img{max-width:260px;max-height:300px;border-radius:10px;display:block;cursor:zoom-in;margin:2px 0 4px}
+.at-ia{margin-top:6px}.at-sys{align-self:center;font-size:.76rem;color:var(--muted)}
+.at-comp{border-top:1px solid var(--line);padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.at-jan{display:flex;gap:8px;align-items:center;font-size:.76rem;font-weight:700;color:var(--muted)}.at-jan .bar{flex:1;height:6px;border-radius:9px;background:var(--surface-2);overflow:hidden}.at-jan .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--ok),#86efac)}
+.at-qr{display:flex;gap:6px;flex-wrap:wrap}.at-qr button{border:1px solid var(--line);background:var(--surface-2);border-radius:99px;padding:3px 10px;font-size:.74rem;font-weight:700;color:var(--muted)}.at-qr button.on{background:var(--note);color:var(--warn)}
+.at-row{display:flex;gap:8px;align-items:flex-end}.at-row textarea{flex:1;resize:none;min-height:44px}
+.at-ib{width:42px;height:42px;border-radius:12px;border:1px solid var(--line);display:grid;place-items:center;opacity:.5}
+.at-pop{position:absolute;bottom:120px;left:14px;right:14px;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:6px;z-index:5}
+.at-pop div{padding:7px 10px;border-radius:9px;cursor:pointer;font-size:.85rem}.at-pop div:hover{background:var(--blue-50)}.at-pop b{color:var(--blue)}.at-pop span{color:var(--muted)}
+.at-aviso{font-size:.84rem;color:var(--muted);text-align:center;padding:8px}
+.at-ctx{border-left:1px solid var(--line);overflow:auto;padding:12px;display:flex;flex-direction:column;gap:12px}
+.at-card{border:1px solid var(--line);border-radius:14px;padding:12px}.at-card h3{margin:0 0 8px;font-size:.76rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:.84rem}.kv span{color:var(--muted)}
+.ex{display:grid;grid-template-columns:auto 1fr auto;gap:2px 8px;font-size:.8rem;align-items:center;padding:5px 0;border-bottom:1px dashed var(--line)}
+.ex .mn{font-family:ui-monospace,monospace;font-size:.7rem;background:var(--blue-50);color:var(--blue);border-radius:5px;padding:1px 5px;font-weight:700}
+.tot{display:flex;justify-content:space-between;font-weight:900;font-size:1.05rem;margin-top:8px}
+.acts{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px}.acts .btn{justify-content:center;text-decoration:none}.acts .full{grid-column:1/3}
+.at-empty,.at-vazio{color:var(--muted);font-size:.85rem;text-align:center;padding:14px 6px}.at-empty{border:2px dashed var(--line);border-radius:12px}
+.at-chat>.at-vazio{margin:auto;font-size:.95rem}
+.at-flag{background:var(--warn-50);color:var(--warn);border-radius:10px;padding:7px 10px;font-size:.78rem;font-weight:700;margin-top:8px}
+.hist div{display:flex;justify-content:space-between;gap:6px;font-size:.8rem;padding:5px 0;border-bottom:1px solid var(--line)}
+.at-mot{display:flex;gap:8px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:10px;margin-top:6px;font-weight:700;font-size:.86rem;cursor:pointer}
+.at.editando{grid-template-columns:270px 1fr minmax(560px,46%)}
+.at.editando .at-ctx{padding:0;gap:0;display:flex;flex-direction:column}
+.at-ed-h{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}.at-ed-h .sp{flex:1}
+.at-ed{flex:1;width:100%;border:0;background:var(--bg)}
+.at-doc{display:flex;flex-direction:column;align-items:flex-start;gap:1px;border:1px solid var(--blue-100);background:var(--surface);border-radius:10px;padding:8px 12px;margin:2px 0 4px;cursor:pointer;text-align:left}.at-doc small{color:var(--muted);font-size:.72rem}
+@media (max-width:1280px){.at{grid-template-columns:280px 1fr}.at-ctx{display:none}.at.editando{grid-template-columns:1fr minmax(520px,55%)}.at.editando .at-list{display:none}.at.editando .at-ctx{display:flex}}
+@media (max-width:900px){.main{height:auto}.at{grid-template-columns:1fr;height:80vh}.at-list{max-height:40vh}}
+</style>
+</head>
+<body>
+<script type="module">
+import { exigirLogin } from './js/firebase.js';
+import { montarShell } from './js/shell.js';
+import { montarAtendimento } from './js/atendimento.js';
+const { perfil } = await exigirLogin();
+const root = montarShell({ perfil, ativo: 'wa', titulo: 'Atendimento', subtitulo: 'WhatsApp · conversas e orçamentos no mesmo lugar' });
+montarAtendimento(root, { perfil });
+</script>
+</body>
+</html>
