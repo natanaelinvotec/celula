@@ -22,7 +22,9 @@ if (EMBED) {
     body.embed .left .preview, body.embed .left .preview img { max-height:170px }
     body.embed #btnCam, body.embed #btnUp, body.embed #drop, body.embed #btnTransf, body.embed #btnUnit, body.embed #btnZap, body.embed #btnLimpar { display:none !important }
     body.embed .tbl td, body.embed .tbl th { padding:6px 8px; font-size:.83rem } body.embed .card-h { padding:10px 14px } body.embed .card-b { padding:12px 14px }
-    body.embed .foot .card-b { gap:10px }
+    body.embed .foot .card-b { gap:8px 10px; flex-wrap:wrap } body.embed .foot .sp { display:none }
+    body.embed #btnSalvar { flex:1 1 100%; justify-content:center; order:9 } body.embed #btnPdf { margin-left:auto }
+    body.embed .mnwrap .ib { display:none } body.embed .tbl-wrap { overflow-x:auto }
   </style>`);
 }
 
