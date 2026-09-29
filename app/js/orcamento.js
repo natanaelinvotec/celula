@@ -11,6 +11,7 @@ const $ = id => document.getElementById(id);
 const CONF_MIN = 0.85;
 
 // ---------- estado ----------
+let WA_TEL = new URLSearchParams(location.search).get('wa'); // veio do Atendimento (WhatsApp)
 const st = { id: null, numero: null, itens: [], fotos: [], convenio: null, convSlug: null, renal: false, manuais: {}, leitura: null, offSol: null, descartados: [], duplo: false, convSlug2: null, convenio2: null, manuais2: {}, lancarEm: 1, perfis: {} };
 // lancarEm: tabela em que os NOVOS exames entram (1 = 1º convênio; vira 2 quando a caixinha é marcada). perfis: {slug: [mnemônicos]} das tabelas PERFIL em uso.
 // dois convênios: cada item tem `tab` (1 ou 2). Sem o modo duplo, tudo é 1.
@@ -494,6 +495,7 @@ async function gravarAgora(status) {
   st.id = await D.gravarOrcamento(dados, st.id);
   if (!st.numero) { const d = await new Promise(r => { const off = D.ouvirOrcamento(st.id, x => { off(); r(x); }); }); st.numero = d.numero; st.preToken = d.preToken || null; $('numLbl').textContent = '#' + numOrc(st.numero); }
   if (!st.offSol) st.offSol = D.ouvirSolicitacoesDoOrcamento(st.id, onSolicitacoes);
+  if (WA_TEL && !st._waLig) { st._waLig = true; import('./wa.js').then(W => W.vincularOrcamento(WA_TEL, st.id, st.numero)).then(() => toast('Orçamento ligado à conversa do WhatsApp', true)).catch(() => { st._waLig = false; }); }
   return st.id;
 }
 async function enviarConferencia(it) {
@@ -609,7 +611,7 @@ $('btnZap').addEventListener('click', async () => {
   const tel = soDigitos($('tel').value); window.open(`https://wa.me/${tel ? '55' + tel : ''}?text=${encodeURIComponent(txt)}`, '_blank');
   if (st.id) D.mudarStatus(st.id, 'enviado').catch(() => {});
 });
-$('btnLimpar').addEventListener('click', () => { if (st.offSol) st.offSol(); Object.assign(st, { id: null, numero: null, itens: [], fotos: [], leitura: null, offSol: null, _fotosSol: null, unitario: false, unitPedido: false, preToken: null, descartados: [], duplo: false, convSlug2: null, convenio2: null, manuais2: {}, lancarEm: 1, perfis: {} }); $('duplo').checked = false; $('conv2Wrap').hidden = true; $('btnUnit').textContent = 'Valores unitários'; $('btnUnit').classList.add('ghost'); $('btnUnit').classList.remove('blue'); history.replaceState(null, '', location.pathname); $('prevWrap').hidden = true; $('prev').innerHTML = ''; $('btnRun').disabled = true; $('btnRun').textContent = 'Analisar pedido com a IA'; $('numLbl').textContent = 'novo'; $('leituraInfo').textContent = ''; $('pac').value = ''; $('tel').value = ''; $('pac').style.borderColor = ''; $('tel').style.borderColor = ''; render(); });
+$('btnLimpar').addEventListener('click', () => { if (st.offSol) st.offSol(); Object.assign(st, { id: null, numero: null, itens: [], fotos: [], leitura: null, offSol: null, _fotosSol: null, unitario: false, unitPedido: false, preToken: null, descartados: [], duplo: false, convSlug2: null, convenio2: null, manuais2: {}, lancarEm: 1, perfis: {} }); $('duplo').checked = false; $('conv2Wrap').hidden = true; $('btnUnit').textContent = 'Valores unitários'; $('btnUnit').classList.add('ghost'); $('btnUnit').classList.remove('blue'); history.replaceState(null, '', location.pathname); WA_TEL = null; $('prevWrap').hidden = true; $('prev').innerHTML = ''; $('btnRun').disabled = true; $('btnRun').textContent = 'Analisar pedido com a IA'; $('numLbl').textContent = 'novo'; $('leituraInfo').textContent = ''; $('pac').value = ''; $('tel').value = ''; $('pac').style.borderColor = ''; $('tel').style.borderColor = ''; render(); });
 render();
 
 // ---------- abrir um orçamento existente para editar (orcamento.html?id=...) ----------
@@ -629,4 +631,18 @@ if (idEdit) (async () => {
     st.offSol = D.ouvirSolicitacoesDoOrcamento(st.id, onSolicitacoes);
     render(); $('leituraInfo').textContent = `Editando o orçamento #${numOrc(o.numero)} de ${o.atendenteNome || ''}`; toast(`Orçamento #${numOrc(o.numero)} carregado para edição`, true);
   } catch (e) { toast('Erro ao abrir: ' + e.message); }
+})();
+
+// ---------- vindo do Atendimento (WhatsApp): paciente e foto do pedido já preenchidos ----------
+if (WA_TEL && !idEdit) (async () => {
+  try {
+    const W = await import('./wa.js'); const q = new URLSearchParams(location.search);
+    $('pac').value = q.get('nome') || ''; $('tel').value = W.fmtTelWa(WA_TEL);
+    const d = JSON.parse(localStorage.getItem('waPedido') || 'null'); localStorage.removeItem('waPedido');
+    if (d?.tel === WA_TEL && d.fotos?.length) {
+      const files = await Promise.all(d.fotos.filter(Boolean).map(async (u, i) => { const b = await (await fetch(u)).blob(); return new File([b], `pedido-whatsapp-${i + 1}.jpg`, { type: b.type || 'image/jpeg' }); }));
+      await addFotos(files);
+    }
+    $('leituraInfo').textContent = 'Pedido recebido pelo WhatsApp — confira o convênio e clique em Analisar. Ao gravar, o orçamento se liga à conversa.';
+  } catch (e) { toast('Não consegui trazer a foto do WhatsApp: ' + e.message); }
 })();
