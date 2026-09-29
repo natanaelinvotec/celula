@@ -5,5 +5,12 @@ compatibility_date = "2026-09-01"
 [vars]
 FB_PROJECT = "celulams"
 # WA_PHONE_ID = ""   # preencher após criar o app na Meta (número de teste → depois o da empresa)
+# ORIGENS = "https://celulams.com.br,https://www.celulams.com.br,https://atendimento-celulams.natanael-invotec.workers.dev"
+
+# Anexos acima de ~700 KB (PDFs/vídeos que o paciente manda). Opcional: sem ele, o app avisa para reenviar menor.
+# Criar antes: npx wrangler r2 bucket create celula-wa-midia
+# [[r2_buckets]]
+# binding = "MIDIA"
+# bucket_name = "celula-wa-midia"
 
 # Segredos (NUNCA no código): wrangler secret put WA_VERIFY_TOKEN / WA_APP_SECRET / WA_TOKEN / FB_SA_JSON
