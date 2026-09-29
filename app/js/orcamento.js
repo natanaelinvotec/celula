@@ -21,10 +21,14 @@ if (EMBED) {
     body.embed .left { grid-template-columns:1fr } body.embed .left > .note { display:none }
     body.embed .left .preview, body.embed .left .preview img { max-height:170px }
     body.embed #btnCam, body.embed #btnUp, body.embed #drop, body.embed #btnTransf, body.embed #btnUnit, body.embed #btnZap, body.embed #btnLimpar { display:none !important }
-    body.embed .tbl td, body.embed .tbl th { padding:6px 8px; font-size:.83rem } body.embed .card-h { padding:10px 14px } body.embed .card-b { padding:12px 14px }
+    html:has(body.embed), body.embed { overflow-x:hidden } body.embed #conteudo, body.embed .card, body.embed .grid, body.embed .left { min-width:0; max-width:100% }
+    body.embed .tbl { width:100% } body.embed .tbl td, body.embed .tbl th { padding:5px 4px; font-size:.72rem; overflow-wrap:anywhere } body.embed .tbl th { font-size:.58rem; letter-spacing:0; overflow-wrap:normal; white-space:nowrap }
+    body.embed .tbl td small { font-size:.62rem } body.embed .mn { font-size:.62rem; padding:2px 5px }
+    body.embed .conf { font-size:.64rem; gap:3px } body.embed .conf i { width:22px } body.embed .pz { font-size:.62rem; padding:1px 5px; white-space:normal }
+    body.embed .in.qtd { width:38px; padding:4px 2px; font-size:.75rem } body.embed .tbl .ib, body.embed .tbl button { padding:4px; min-width:0 } body.embed .card-h { padding:10px 14px } body.embed .card-b { padding:12px 14px }
     body.embed .foot .card-b { gap:8px 10px; flex-wrap:wrap } body.embed .foot .sp { display:none }
     body.embed #btnSalvar { flex:1 1 100%; justify-content:center; order:9 } body.embed #btnPdf { margin-left:auto }
-    body.embed .mnwrap .ib { display:none } body.embed .tbl-wrap { overflow-x:auto }
+    body.embed .mnwrap .ib { display:none } body.embed .tbl-wrap { overflow-x:hidden }
   </style>`);
 }
 
