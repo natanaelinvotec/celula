@@ -9,6 +9,22 @@ const { perfil } = await exigirLogin();
 const root = montarShell({ perfil, ativo: 'novo', titulo: 'Novo orçamento por IA', subtitulo: 'fotografe o pedido, confira e grave' });
 const $ = id => document.getElementById(id);
 const CONF_MIN = 0.85;
+// Modo compacto (embed=1): aberto dentro da tela de Atendimento, na coluna do paciente. Mesmo editor, sem menu/topo.
+const EMBED = new URLSearchParams(location.search).get('embed') === '1';
+const EMBED_TEL = new URLSearchParams(location.search).get('wa');
+if (EMBED) {
+  document.body.classList.add('embed');
+  document.head.insertAdjacentHTML('beforeend', `<style>
+    body.embed .side, body.embed .main > .top { display:none !important }
+    body.embed .app { display:block } body.embed #conteudo { padding:10px !important }
+    body.embed .summary { gap:6px; margin-bottom:10px } body.embed .tile { padding:6px 10px } body.embed .tile b { font-size:1.05rem }
+    body.embed .left { grid-template-columns:1fr } body.embed .left > .note { display:none }
+    body.embed .left .preview, body.embed .left .preview img { max-height:170px }
+    body.embed #btnCam, body.embed #btnUp, body.embed #drop, body.embed #btnTransf, body.embed #btnUnit, body.embed #btnZap, body.embed #btnLimpar { display:none !important }
+    body.embed .tbl td, body.embed .tbl th { padding:6px 8px; font-size:.83rem } body.embed .card-h { padding:10px 14px } body.embed .card-b { padding:12px 14px }
+    body.embed .foot .card-b { gap:10px }
+  </style>`);
+}
 
 // ---------- estado ----------
 let WA_TEL = new URLSearchParams(location.search).get('wa'); // veio do Atendimento (WhatsApp)
@@ -85,6 +101,7 @@ root.innerHTML = `
   </section>
 </div>`;
 
+if (EMBED) $('btnSalvar').textContent = 'Gravar e enviar PDF';
 D.contar('apelidos').then(n => $('memN').textContent = n.toLocaleString('pt-BR')).catch(() => $('memN').textContent = '—');
 st.convSlug = $('conv').value; st.convenio = D.nomeConv(convs.find(c => c.slug === st.convSlug));
 $('conv').addEventListener('change', async () => {
@@ -562,7 +579,7 @@ $('btnSalvar').addEventListener('click', async () => {
   st._salvando = true; $('btnSalvar').disabled = true;
   try {
     await garantirOrcamento(st.itens.some(i => i.status === 'conferencia') ? 'aguardando_conferencia' : 'gravado'); toast(`Orçamento #${numOrc(st.numero)} gravado — gerando PDF…`, true);
-    await baixarPdf();
+    if (EMBED) await enviarAoAtendimento(); else await baixarPdf();
   } catch (e) { toast('Erro ao gravar: ' + e.message); }
   finally { st._salvando = false; $('btnSalvar').disabled = false; }
 });
@@ -573,6 +590,15 @@ async function baixarPdf() {
   catch (e) { toast('Não consegui gerar o PDF: ' + e.message); }
 }
 $('btnPdf').addEventListener('click', baixarPdf);
+/** Modo compacto: gera o PDF (sem baixar) e devolve à tela de Atendimento, que anexa na conversa. */
+async function enviarAoAtendimento() {
+  if (!st.preToken) st.preToken = await D.garantirPreToken(st.id, { preToken: st.preToken });
+  const dados = montarDados();
+  const pdf = await gerarPdf({ ...dados, id: st.id, preToken: st.preToken, numero: st.numero, unitarioLiberado: !!st.unitario }, { validadeDias: cfg.validadeDias || 7, unitario: !!st.unitario, baixar: false });
+  parent.postMessage({ tipo: 'waOrcamentoPronto', tel: EMBED_TEL, id: st.id, numero: st.numero, nome: `Orcamento-${numOrc(st.numero)}.pdf`, pdf: pdf.output('datauristring'),
+    orc: { id: st.id, numero: st.numero, total: dados.total, convenio: dados.convenio, convenioNome: dados.convenioNome, duplo: dados.duplo, convenio2Nome: dados.convenio2Nome, preToken: st.preToken, itens: dados.itens.map(i => ({ nome: i.nome, qtd: i.qtd, prazoDias: i.prazoDias, status: i.status })) } }, location.origin);
+  toast(`Orçamento #${numOrc(st.numero)} gravado — PDF enviado para a conversa`, true);
+}
 // ---------- valores unitários: pede liberação à gestão; quando aprovada, o PDF sai exame por exame ----------
 $('btnUnit').addEventListener('click', async () => {
   if (!st.itens.length) { toast('Adicione ao menos um exame.'); return; }
@@ -642,6 +668,7 @@ if (WA_TEL && !idEdit) (async () => {
     if (d?.tel === WA_TEL && d.fotos?.length) {
       const files = await Promise.all(d.fotos.filter(Boolean).map(async (u, i) => { const b = await (await fetch(u)).blob(); return new File([b], `pedido-whatsapp-${i + 1}.jpg`, { type: b.type || 'image/jpeg' }); }));
       await addFotos(files);
+      if (EMBED && files.length && !$('btnRun').disabled) setTimeout(() => $('btnRun').click(), 300); // compacto: já analisa (convênio pode ser trocado depois; os valores se recalculam)
     }
     $('leituraInfo').textContent = 'Pedido recebido pelo WhatsApp — confira o convênio e clique em Analisar. Ao gravar, o orçamento se liga à conversa.';
   } catch (e) { toast('Não consegui trazer a foto do WhatsApp: ' + e.message); }
