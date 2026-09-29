@@ -6,13 +6,15 @@ let _cat = null, _catAt = 0, _cfg = null, _convs = null, _convsAt = 0;
 
 export async function config(force) { if (!_cfg || force) _cfg = (await getDoc(doc(db, 'config', 'app'))).data() || {}; return _cfg; }
 
+/** Nome exibido do convênio: o nome fantasia (apelido) definido pela gestão ou, sem ele, o nome oficial do AutoLAC (campo nome, que nunca muda). */
+export const nomeConv = c => (c && (c.apelido || c.nome)) || '';
 /** Convênios visíveis para as atendentes (ativo != false). */
 export async function convenios() { return (await conveniosTodos()).filter(c => c.ativo !== false); }
 /** Todos os convênios (gestão), inclusive ocultos. */
 export async function conveniosTodos(force) {
   if (_convs && !force && Date.now() - _convsAt < 600000) return _convs;
   const s = await getDocs(collection(db, 'convenios'));
-  _convs = s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.nome || '').localeCompare(b.nome || '')); _convsAt = Date.now();
+  _convs = s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => nomeConv(a).localeCompare(nomeConv(b))); _convsAt = Date.now();
   return _convs;
 }
 /** Gestão mostra/oculta um convênio para as atendentes ou ajusta o repasse ao paciente (com auditoria). */
