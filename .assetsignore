@@ -1,0 +1,8 @@
+# Arquivos do repositório que NÃO devem ser publicados como site estático
+wa-worker
+wrangler.jsonc
+.assetsignore
+.git
+.github
+**/firestore.rules
+**/LEIA-ME*.md
