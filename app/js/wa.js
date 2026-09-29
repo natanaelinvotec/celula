@@ -30,12 +30,13 @@ const eu = () => ({ uid: auth.currentUser.uid });
 
 /** Atendente assume a conversa (sai da fila). */
 export async function assumir(tel, perfil) {
+  let de = null;
   await runTransaction(db, async tx => {
     const r = await tx.get(conv(tel)); const c = r.data() || {};
-    if (c.atendenteUid && c.atendenteUid !== eu().uid && c.status !== 'fila') throw new Error(`já está com ${c.atendenteNome}`);
+    if (c.atendenteUid && c.atendenteUid !== eu().uid && c.status !== 'fila') { if (perfil.papel !== 'admin') throw new Error(`já está com ${c.atendenteNome}`); de = c.atendenteNome; } // gestão pode puxar para si
     tx.update(conv(tel), { status: 'aberta', atendenteUid: eu().uid, atendenteNome: perfil.nome, atualizadoEm: serverTimestamp() });
   });
-  await sistema(tel, `${perfil.nome} assumiu a conversa`);
+  await sistema(tel, `${perfil.nome} assumiu a conversa${de ? ` (estava com ${de})` : ''}`);
 }
 export async function transferir(tel, para, perfil) {
   await updateDoc(conv(tel), { status: 'aberta', atendenteUid: para.id, atendenteNome: para.nome, atualizadoEm: serverTimestamp() });
