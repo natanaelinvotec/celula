@@ -14,7 +14,7 @@ const fmtTxt = t => escapeHtml(t || '').replace(/\*([^*\n]+)\*/g, '<b>$1</b>').r
 
 export async function montarAtendimento(el, { perfil }) {
   const admin = perfil.papel === 'admin';
-  const st = { convs: [], enc: [], aba: 'meus', busca: '', sel: null, conv: null, msgs: [], orc: null, hist: [], users: [], cfg: {}, cat: null, notaModo: false };
+  const st = { convs: [], enc: [], aba: 'meus', busca: '', sel: null, conv: null, msgs: [], orc: null, hist: [], users: [], cfg: {}, cat: null, notaModo: false, editando: false };
   el.innerHTML = `
   <div class="at-top"><div class="kp" id="kp"></div><div class="sp"></div>
     ${admin ? '<button class="btn ghost sm" id="bSim" title="Grava mensagens de teste como se viessem do WhatsApp">🧪 Simulador</button>' : ''}</div>
@@ -73,7 +73,7 @@ export async function montarAtendimento(el, { perfil }) {
 
   // ---------- conversa ----------
   function abrir(tel) {
-    st.sel = tel; st.msgs = []; st.orc = null; st.hist = []; st.notaModo = false; offC?.(); offM?.(); offO?.(); offO = null; lista();
+    fecharEditor(true); st.sel = tel; st.msgs = []; st.orc = null; st.hist = []; st.notaModo = false; offC?.(); offM?.(); offO?.(); offO = null; lista();
     offC = W.ouvirConversa(tel, c => { const antes = st.conv?.orcamentoId; st.conv = c; if (!c) return; cabecalho(); rodape(); contexto(); if (c.orcamentoId !== antes) ligarOrc(); if (c.naoLidas && (c.atendenteUid === perfil.uid)) W.marcarLida(tel); });
     offM = W.ouvirMensagens(tel, m => { st.msgs = m; mensagens(); });
     W.orcamentosDoTelefone(tel).then(h => { st.hist = h; contexto(); }).catch(() => {});
@@ -96,9 +96,9 @@ export async function montarAtendimento(el, { perfil }) {
       if (m.direcao === 'nota') return sep + `<div class="at-m nota">📝 <b>Nota interna</b> · ${escapeHtml(primeiroNome(m.autorNome))}<br>${fmtTxt(m.texto)}<div class="t">${hora(m.em)}</div></div>`;
       const cls = m.direcao === 'entrada' ? '' : m.autor === 'bot' ? 'bot' : 'out';
       const quem = m.direcao === 'entrada' ? 'Paciente' : m.autor === 'bot' ? '🤖 Assistente Célula' : escapeHtml(primeiroNome(m.autorNome));
-      const img = m.imagem || m.midiaUrl;
+      const img = m.imagem || m.midiaUrl; const arq = m.arquivo ? `<button class="at-doc" data-doc="${m.id}" title="Abrir o PDF">📄 <b>${escapeHtml(m.arquivo.nome || 'arquivo')}</b><small>PDF · clique para abrir</small></button>` : '';
       const tick = m.direcao === 'saida' ? (m.status === 'erro' ? ' ⚠ não enviada' : m.status === 'simulado' ? ' · teste' : m.status === 'read' ? ' ✓✓' : m.status === 'delivered' ? ' ✓✓' : m.status === 'sent' ? ' ✓' : ' …') : '';
-      return sep + `<div class="at-m ${cls}"><div class="who">${quem}</div>${img ? `<img class="at-img" src="${img}" data-zoom alt="imagem enviada">` : ''}${m.texto ? `<div>${fmtTxt(m.texto)}</div>` : ''}
+      return sep + `<div class="at-m ${cls}"><div class="who">${quem}</div>${img ? `<img class="at-img" src="${img}" data-zoom alt="imagem enviada">` : ''}${arq}${m.texto ? `<div>${fmtTxt(m.texto)}</div>` : ''}
         ${img && m.direcao === 'entrada' ? `<div class="at-ia"><button class="btn blue sm" data-ler="${m.id}">✨ Ler pedido com IA</button></div>` : ''}<div class="t">${hora(m.em)}${tick}</div></div>`;
     }).join('') || '<div class="at-vazio">Sem mensagens.</div>';
     if (fim || !box.dataset.ok) { box.scrollTop = box.scrollHeight; box.dataset.ok = 1; }
@@ -141,6 +141,7 @@ export async function montarAtendimento(el, { perfil }) {
 
   // ---------- contexto ----------
   function contexto() {
+    if (st.editando) return; // editor de orçamento aberto na coluna
     const c = st.conv; if (!c) { $('ctx').innerHTML = ''; return; } const o = st.orc;
     const itens = (o?.itens || []).filter(i => i.status !== 'recusado'); const pend = itens.filter(i => i.status !== 'ok').length;
     $('ctx').innerHTML = `<div class="at-card"><h3>👤 Paciente</h3><div class="kv"><span>Nome</span><b>${escapeHtml(c.nome || '—')}</b><span>WhatsApp</span><b>${W.fmtTelWa(c.id)}</b>${o ? `<span>Convênio</span><b>${escapeHtml(o.convenioNome || o.convenio || '')}</b>` : ''}</div></div>
@@ -149,10 +150,10 @@ export async function montarAtendimento(el, { perfil }) {
       ${itens.map(i => `<div class="ex"><span class="mn">${escapeHtml(i.mnemonico || '?')}</span><span>${escapeHtml(i.nome)}${escapeHtml(rotuloQtd(i.nome, i.qtd))}</span><b>${i.valor != null ? brl(i.valorTotal ?? i.valor) : '—'}</b></div>`).join('')}
       ${pend ? `<div class="at-flag">⚠ ${pend} exame(s) aguardando conferência/valor da gestão.</div>` : ''}
       <div class="tot"><span>Total</span><span>${brl(o.total)}</span></div>
-      <div class="acts"><button class="btn ok sm full" data-ac="envOrc" ${minha() && restante(c) ? '' : 'disabled'}>📤 Enviar orçamento no WhatsApp</button><a class="btn ghost sm" target="_blank" href="orcamento.html?id=${o.id}">✏️ Abrir / PDF</a><button class="btn ghost sm" data-ac="desv">Trocar</button></div>`
+      <div class="acts"><button class="btn ok sm full" data-ac="envOrc" ${minha() && restante(c) ? '' : 'disabled'}>📤 Enviar orçamento no WhatsApp</button><button class="btn ghost sm" data-ac="editEd">✏️ Editar / PDF</button><button class="btn ghost sm" data-ac="desv">Trocar</button></div>`
       : `<div class="at-empty">Nenhum orçamento ligado.<br>Use <b>✨ Ler pedido com IA</b> na foto do pedido ou ligue um existente abaixo.</div>
       <div style="display:flex;gap:6px;margin-top:8px"><input class="in" id="vNum" placeholder="nº do orçamento" style="flex:1;padding:7px 10px"><button class="btn ghost sm" data-ac="vinc">Ligar</button></div>
-      <a class="btn ghost sm" style="margin-top:8px;justify-content:center;width:100%" target="_blank" href="${urlNovoOrc()}">＋ Novo orçamento para este paciente</a>`}</div>
+      <button class="btn ghost sm" data-ac="novoEd" style="margin-top:8px;justify-content:center;width:100%">＋ Novo orçamento para este paciente</button>`}</div>
     <div class="at-card"><h3>🕘 Histórico deste telefone</h3>${st.hist.length ? `<div class="hist">${st.hist.slice(0, 6).map(h => `<div><span>#${numOrc(h.numero)} · ${h.criadoEm?.toDate ? h.criadoEm.toDate().toLocaleDateString('pt-BR') : ''} · ${brl(h.total)}</span><span class="pill ${h.status === 'convertido' ? 'ok' : ''}">${h.status === 'convertido' ? 'veio coletar' : escapeHtml(h.status || '')}</span></div>`).join('')}</div>` : '<div class="note">Nenhum orçamento anterior com este telefone.</div>'}</div>`;
   }
   const urlNovoOrc = (msgId) => `orcamento.html?wa=${encodeURIComponent(st.sel)}&nome=${encodeURIComponent(st.conv?.nome || '')}${msgId ? '&msg=' + msgId : ''}`;
@@ -166,8 +167,9 @@ export async function montarAtendimento(el, { perfil }) {
     const ler = e.target.closest('[data-ler]');
     if (ler) { // guarda a foto para a página de orçamento (mesma aba do navegador) e abre com o paciente preenchido
       const m = st.msgs.find(x => x.id === ler.dataset.ler); try { localStorage.setItem('waPedido', JSON.stringify({ tel: st.sel, nome: st.conv?.nome || '', fotos: [m.imagem || m.midiaUrl] })); } catch { toast('Imagem grande demais para passar ao orçamento.'); return; }
-      window.open(urlNovoOrc(m.id), '_blank'); toast('Abrindo o orçamento com a foto — ao gravar, ele se liga a esta conversa.', true); return;
+      abrirEditor(urlNovoOrc(m.id) + '&embed=1'); return;
     }
+    const dc = e.target.closest('[data-doc]'); if (dc) { const m = st.msgs.find(x => x.id === dc.dataset.doc); if (m?.arquivo?.dataUrl) { const b64 = m.arquivo.dataUrl.split(',')[1]; const bin = Uint8Array.from(atob(b64), ch => ch.charCodeAt(0)); window.open(URL.createObjectURL(new Blob([bin], { type: m.arquivo.mime || 'application/pdf' })), '_blank'); } return; }
     const b = e.target.closest('[data-ac]'); if (!b) { if (e.target.id === 'bEnv') enviarTxt(); return; }
     const tel = st.sel; const ac = b.dataset.ac;
     try {
@@ -178,6 +180,9 @@ export async function montarAtendimento(el, { perfil }) {
       if (ac === 'envOrc') { await W.enviar(tel, textoOrcamento(st.orc), perfil, st.cfg); D.mudarStatus(st.orc.id, 'enviado').catch(() => {}); toast('Orçamento enviado na conversa', true); }
       if (ac === 'vinc') { const n = Number(W.soDig($('vNum').value)); if (!n) return; const o = [...st.hist].find(h => h.numero === n) || (await D.orcamentosRecentes({ dias: 90, max: 2000 })).find(h => h.numero === n); if (!o) { toast('Orçamento não encontrado nos últimos 90 dias.'); return; } await W.vincularOrcamento(tel, o.id, o.numero); toast(`Orçamento #${numOrc(n)} ligado à conversa`, true); }
       if (ac === 'desv') await W.vincularOrcamento(tel, null, null);
+      if (ac === 'novoEd') abrirEditor(urlNovoOrc() + '&embed=1');
+      if (ac === 'editEd') abrirEditor(`orcamento.html?id=${st.orc.id}&wa=${encodeURIComponent(tel)}&embed=1`);
+      if (ac === 'fecharEd') fecharEditor();
     } catch (err) { toast('Erro: ' + err.message); }
   });
   async function enviarTxt() {
@@ -201,6 +206,29 @@ export async function montarAtendimento(el, { perfil }) {
     document.getElementById('mCanc').onclick = fecharModal;
     document.getElementById('mOk').onclick = async () => { const v = document.querySelector('[name=mot]:checked')?.value; if (!v) { toast('Escolha o motivo.'); return; } try { await W.encerrar(st.sel, v, perfil); fecharModal(); toast('Atendimento encerrado', true); } catch (err) { toast('Erro: ' + err.message); } };
   }
+
+  // ---------- editor de orçamento na coluna do paciente (orcamento.html em modo compacto) ----------
+  function abrirEditor(src) {
+    st.editando = true; el.querySelector('.at').classList.add('editando');
+    $('ctx').innerHTML = `<div class="at-ed-h"><b>🧾 Orçamento de ${escapeHtml(primeiroNome(st.conv?.nome) || 'paciente')}</b><div class="sp"></div><button class="btn ghost sm" data-ac="fecharEd">✕ Fechar</button></div><iframe class="at-ed" src="${src}" title="Editor de orçamento"></iframe>`;
+  }
+  function fecharEditor(silencioso) {
+    if (!st.editando) return; st.editando = false; el.querySelector('.at').classList.remove('editando'); if (!silencioso) contexto();
+  }
+  // o editor avisa quando o orçamento foi gravado: anexa o PDF + resumo na conversa
+  addEventListener('message', async ev => {
+    if (ev.origin !== location.origin || ev.data?.tipo !== 'waOrcamentoPronto') return;
+    const d = ev.data; if (d.tel !== st.sel) { toast('Orçamento gravado, mas a conversa aberta mudou — envie pelo painel da conversa certa.'); return; }
+    try {
+      const c = st.conv;
+      if (c.atendenteUid && c.atendenteUid !== perfil.uid && c.status !== 'fila') { toast(`Orçamento gravado. A conversa está com ${primeiroNome(c.atendenteNome)} — o PDF não foi enviado.`); return; }
+      if (!restante(c)) { toast('Orçamento gravado, mas a janela de 24h está fechada — o PDF não pode ser enviado agora.'); return; }
+      if (c.status === 'fila' || !c.atendenteUid) await W.assumir(st.sel, perfil);
+      await W.enviar(st.sel, textoOrcamento(d.orc), perfil, st.cfg, { tipo: 'document', arquivo: { nome: d.nome, mime: 'application/pdf', dataUrl: d.pdf } });
+      D.mudarStatus(d.id, 'enviado').catch(() => {});
+      fecharEditor(); toast(`Orçamento #${numOrc(d.numero)} enviado em PDF na conversa`, true);
+    } catch (err) { toast('Orçamento gravado, mas o PDF não foi enviado: ' + err.message); }
+  });
 
   // ---------- simulador (admin) ----------
   $('bSim')?.addEventListener('click', () => {
