@@ -61,11 +61,12 @@ export async function nota(tel, texto, perfil) { await addDoc(msgs(tel), { direc
  * Resposta da atendente. Com o servidor configurado (config/app.wa.endpoint) o envio real vai pela API oficial;
  * sem ele (fase de testes) fica registrada como "simulado".
  */
-export async function enviar(tel, texto, perfil, cfg) {
-  const ref = await addDoc(msgs(tel), { direcao: 'saida', tipo: 'text', texto, autorUid: eu().uid, autorNome: perfil.nome, status: cfg?.wa?.endpoint ? 'enviando' : 'simulado', em: serverTimestamp() });
+export async function enviar(tel, texto, perfil, cfg, extra = null) {
+  if (extra?.arquivo?.dataUrl && extra.arquivo.dataUrl.length > 950000) throw new Error('arquivo acima do limite (~700 KB)');
+  const ref = await addDoc(msgs(tel), { direcao: 'saida', tipo: 'text', ...(extra || {}), texto, autorUid: eu().uid, autorNome: perfil.nome, status: cfg?.wa?.endpoint ? 'enviando' : 'simulado', em: serverTimestamp() });
   await runTransaction(db, async tx => {
     const r = await tx.get(conv(tel)); const c = r.data() || {};
-    const m = { ultimaMsg: texto.slice(0, 120), ultimaEm: serverTimestamp(), ultimaDirecao: 'saida', status: 'aguardando', atualizadoEm: serverTimestamp() };
+    const m = { ultimaMsg: extra?.arquivo ? '📄 ' + extra.arquivo.nome : texto.slice(0, 120), ultimaEm: serverTimestamp(), ultimaDirecao: 'saida', status: 'aguardando', atualizadoEm: serverTimestamp() };
     if (!c.atendenteUid) Object.assign(m, { atendenteUid: eu().uid, atendenteNome: perfil.nome });
     if (!c.primeiraRespostaEm) m.primeiraRespostaEm = serverTimestamp();
     tx.update(conv(tel), m);
