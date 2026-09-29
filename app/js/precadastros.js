@@ -1,6 +1,6 @@
 // precadastros.js — fila de pré-cadastros enviados pelos pacientes (página pública pre.html).
 // Qualquer atendente disponível pega o próximo, cadastra no AutoLAC e marca "Cadastrei" — some da fila para todo mundo em tempo real.
-import { fmtData, toast, escapeHtml } from './firebase.js';
+import { fmtData, toast, escapeHtml, primeiroNome } from './firebase.js';
 import * as D from './dados.js';
 import { numOrc, ICO, copiar } from './ui.js';
 import { fmtCpf, fmtNasc, fmtTel } from './historico.js';
@@ -24,7 +24,7 @@ export function montarPreCadastros(el, { perfil }) {
   const card = (p, fila) => { const o = orcs[p.id]; return `<div class="lem-it" data-id="${p.id}" style="${fila ? 'border-left:4px solid var(--red)' : ''}">
       <div><b>${escapeHtml(p.nome)}</b> <small style="display:inline">${o?.paciente && o.paciente.trim().toLowerCase() !== p.nome.trim().toLowerCase() ? `· no orçamento: ${escapeHtml(o.paciente)}` : ''}</small>
         <small>CPF ${fmtCpf(p.cpf)} · nasc. ${fmtNasc(p.nascimento)} · cel. ${fmtTel(p.telefone)}</small>
-        <small>orçamento <b>#${numOrc(p.orcamentoNumero || o?.numero)}</b>${o ? ` · ${escapeHtml(o.convenioNome || o.convenio || '')}${o.duplo && o.convenio2Nome ? ' + ' + escapeHtml(o.convenio2Nome) : ''} · ${o.qtd ?? o.itens?.length ?? 0} exame(s) · atendente ${escapeHtml((o.atendenteNome || '').split(' ')[0])}` : ''} · enviado ${fmtData(p.enviadoEm)}${p.visto ? ` · <span class="pill ok" style="padding:0 7px">✓ cadastrado ${fmtData(p.vistoEm)}${p.vistoPor ? ' por ' + escapeHtml((users[p.vistoPor] || '').split(' ')[0]) : ''}</span>` : ''}</small></div>
+        <small>orçamento <b>#${numOrc(p.orcamentoNumero || o?.numero)}</b>${o ? ` · ${escapeHtml(o.convenioNome || o.convenio || '')}${o.duplo && o.convenio2Nome ? ' + ' + escapeHtml(o.convenio2Nome) : ''} · ${o.qtd ?? o.itens?.length ?? 0} exame(s) · atendente ${escapeHtml(primeiroNome(o.atendenteNome))}` : ''} · enviado ${fmtData(p.enviadoEm)}${p.visto ? ` · <span class="pill ok" style="padding:0 7px">✓ cadastrado ${fmtData(p.vistoEm)}${p.vistoPor ? ' por ' + escapeHtml(primeiroNome(users[p.vistoPor])) : ''}</span>` : ''}</small></div>
       <button class="btn ghost sm" data-copypre="${p.id}" title="Copia nome, CPF, nascimento e celular separados por TAB">${ICO.copy} Copiar dados</button>
       <a class="btn ghost sm" href="orcamento.html?id=${p.id}" title="Abrir o orçamento">Orçamento</a>
       ${fila ? `<button class="btn blue sm" data-visto="${p.id}">✓ Cadastrei no AutoLAC</button>` : ''}
