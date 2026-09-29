@@ -41,6 +41,15 @@ service cloud.firestore {
       allow delete: if admin();
     }
 
+    // ---- grupos de pedido (termo do pedido → vários exames) ----
+    match /grupos/{id} {
+      allow read: if logado();
+      allow create, update: if ativo() && request.resource.data.nome is string && request.resource.data.nome.size() >= 2 && request.resource.data.nome.size() <= 80
+                    && request.resource.data.termos is list && request.resource.data.termos.size() <= 30
+                    && request.resource.data.mnemonicos is list && request.resource.data.mnemonicos.size() >= 1 && request.resource.data.mnemonicos.size() <= 40;
+      allow delete: if admin();
+    }
+
     // ---- usuários ----
     match /usuarios/{uid} {
       allow read: if logado();
@@ -95,6 +104,21 @@ service cloud.firestore {
       // recepção marca como visto
       allow update: if ativo() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['visto', 'vistoPor', 'vistoEm']);
       allow delete: if admin();
+    }
+
+    // ---- Atendimento WhatsApp (conversas). Entrada real é gravada pelo servidor (conta de serviço, fora das regras);
+    //      o simulador de testes (admin) grava no mesmo formato. Atendentes só mudam status/atribuição/leitura/orçamento. ----
+    match /wa_conversas/{tel} {
+      allow read: if ativo();
+      allow create, delete: if admin();
+      allow update: if admin() || (ativo() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'atendenteUid', 'atendenteNome', 'naoLidas', 'orcamentoId', 'orcamentoNumero', 'motivo', 'encerradaEm', 'encerradaPor', 'atualizadoEm', 'ultimaMsg', 'ultimaEm', 'ultimaDirecao', 'primeiraRespostaEm', 'npsPendente'])
+                    && request.resource.data.status in ['fila', 'aberta', 'aguardando', 'encerrada']);
+      match /mensagens/{mid} {
+        allow read: if ativo();
+        allow create: if admin() || (ativo() && request.resource.data.direcao in ['saida', 'nota', 'sistema'] && request.resource.data.autorUid == request.auth.uid
+                      && (!('texto' in request.resource.data) || (request.resource.data.texto is string && request.resource.data.texto.size() <= 4096)));
+        allow update, delete: if false;
+      }
     }
 
     match /{document=**} { allow read, write: if false; }
