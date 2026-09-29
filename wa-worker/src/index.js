@@ -93,16 +93,42 @@ async function receber(env, m, nome) {
   const base = { telefone: tel, waId, ultimaMsg: resumo.slice(0, 120), ultimaDirecao: 'entrada', janelaAte: new Date(Date.now() + JANELA_MS) };
   const nova = !c || c.status === 'encerrada';
   if (nova) {
-    await fsCommit(env, `wa_conversas/${tel}`, { ...base, nome: nome || c?.nome || '', status: 'fila', atendenteUid: null, atendenteNome: null, naoLidas: 1, primeiraRespostaEm: null, motivo: null, orcamentoId: c?.orcamentoId || null, orcamentoNumero: c?.orcamentoNumero || null },
+    const wa = (await fsGet(env, 'config/app').catch(() => null))?.wa || {};
+    const aberto = dentroDoHorario(wa.horario);
+    const at = aberto && wa.distribuicao ? await escolherAtendente(env).catch(e => { console.error('distribuição', e); return null; }) : null;
+    const protocolo = gerarProtocolo(tel);
+    await fsCommit(env, `wa_conversas/${tel}`, { ...base, nome: nome || c?.nome || '', status: at ? 'aberta' : 'fila', atendenteUid: at?.id || null, atendenteNome: at?.nome || null, naoLidas: 1, primeiraRespostaEm: null, motivo: null,
+      orcamentoId: c?.orcamentoId || null, orcamentoNumero: c?.orcamentoNumero || null, protocolo, etiquetas: c?.etiquetas || [], foraHorario: !aberto },
       { agora: ['ultimaEm', 'atualizadoEm', 'criadoEm', 'primeiraEntradaEm'] }, !c ? 'criar' : 'substituir');
-    if (c?.status === 'encerrada' && Date.now() - ms(c.encerradaEm) < 6 * 3600e3) return; // voltou logo depois: sem boas-vindas repetida
-    const cfg = await fsGet(env, 'config/app').catch(() => null);
-    const bv = cfg?.wa?.boasVindas === '' ? null : cfg?.wa?.boasVindas || BOAS_VINDAS;
-    if (bv) await enviarDoServidor(env, tel, waId, bv).catch(e => console.error('boas-vindas', e));
+    await fsAdicionar(env, `wa_conversas/${tel}/mensagens`, { direcao: 'sistema', texto: `Novo atendimento · protocolo ${protocolo}${at ? ` · distribuído automaticamente para ${at.nome}` : !aberto ? ' · fora do horário' : ''}` }, ['em']);
+    const voltouLogo = c?.status === 'encerrada' && Date.now() - ms(c.encerradaEm) < 6 * 3600e3; // sem boas-vindas repetida
+    const auto = !aberto ? (wa.foraHorario || textoForaHorario(wa.horario)) : !voltouLogo && wa.boasVindas !== '' ? (wa.boasVindas || BOAS_VINDAS) : null;
+    if (auto) await enviarDoServidor(env, tel, waId, auto).catch(e => console.error('automática', e));
   } else {
     await fsCommit(env, `wa_conversas/${tel}`, { ...base, ...(nome && !c.nome ? { nome } : {}), status: c.status === 'aguardando' ? 'aberta' : c.status },
       { agora: ['ultimaEm', 'atualizadoEm'], somar: { naoLidas: 1 } });
   }
+}
+
+// ---------- horário, protocolo e distribuição (mesmas regras do app/js/wa.js) ----------
+const HORARIO_PADRAO = { semana: ['06:15', '18:00'], sabado: ['06:15', '11:00'], domingo: null };
+const partesMS = d => Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Campo_Grande', year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(d).map(x => [x.type, x.value]));
+const minutos = hhmm => { const [h, m] = String(hhmm).split(':'); return +h * 60 + +(m || 0); };
+export function dentroDoHorario(h, quando = new Date()) {
+  h = h || HORARIO_PADRAO; const p = partesMS(quando);
+  const faixa = p.weekday === 'Sun' ? h.domingo : p.weekday === 'Sat' ? h.sabado : h.semana;
+  if (!faixa || !faixa[0] || !faixa[1]) return false;
+  const m = +p.hour * 60 + +p.minute; return m >= minutos(faixa[0]) && m < minutos(faixa[1]);
+}
+const textoForaHorario = h => { h = h || HORARIO_PADRAO; if (!h.semana?.[0]) return 'Olá! 😊 Nosso atendimento pelo WhatsApp está fechado agora. Deixe sua mensagem e a *foto do pedido médico* que respondemos assim que abrirmos.'; return `Olá! 😊 Nosso atendimento pelo WhatsApp funciona de *segunda a sexta, das ${h.semana[0]} às ${h.semana[1]}*${h.sabado?.[0] ? ` e *sábado, das ${h.sabado[0]} às ${h.sabado[1]}*` : ''}.\nDeixe sua mensagem e a *foto do pedido médico* que respondemos assim que abrirmos.`; };
+export const gerarProtocolo = (tel, d = new Date()) => { const p = partesMS(d); return `${p.year}${p.month}${p.day}${p.hour}${p.minute}-${String(tel).slice(-4)}`; };
+/** Atendente 🟢 Online (batimento < 3 min, marcada para receber) com menos conversas abertas/aguardando. */
+async function escolherAtendente(env) {
+  const on = (await fsQuery(env, 'usuarios', [['status', 'EQUAL', 'online']])).filter(u => u.ativo !== false && !u.excluido && u.recebeWa !== false && Date.now() - ms(u.ultimoPing) < 3 * 60e3);
+  if (!on.length) return null;
+  const abertas = await fsQuery(env, 'wa_conversas', [['status', 'IN', ['aberta', 'aguardando']]], 500);
+  const carga = uid => abertas.filter(c => c.atendenteUid === uid).length;
+  return on.map(u => ({ u, n: carga(u.id) })).sort((a, b) => a.n - b.n || (a.u.nome || '').localeCompare(b.u.nome || ''))[0].u;
 }
 
 /** Resposta da pesquisa de satisfação (enviada ao encerrar). Nota até 6 volta para a fila para alguém retornar. */
@@ -298,6 +324,14 @@ export async function fsGet(env, caminho) {
   if (r.status === 404) return null;
   if (!r.ok) throw new Error(`firestore get ${caminho}: ${r.status} ${await r.text()}`);
   return deFsDoc((await r.json()).fields || {});
+}
+/** Consulta simples (filtros AND). filtros: [[campo, 'EQUAL'|'IN'|..., valor]]. Devolve [{id, ...campos}]. */
+export async function fsQuery(env, colecao, filtros = [], limite = 200) {
+  const f = filtros.map(([fieldPath, op, v]) => ({ fieldFilter: { field: { fieldPath }, op, value: paraFs(v) } }));
+  const where = !f.length ? undefined : f.length === 1 ? f[0] : { compositeFilter: { op: 'AND', filters: f } };
+  const r = await fsReq(env, 'POST', `${raiz(env)}:runQuery`, { structuredQuery: { from: [{ collectionId: colecao }], ...(where ? { where } : {}), limit: limite } });
+  if (!r.ok) throw new Error(`firestore query ${colecao}: ${r.status} ${await r.text()}`);
+  return (await r.json()).filter(x => x.document).map(x => ({ id: x.document.name.split('/').pop(), ...deFsDoc(x.document.fields || {}) }));
 }
 /** Cria com id fixo; devolve false se já existir (idempotência de webhook). */
 async function fsCriar(env, colecao, id, obj) {

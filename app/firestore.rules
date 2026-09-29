@@ -111,7 +111,7 @@ service cloud.firestore {
     match /wa_conversas/{tel} {
       allow read: if ativo();
       allow create, delete: if admin();
-      allow update: if admin() || (ativo() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'atendenteUid', 'atendenteNome', 'naoLidas', 'orcamentoId', 'orcamentoNumero', 'motivo', 'encerradaEm', 'encerradaPor', 'atualizadoEm', 'ultimaMsg', 'ultimaEm', 'ultimaDirecao', 'primeiraRespostaEm', 'npsPendente'])
+      allow update: if admin() || (ativo() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'atendenteUid', 'atendenteNome', 'naoLidas', 'orcamentoId', 'orcamentoNumero', 'motivo', 'encerradaEm', 'encerradaPor', 'atualizadoEm', 'ultimaMsg', 'ultimaEm', 'ultimaDirecao', 'primeiraRespostaEm', 'npsPendente', 'etiquetas', 'lembreteEm', 'lembreteTexto', 'lembreteUid', 'lembreteNome'])
                     && request.resource.data.status in ['fila', 'aberta', 'aguardando', 'encerrada']);
       match /mensagens/{mid} {
         allow read: if ativo();

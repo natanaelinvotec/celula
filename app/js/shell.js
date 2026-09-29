@@ -2,6 +2,7 @@
 import { sair, temaInit, iniciais, escapeHtml } from './firebase.js';
 
 const ICONS = {
+  wa: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20l1.3-3.9A8 8 0 1 1 8 19z"/><path d="M9 9.5c.3 2 2 3.8 4.5 4.5l1-1.2 2 .8c-.2 1.2-1.2 2-2.5 1.8C10.5 15 8 12.5 7.6 9.5 7.4 8.2 8.2 7.2 9.4 7l.8 2z"/></svg>',
   perf: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l2.6 5.4 5.9.8-4.3 4.1 1.1 5.9L12 16.4 6.7 19.2l1.1-5.9L3.5 9.2l5.9-.8z"/></svg>',
   cnv: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/></svg>',
   ia: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19l5-7 4 4 7-9"/><path d="M15 7h5v5"/></svg>',
@@ -28,8 +29,8 @@ const MOON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-
 export function montarShell({ perfil, ativo, titulo, subtitulo, painel = false }) {
   const admin = perfil.papel === 'admin';
   const links = painel
-    ? [['dash', 'Dashboard', '#dash'], ['sol', 'Solicitações', '#sol', 'badgeSol'], ['hist', 'Orçamentos', '#orc'], ['cat', 'Catálogo de exames', '#cat'], ['grp', 'Grupos de pedido', '#grp'], ['cnv', 'Convênios', '#cnv'], ['perf', 'Perfis de check-up', '#perf'], ['crm', 'CRM de pacientes', '#crm', 'badgeLem'], ['conv', 'Conversões (relatório)', '#conv'], ['ia', 'Acurácia da IA', '#ia'], ['usr', 'Usuários', '#usr'], ['exp', 'Exportar atendimentos', '#exp']]
-    : [['novo', 'Novo orçamento (IA)', 'orcamento.html'], ['hist', 'Meus orçamentos', 'orcamentos.html', 'badgeSol'], ['pre', 'Pré-cadastros', 'precadastros.html', 'badgePre']];
+    ? [['wa', 'Atendimento', 'atendimento.html', 'badgeWa'], ['dash', 'Dashboard', '#dash'], ['sol', 'Solicitações', '#sol', 'badgeSol'], ['hist', 'Orçamentos', '#orc'], ['cat', 'Catálogo de exames', '#cat'], ['grp', 'Grupos de pedido', '#grp'], ['cnv', 'Convênios', '#cnv'], ['perf', 'Perfis de check-up', '#perf'], ['crm', 'CRM de pacientes', '#crm', 'badgeLem'], ['conv', 'Conversões (relatório)', '#conv'], ['ia', 'Acurácia da IA', '#ia'], ['usr', 'Usuários', '#usr'], ['exp', 'Exportar atendimentos', '#exp']]
+    : [['wa', 'Atendimento', 'atendimento.html', 'badgeWa'], ['novo', 'Novo orçamento (IA)', 'orcamento.html'], ['hist', 'Meus orçamentos', 'orcamentos.html', 'badgeSol'], ['pre', 'Pré-cadastros', 'precadastros.html', 'badgePre']];
   const extra = painel ? [['novo', 'Novo orçamento (IA)', 'orcamento.html'], ['pre', 'Pré-cadastros', 'precadastros.html', 'badgePre']] : (admin ? [['dash', 'Painel gerencial', 'painel.html']] : []);
   const nav = l => `<a class="nav ${l[0] === ativo ? 'on' : ''}" href="${l[2]}" data-k="${l[0]}">${ICONS[l[0]]}<span class="t">${l[1]}</span>${l[3] ? `<span class="badge" id="${l[3]}" hidden></span>` : ''}</a>`;
   const foto = perfil.fotoBase64 ? `<img src="${perfil.fotoBase64}" alt="">` : escapeHtml(iniciais(perfil.nome));
@@ -55,7 +56,7 @@ export function montarShell({ perfil, ativo, titulo, subtitulo, painel = false }
   </main></div>`);
   document.getElementById('btnSair').addEventListener('click', sair);
   const sel = document.getElementById('selStatus');
-  if (sel) {
+  if (sel && window.top === window) { // embutido (editor na tela de Atendimento): não mexe no status/presença da atendente
     // status escolhido + batimento a cada 60 s; ao fechar/sair do sistema vira offline automaticamente (a gestão também considera offline sem batimento há 3 min)
     const st0 = !perfil.status || perfil.status === 'offline' ? 'online' : perfil.status; sel.value = st0;
     import('./dados.js').then(D => { D.setStatusAtendente(st0).catch(() => {}); setInterval(() => D.ping().catch(() => {}), 60000);
