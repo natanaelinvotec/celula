@@ -22,7 +22,7 @@ export async function montarAtendimento(el, { perfil }) {
   <div class="at">
     <div class="at-list">
       <div class="at-tabs" id="tabs"></div>
-      <input class="in at-srch" id="busca" placeholder="Buscar nome, telefone ou nº do orçamento">
+      <input class="in at-srch" id="busca" placeholder="Buscar nome, tel. ou nº" title="Buscar por nome, telefone ou nº do orçamento">
       <div class="at-convs" id="lista"></div>
     </div>
     <div class="at-chat" id="chat"><div class="at-vazio">💬<br>Escolha uma conversa à esquerda.</div></div>
