@@ -56,7 +56,7 @@ export function montarShell({ perfil, ativo, titulo, subtitulo, painel = false }
   </main></div>`);
   document.getElementById('btnSair').addEventListener('click', sair);
   const sel = document.getElementById('selStatus');
-  if (sel) {
+  if (sel && window.top === window) { // embutido (editor na tela de Atendimento): não mexe no status/presença da atendente
     // status escolhido + batimento a cada 60 s; ao fechar/sair do sistema vira offline automaticamente (a gestão também considera offline sem batimento há 3 min)
     const st0 = !perfil.status || perfil.status === 'offline' ? 'online' : perfil.status; sel.value = st0;
     import('./dados.js').then(D => { D.setStatusAtendente(st0).catch(() => {}); setInterval(() => D.ping().catch(() => {}), 60000);
