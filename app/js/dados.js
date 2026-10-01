@@ -310,8 +310,13 @@ export async function converterOrcamento(id) {
 export async function converterViaRelatorio(id, info) {
   const u = auth.currentUser;
   const nome = info.nomeCompleto ? { paciente: info.nomeCompleto, pacienteBusca: norm(info.nomeCompleto), pacienteDigitado: info.nomeDigitado || null } : {}; // casou pelo 1º nome/parcial: guarda o nome completo do cadastro
-  return updateDoc(doc(db, 'orcamentos', id), { status: 'convertido', convertidoEm: serverTimestamp(), convertidoPor: u.uid, convertidoPorNome: 'Relatório AutoLAC', convertidoVia: 'relatorio', relatorio: info, ...nome, atualizadoEm: serverTimestamp() });
+  // regra 30/09: o valor que vale na conversão é o do AutoLAC (o paciente pode ter feito exames a mais ou a menos que o orçado)
+  const real = info.valorRealizado != null ? { valorConvertido: info.valorRealizado, qtdConvertida: info.qtdRealizada ?? null, valorOrcado: info.valorOrcado ?? null,
+    difConversao: info.valorOrcado != null ? Math.round((info.valorRealizado - info.valorOrcado) * 100) / 100 : null } : {};
+  return updateDoc(doc(db, 'orcamentos', id), { status: 'convertido', convertidoEm: serverTimestamp(), convertidoPor: u.uid, convertidoPorNome: 'Relatório AutoLAC', convertidoVia: 'relatorio', relatorio: info, ...nome, ...real, atualizadoEm: serverTimestamp() });
 }
+/** Valor que conta nos indicadores: convertido pelo relatório = valor do AutoLAC; senão, o total orçado. */
+export const valorFinal = o => o?.status === 'convertido' && o.valorConvertido != null ? o.valorConvertido : Number(o?.total || 0);
 /** Gestão recusou casar este atendimento (protocolo do AutoLAC) com o orçamento: não volta a ser sugerido nas próximas importações. */
 export const recusarConversao = (id, protocolo) => updateDoc(doc(db, 'orcamentos', id), { conversaoRecusada: arrayUnion(String(protocolo)), conversaoRecusadaPor: auth.currentUser.uid, atualizadoEm: serverTimestamp() });
 /** Registro resumido de uma importação de relatório (o PDF em si nunca é guardado). */
