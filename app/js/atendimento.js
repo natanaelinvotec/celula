@@ -129,7 +129,7 @@ export async function montarAtendimento(el, { perfil }) {
       const cls = m.direcao === 'entrada' ? '' : m.autor === 'bot' ? 'bot' : 'out';
       const quem = m.direcao === 'entrada' ? 'Paciente' : m.autor === 'bot' ? '🤖 Assistente Dra Lávia' : escapeHtml(primeiroNome(m.autorNome));
       const img = m.imagem || m.midiaUrl; const arq = m.arquivo ? `<button class="at-doc" data-doc="${m.id}" title="Abrir o anexo">${tipoArq(m.arquivo.mime).ic} <b>${escapeHtml(m.arquivo.nome || 'arquivo')}</b><small>${tipoArq(m.arquivo.mime).rt}${m.arquivo.tamanho ? ' · ' + Math.round(m.arquivo.tamanho / 1024) + ' KB' : ''} · clique para abrir</small></button>` : '';
-      const tick = m.direcao === 'saida' ? (m.status === 'erro' ? ' ⚠ não enviada' : m.status === 'simulado' ? ' · teste' : m.status === 'read' ? ' ✓✓' : m.status === 'delivered' ? ' ✓✓' : m.status === 'sent' ? ' ✓' : ' …') : '';
+      const tick = m.direcao === 'saida' ? (m.status === 'erro' ? ` <span class="at-err" title="${escapeHtml(m.erro || '')}">⚠ não enviada${m.erro ? ' — ' + escapeHtml(m.erro.slice(0, 110)) : ''}</span>` : m.status === 'simulado' ? ' · teste' : m.status === 'read' ? ' ✓✓' : m.status === 'delivered' ? ' ✓✓' : m.status === 'sent' ? ' ✓' : ' …') : '';
       return sep + `<div class="at-m ${cls}"><div class="who">${quem}</div>${img ? `<img class="at-img" src="${img}" data-zoom alt="imagem enviada">` : ''}${arq}${m.texto ? `<div>${fmtTxt(m.texto)}</div>` : ''}
         ${img && m.direcao === 'entrada' ? `<div class="at-ia"><button class="btn blue sm" data-ler="${m.id}">✨ Ler pedido com IA</button></div>` : ''}<div class="t">${hora(m.em)}${tick}</div></div>`;
     }).join('') || '<div class="at-vazio">Sem mensagens.</div>';
