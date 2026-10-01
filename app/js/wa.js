@@ -67,11 +67,17 @@ export async function nota(tel, texto, perfil) { await addDoc(msgs(tel), { direc
  * sem ele (fase de testes) fica registrada como "simulado".
  */
 export async function enviar(tel, texto, perfil, cfg, extra = null) {
-  if (extra?.arquivo?.dataUrl && extra.arquivo.dataUrl.length > 950000) throw new Error('arquivo acima do limite (~700 KB)');
-  const ref = await addDoc(msgs(tel), { direcao: 'saida', tipo: 'text', ...(extra || {}), texto, autorUid: eu().uid, autorNome: perfil.nome, status: cfg?.wa?.endpoint ? 'enviando' : 'simulado', em: serverTimestamp() });
+  const arq = extra?.arquivo;
+  if (arq?.dataUrl && arq.dataUrl.length > 22e6) throw new Error('arquivo acima de 16 MB');
+  // Arquivo grande (ex.: PDF do orçamento com logo) não cabe no documento do Firestore (1 MB): vai direto ao servidor
+  // na requisição de envio e o histórico guarda só nome/tamanho (o orçamento continua abrindo pelo número).
+  const grande = !!(arq?.dataUrl && arq.dataUrl.length > 900000);
+  if (grande && !cfg?.wa?.endpoint) throw new Error('arquivo acima de ~700 KB — só pode ser enviado com o servidor do WhatsApp ligado');
+  const salvo = grande ? { ...extra, arquivo: { ...arq, dataUrl: null, semCopia: true } } : extra;
+  const ref = await addDoc(msgs(tel), { direcao: 'saida', tipo: 'text', ...(salvo || {}), texto, autorUid: eu().uid, autorNome: perfil.nome, status: cfg?.wa?.endpoint ? 'enviando' : 'simulado', em: serverTimestamp() });
   await runTransaction(db, async tx => {
     const r = await tx.get(conv(tel)); const c = r.data() || {};
-    const m = { ultimaMsg: extra?.arquivo ? '📄 ' + extra.arquivo.nome : texto.slice(0, 120), ultimaEm: serverTimestamp(), ultimaDirecao: 'saida', status: 'aguardando', atualizadoEm: serverTimestamp() };
+    const m = { ultimaMsg: extra?.arquivo ? '📄 ' + extra.arquivo.nome : extra?.imagem ? '🖼️ Imagem' + (texto ? ' · ' + texto.slice(0, 100) : '') : texto.slice(0, 120), ultimaEm: serverTimestamp(), ultimaDirecao: 'saida', status: 'aguardando', atualizadoEm: serverTimestamp() };
     if (!c.atendenteUid) Object.assign(m, { atendenteUid: eu().uid, atendenteNome: perfil.nome });
     if (!c.primeiraRespostaEm) m.primeiraRespostaEm = serverTimestamp();
     tx.update(conv(tel), m);
@@ -79,7 +85,7 @@ export async function enviar(tel, texto, perfil, cfg, extra = null) {
   if (cfg?.wa?.endpoint) {
     try {
       const tk = await auth.currentUser.getIdToken();
-      const r = await fetch(cfg.wa.endpoint.replace(/\/$/, '') + '/enviar', { method: 'POST', headers: { authorization: 'Bearer ' + tk, 'content-type': 'application/json' }, body: JSON.stringify({ tel, msgId: ref.id }) });
+      const r = await fetch(cfg.wa.endpoint.replace(/\/$/, '') + '/enviar', { method: 'POST', headers: { authorization: 'Bearer ' + tk, 'content-type': 'application/json' }, body: JSON.stringify({ tel, msgId: ref.id, ...(grande ? { arquivo: { nome: arq.nome, mime: arq.mime, dataUrl: arq.dataUrl } } : {}) }) });
       if (!r.ok) throw new Error(await r.text());
     } catch (e) { await updateDoc(ref, { status: 'erro', erro: String(e.message || e).slice(0, 200) }).catch(() => {}); throw e; }
   }
@@ -112,7 +118,7 @@ export const textoForaHorario = h => { h = h || HORARIO_PADRAO; if (!h.semana?.[
 export const gerarProtocolo = (tel, d = new Date()) => { const p = partesMS(d); return `${p.year}${p.month}${p.day}${p.hour}${p.minute}-${String(tel).slice(-4)}`; };
 /** Distribuição automática: atendente Online (batimento < 3 min) com menos conversas abertas/aguardando. */
 export function escolherAtendente(users, convs) {
-  const on = users.filter(u => u.ativo !== false && !u.excluido && u.status === 'online' && Date.now() - ms(u.ultimoPing) < 3 * 60e3 && u.recebeWa !== false);
+  const on = users.filter(u => u.ativo !== false && !u.excluido && u.status === 'online' && Date.now() - ms(u.ultimoPing) < 3 * 60e3 && u.recebeWa !== false && (u.papel === 'admin' || u.usaAtendimento === true));
   if (!on.length) return null;
   const carga = uid => convs.filter(c => c.atendenteUid === uid && ['aberta', 'aguardando'].includes(c.status)).length;
   return on.map(u => ({ u, n: carga(u.id) })).sort((a, b) => a.n - b.n || (a.u.nome || '').localeCompare(b.u.nome || ''))[0].u;
