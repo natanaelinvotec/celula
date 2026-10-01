@@ -5,7 +5,13 @@ compatibility_date = "2026-09-01"
 [vars]
 FB_PROJECT = "celulams"
 WA_PHONE_ID = "1272970865910634"   # número de TESTE da Meta (app Celula Atendimento, portfólio Celula MS) — trocar pelo da empresa na virada
+WA_WABA_ID = "1815852639619394"    # conta WhatsApp Business (WABA) do portfólio Celula MS
 # ORIGENS = "https://celulams.com.br,https://www.celulams.com.br,https://atendimento-celulams.natanael-invotec.workers.dev"
+
+# Logs no painel do Cloudflare (sem isto, o próximo deploy desligaria o que foi ligado pelo painel)
+[observability.logs]
+enabled = true
+invocation_logs = true
 
 # Anexos acima de ~700 KB (PDFs/vídeos que o paciente manda). Opcional: sem ele, o app avisa para reenviar menor.
 # Criar antes: npx wrangler r2 bucket create celula-wa-midia
@@ -13,4 +19,4 @@ WA_PHONE_ID = "1272970865910634"   # número de TESTE da Meta (app Celula Atendi
 # binding = "MIDIA"
 # bucket_name = "celula-wa-midia"
 
-# Segredos (NUNCA no código): wrangler secret put WA_VERIFY_TOKEN / WA_APP_SECRET / WA_TOKEN / FB_SA_JSON
+# Segredos (NUNCA no código; colados como Secret no painel): WA_VERIFY_TOKEN / WA_APP_SECRET / WA_TOKEN / FB_SA_JSON
