@@ -22,8 +22,14 @@ export default {
         const cors = corsHeaders(req, env);
         if (req.method === 'OPTIONS') return new Response(null, { status: cors ? 204 : 403, headers: cors || {} });
         if (!cors) return new Response('origem', { status: 403 });
-        const r = url.pathname === '/enviar' ? await rotaEnviar(req, env)
-          : url.pathname === '/admin/assinatura' ? await rotaAssinatura(req, env) : await rotaMidia(req, env, url);
+        let r; // erros também levam CORS — senão o navegador esconde a mensagem e mostra só "Failed to fetch"
+        try {
+          r = url.pathname === '/enviar' ? await rotaEnviar(req, env)
+            : url.pathname === '/admin/assinatura' ? await rotaAssinatura(req, env) : await rotaMidia(req, env, url);
+        } catch (e) {
+          if (!e.status || e.status >= 500) console.error(url.pathname, e);
+          r = new Response(e.status ? e.message : 'erro interno', { status: e.status || 500 });
+        }
         for (const [k, v] of Object.entries(cors)) r.headers.set(k, v);
         return r;
       }
@@ -211,9 +217,20 @@ async function rotaEnviar(req, env) {
     await registrarEnvio(env, tel, msgId, wamid);
     return json({ ok: true, wamid });
   } catch (e) {
-    await fsCommit(env, caminho, { status: 'erro', erro: String(e.message || e).slice(0, 200) }).catch(() => {});
-    throw e.status ? e : falha(502, 'Meta: ' + String(e.message || e).slice(0, 200));
+    const msg = erroLegivel(e.message || e);
+    await fsCommit(env, caminho, { status: 'erro', erro: msg }).catch(() => {});
+    throw e.status ? e : falha(502, msg);
   }
+}
+
+/** Erros mais comuns da Meta em português (o código original fica entre parênteses). */
+export function erroLegivel(m) {
+  const s = String(m || '').slice(0, 200);
+  if (s.includes('131030')) return 'Número fora da lista de teste da Meta — cadastre-o em "Para" no app (#131030)';
+  if (s.includes('131047') || s.includes('re-engagement')) return 'Janela de 24h encerrada na Meta — o paciente precisa escrever de novo (#131047)';
+  if (s.includes('131026')) return 'O número não tem WhatsApp ou não recebe mensagens (#131026)';
+  if (/\b190\b|OAuthException|access token/i.test(s)) return 'Token do WhatsApp expirado ou inválido — gere outro e troque o WA_TOKEN no Cloudflare';
+  return 'Meta: ' + s;
 }
 
 /** Mensagem do próprio servidor (boas-vindas, lembretes): grava no histórico e envia. */
@@ -221,7 +238,7 @@ async function enviarDoServidor(env, tel, waId, texto) {
   const m = { direcao: 'saida', autor: 'bot', tipo: 'text', texto, status: 'enviando' };
   const msgId = await fsAdicionar(env, `wa_conversas/${tel}/mensagens`, m, ['em']);
   try { await registrarEnvio(env, tel, msgId, await enviarMeta(env, waId, m)); }
-  catch (e) { await fsCommit(env, `wa_conversas/${tel}/mensagens/${msgId}`, { status: 'erro', erro: String(e.message || e).slice(0, 200) }); throw e; }
+  catch (e) { await fsCommit(env, `wa_conversas/${tel}/mensagens/${msgId}`, { status: 'erro', erro: erroLegivel(e.message || e) }); throw e; }
 }
 
 async function registrarEnvio(env, tel, msgId, wamid) {
