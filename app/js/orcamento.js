@@ -603,7 +603,7 @@ async function enviarAoAtendimento() {
   const pdf = await gerarPdf({ ...dados, id: st.id, preToken: st.preToken, numero: st.numero, unitarioLiberado: !!st.unitario }, { validadeDias: cfg.validadeDias || 7, unitario: !!st.unitario, baixar: false });
   parent.postMessage({ tipo: 'waOrcamentoPronto', tel: EMBED_TEL, id: st.id, numero: st.numero, nome: `Orcamento-${numOrc(st.numero)}.pdf`, pdf: pdf.output('datauristring'),
     orc: { id: st.id, numero: st.numero, total: dados.total, convenio: dados.convenio, convenioNome: dados.convenioNome, duplo: dados.duplo, convenio2Nome: dados.convenio2Nome, preToken: st.preToken, itens: dados.itens.map(i => ({ nome: i.nome, qtd: i.qtd, prazoDias: i.prazoDias, status: i.status })) } }, location.origin);
-  toast(`Orçamento #${numOrc(st.numero)} gravado — PDF enviado para a conversa`, true);
+  toast(`Orçamento #${numOrc(st.numero)} gravado — enviando o PDF na conversa…`, true); // a confirmação (ou o erro) aparece na tela de Atendimento
 }
 // ---------- valores unitários: pede liberação à gestão; quando aprovada, o PDF sai exame por exame ----------
 $('btnUnit').addEventListener('click', async () => {
