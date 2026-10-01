@@ -3,8 +3,9 @@
 //   GET/POST /webhook   ← Meta (handshake + mensagens/status, assinatura HMAC obrigatória)
 //   POST     /enviar    ← app (atendente logada; token do Firebase) — envia uma mensagem já gravada no Firestore
 //   GET      /midia/:k  ← app (atendente logada) — anexos grandes guardados no R2
+//   GET/POST /admin/assinatura ← app (só admin) — consulta/liga a inscrição da WABA neste app (subscribed_apps)
 // Segredos (wrangler secret put …): WA_VERIFY_TOKEN, WA_APP_SECRET, WA_TOKEN, FB_SA_JSON
-// Variáveis (wrangler.toml): FB_PROJECT, WA_PHONE_ID, ORIGENS · binding R2 opcional: MIDIA
+// Variáveis (wrangler.toml): FB_PROJECT, WA_PHONE_ID, WA_WABA_ID, ORIGENS · binding R2 opcional: MIDIA
 
 const GRAPH = 'https://graph.facebook.com/v21.0';
 const JANELA_MS = 24 * 3600e3;
@@ -17,11 +18,12 @@ export default {
     const url = new URL(req.url);
     try {
       if (url.pathname === '/webhook') return await webhook(req, env, ctx, url);
-      if (url.pathname === '/enviar' || url.pathname.startsWith('/midia/')) {
+      if (url.pathname === '/enviar' || url.pathname.startsWith('/midia/') || url.pathname === '/admin/assinatura') {
         const cors = corsHeaders(req, env);
         if (req.method === 'OPTIONS') return new Response(null, { status: cors ? 204 : 403, headers: cors || {} });
         if (!cors) return new Response('origem', { status: 403 });
-        const r = url.pathname === '/enviar' ? await rotaEnviar(req, env) : await rotaMidia(req, env, url);
+        const r = url.pathname === '/enviar' ? await rotaEnviar(req, env)
+          : url.pathname === '/admin/assinatura' ? await rotaAssinatura(req, env) : await rotaMidia(req, env, url);
         for (const [k, v] of Object.entries(cors)) r.headers.set(k, v);
         return r;
       }
@@ -252,6 +254,19 @@ async function rotaMidia(req, env, url) {
   if (!env.MIDIA || !/^\d{12,13}\/[\w.=-]+$/.test(key)) throw falha(404, 'não encontrado');
   const o = await env.MIDIA.get(key); if (!o) throw falha(404, 'não encontrado');
   return new Response(o.body, { headers: { 'content-type': o.httpMetadata?.contentType || 'application/octet-stream', 'cache-control': 'private, no-store' } });
+}
+
+/** Admin: GET mostra quais apps recebem os eventos da WABA; POST inscreve este app (sem isso a Meta valida o webhook mas não manda mensagens). */
+async function rotaAssinatura(req, env) {
+  if (req.method !== 'GET' && req.method !== 'POST') throw falha(405, 'method');
+  const uid = await autenticar(req, env);
+  const u = await fsGet(env, `usuarios/${uid}`);
+  if (u?.papel !== 'admin') throw falha(403, 'só gestão');
+  if (!env.WA_WABA_ID) throw falha(500, 'WA_WABA_ID não configurado');
+  const r = await fetch(`${GRAPH}/${env.WA_WABA_ID}/subscribed_apps`, { method: req.method, headers: { authorization: 'Bearer ' + env.WA_TOKEN } });
+  const j = await r.json();
+  if (!r.ok) throw falha(502, 'Meta: ' + (j.error?.message || r.status));
+  return json(req.method === 'POST' ? { ok: !!j.success } : { apps: (j.data || []).map(a => a.whatsapp_business_api_data?.name || a.name || a.id || '?') });
 }
 
 // ======================= AUTENTICAÇÃO (token do Firebase da atendente) =======================
