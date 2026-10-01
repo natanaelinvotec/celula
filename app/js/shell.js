@@ -28,15 +28,16 @@ const MOON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-
  */
 export function montarShell({ perfil, ativo, titulo, subtitulo, painel = false }) {
   const admin = perfil.papel === 'admin';
-  const links = painel
+  const usaWa = admin || perfil.usaAtendimento === true; // Atendimento WhatsApp: gestão sempre; atendentes só se liberadas em Usuários
+  const links = (painel
     ? [['wa', 'Atendimento', 'atendimento.html', 'badgeWa'], ['dash', 'Dashboard', '#dash'], ['sol', 'Solicitações', '#sol', 'badgeSol'], ['hist', 'Orçamentos', '#orc'], ['cat', 'Catálogo de exames', '#cat'], ['grp', 'Grupos de pedido', '#grp'], ['cnv', 'Convênios', '#cnv'], ['perf', 'Perfis de check-up', '#perf'], ['crm', 'CRM de pacientes', '#crm', 'badgeLem'], ['conv', 'Conversões (relatório)', '#conv'], ['ia', 'Acurácia da IA', '#ia'], ['usr', 'Usuários', '#usr'], ['exp', 'Exportar atendimentos', '#exp']]
-    : [['wa', 'Atendimento', 'atendimento.html', 'badgeWa'], ['novo', 'Novo orçamento (IA)', 'orcamento.html'], ['hist', 'Meus orçamentos', 'orcamentos.html', 'badgeSol'], ['pre', 'Pré-cadastros', 'precadastros.html', 'badgePre']];
+    : [['wa', 'Atendimento', 'atendimento.html', 'badgeWa'], ['novo', 'Novo orçamento (IA)', 'orcamento.html'], ['hist', 'Meus orçamentos', 'orcamentos.html', 'badgeSol'], ['pre', 'Pré-cadastros', 'precadastros.html', 'badgePre']]).filter(l => l[0] !== 'wa' || usaWa);
   const extra = painel ? [['novo', 'Novo orçamento (IA)', 'orcamento.html'], ['pre', 'Pré-cadastros', 'precadastros.html', 'badgePre']] : (admin ? [['dash', 'Painel gerencial', 'painel.html']] : []);
   const nav = l => `<a class="nav ${l[0] === ativo ? 'on' : ''}" href="${l[2]}" data-k="${l[0]}">${ICONS[l[0]]}<span class="t">${l[1]}</span>${l[3] ? `<span class="badge" id="${l[3]}" hidden></span>` : ''}</a>`;
   const foto = perfil.fotoBase64 ? `<img src="${perfil.fotoBase64}" alt="">` : escapeHtml(iniciais(perfil.nome));
   document.body.insertAdjacentHTML('afterbegin', `<div class="app">
   <aside class="side">
-    <div class="brand"><img src="img/logo-celula.png" alt="Célula Diagnósticos"><div><small>${painel ? 'Painel Gerencial' : 'Pedidos por IA'}</small></div></div>
+    <div class="brand"><img src="img/logo-celula.png" alt="Célula Diagnósticos"><div><small>${painel ? 'Painel Gerencial' : 'Dra Lávia'}</small></div></div>
     ${links.map(nav).join('')}
     ${extra.length ? '<div style="border-top:1px solid var(--line);margin:8px 6px"></div>' + extra.map(nav).join('') : ''}
     <div class="grow"></div>
