@@ -126,7 +126,7 @@ const textoForaHorario = h => { h = h || HORARIO_PADRAO; if (!h.semana?.[0]) ret
 export const gerarProtocolo = (tel, d = new Date()) => { const p = partesMS(d); return `${p.year}${p.month}${p.day}${p.hour}${p.minute}-${String(tel).slice(-4)}`; };
 /** Atendente 🟢 Online (batimento < 3 min, marcada para receber) com menos conversas abertas/aguardando. */
 async function escolherAtendente(env) {
-  const on = (await fsQuery(env, 'usuarios', [['status', 'EQUAL', 'online']])).filter(u => u.ativo !== false && !u.excluido && u.recebeWa !== false && Date.now() - ms(u.ultimoPing) < 3 * 60e3);
+  const on = (await fsQuery(env, 'usuarios', [['status', 'EQUAL', 'online']])).filter(u => u.ativo !== false && !u.excluido && u.recebeWa !== false && (u.papel === 'admin' || u.usaAtendimento === true) && Date.now() - ms(u.ultimoPing) < 3 * 60e3);
   if (!on.length) return null;
   const abertas = await fsQuery(env, 'wa_conversas', [['status', 'IN', ['aberta', 'aguardando']]], 500);
   const carga = uid => abertas.filter(c => c.atendenteUid === uid).length;
@@ -192,7 +192,7 @@ async function atualizarStatus(env, s) {
 async function rotaEnviar(req, env) {
   if (req.method !== 'POST') throw falha(405, 'method');
   const uid = await autenticar(req, env);
-  const { tel, msgId } = await req.json().catch(() => ({}));
+  const { tel, msgId, arquivo } = await req.json().catch(() => ({}));
   if (!/^\d{12,13}$/.test(tel || '') || !/^[A-Za-z0-9]{10,40}$/.test(msgId || '')) throw falha(400, 'parâmetros');
   const caminho = `wa_conversas/${tel}/mensagens/${msgId}`;
   const m = await fsGet(env, caminho);
@@ -201,6 +201,12 @@ async function rotaEnviar(req, env) {
   const c = await fsGet(env, `wa_conversas/${tel}`);
   try {
     if (!c || ms(c.janelaAte) < Date.now()) throw falha(422, 'janela de 24h fechada — o paciente precisa escrever antes (ou use um modelo aprovado)');
+    // arquivo grande (não cabe no Firestore): chega junto do pedido de envio; só PDF/imagem, até ~16 MB
+    if (arquivo && !m.arquivo?.dataUrl) {
+      const mime = String(arquivo.mime || '');
+      if (!/^(application\/pdf|image\/(jpeg|png|webp))$/.test(mime) || typeof arquivo.dataUrl !== 'string' || !arquivo.dataUrl.startsWith('data:' + mime) || arquivo.dataUrl.length > 22e6) throw falha(400, 'anexo inválido');
+      m.arquivo = { ...(m.arquivo || {}), mime, nome: String(arquivo.nome || m.arquivo?.nome || 'arquivo').slice(0, 120), dataUrl: arquivo.dataUrl };
+    }
     const wamid = await enviarMeta(env, c.waId || tel, m);
     await registrarEnvio(env, tel, msgId, wamid);
     return json({ ok: true, wamid });
@@ -225,12 +231,14 @@ async function registrarEnvio(env, tel, msgId, wamid) {
 
 async function enviarMeta(env, para, m) {
   let corpo;
-  if (m.arquivo?.dataUrl) {
-    const [cab, b] = m.arquivo.dataUrl.split(',');
-    const mime = m.arquivo.mime || cab.slice(5).split(';')[0];
-    const id = await subirMidiaMeta(env, Uint8Array.from(atob(b), ch => ch.charCodeAt(0)), mime, m.arquivo.nome || 'arquivo');
+  // anexo: PDF/arquivo (m.arquivo) ou imagem enviada pela atendente (m.imagem em data URL)
+  const anexo = m.arquivo?.dataUrl ? m.arquivo : (typeof m.imagem === 'string' && m.imagem.startsWith('data:image/')) ? { dataUrl: m.imagem, nome: 'imagem.jpg' } : null;
+  if (anexo) {
+    const [cab, b] = anexo.dataUrl.split(',');
+    const mime = anexo.mime || cab.slice(5).split(';')[0];
+    const id = await subirMidiaMeta(env, Uint8Array.from(atob(b), ch => ch.charCodeAt(0)), mime, anexo.nome || 'arquivo');
     corpo = mime.startsWith('image/') ? { type: 'image', image: { id, caption: (m.texto || '').slice(0, 1024) } }
-      : { type: 'document', document: { id, filename: m.arquivo.nome || 'arquivo.pdf', caption: (m.texto || '').slice(0, 1024) } };
+      : { type: 'document', document: { id, filename: anexo.nome || 'arquivo.pdf', caption: (m.texto || '').slice(0, 1024) } };
   } else corpo = { type: 'text', text: { body: String(m.texto || '').slice(0, 4096), preview_url: true } };
   const r = await fetch(`${GRAPH}/${env.WA_PHONE_ID}/messages`, { method: 'POST', headers: { authorization: 'Bearer ' + env.WA_TOKEN, 'content-type': 'application/json' }, body: JSON.stringify({ messaging_product: 'whatsapp', to: para, ...corpo }) });
   const j = await r.json();
