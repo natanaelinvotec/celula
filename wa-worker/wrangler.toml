@@ -4,7 +4,7 @@ compatibility_date = "2026-09-01"
 
 [vars]
 FB_PROJECT = "celulams"
-# WA_PHONE_ID = ""   # preencher após criar o app na Meta (número de teste → depois o da empresa)
+WA_PHONE_ID = "1272970865910634"   # número de TESTE da Meta (app Celula Atendimento, portfólio Celula MS) — trocar pelo da empresa na virada
 # ORIGENS = "https://celulams.com.br,https://www.celulams.com.br,https://atendimento-celulams.natanael-invotec.workers.dev"
 
 # Anexos acima de ~700 KB (PDFs/vídeos que o paciente manda). Opcional: sem ele, o app avisa para reenviar menor.
