@@ -5,6 +5,11 @@ import * as D from './dados.js';
 import * as W from './wa.js';
 import { numOrc, UNIDADES, CENTRAL, PERFIS_PADRAO, maiorJejum, modal, fecharModal, telaCheia, rotuloQtd } from './ui.js';
 
+// Etiquetas: cor pela urgência/demanda (as personalizadas ganham uma cor fixa pelo nome). Ordem = prioridade na lista.
+const COR_TAG = { urgente: 'red', 'reclamação': 'orange', 'reclamacao': 'orange', resultado: 'green', 'orçamento': 'blue', orcamento: 'blue', agendamento: 'purple', 'coleta domiciliar': 'teal', 'convênio': 'amber', convenio: 'amber' };
+const PRIO_TAG = ['red', 'orange', 'amber', 'teal', 'purple', 'blue', 'green'];
+const corTag = t => { const k = String(t || '').trim().toLowerCase(); if (COR_TAG[k]) return COR_TAG[k]; const extra = ['pink', 'cyan', 'lime', 'slate']; let h = 0; for (const ch of k) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return extra[h % extra.length]; };
+const ordemTags = l => [...(l || [])].sort((a, b) => (PRIO_TAG.indexOf(corTag(a)) + 1 || 99) - (PRIO_TAG.indexOf(corTag(b)) + 1 || 99));
 const tipoArq = (mime = '') => mime.includes('pdf') ? { ic: '📄', rt: 'PDF' } : mime.startsWith('audio/') ? { ic: '🎤', rt: 'Áudio' } : mime.startsWith('video/') ? { ic: '🎬', rt: 'Vídeo' } : mime.startsWith('image/') ? { ic: '🖼️', rt: 'Imagem' } : { ic: '📎', rt: 'Arquivo' };
 const MOTIVOS = ['Orçamento enviado — aguardando paciente', 'Agendou / vai coletar', 'Achou caro', 'Convênio não cobre', 'Só dúvida / informação', 'Resultado de exames', 'Engano / spam'];
 const CORES = ['#7c4dbf', '#2563eb', '#1f9e9c', '#b8730f', '#d31a21', '#563085', '#0f766e', '#9d174d'];
@@ -89,7 +94,7 @@ export async function montarAtendimento(el, { perfil }) {
     $('lista').innerHTML = l.map(c => { const j = c.status !== 'encerrada' ? restante(c) : null; return `<div class="at-cv ${st.sel === c.id ? 'on' : ''}" data-tel="${c.id}">
       <span class="av" style="background:${corDe(c.id)}">${escapeHtml(iniciais(c.nome || '?'))}</span>
       <div style="min-width:0"><div class="nm">${escapeHtml(c.nome || W.fmtTelWa(c.id))}</div><div class="pv">${c.ultimaDirecao === 'saida' ? 'Você: ' : ''}${escapeHtml(c.ultimaMsg || '')}</div>
-        <div class="chips">${j ? `<span class="ch jan">⏱ ${j}</span>` : c.status !== 'encerrada' ? '<span class="ch fech">janela fechada</span>' : ''}${c.orcamentoNumero ? `<span class="ch orc">#${numOrc(c.orcamentoNumero)}</span>` : ''}${c.status === 'fila' ? '<span class="ch">na fila</span>' : ''}${c.atendenteNome && st.aba !== 'meus' && c.status !== 'fila' ? `<span class="ch">${escapeHtml(primeiroNome(c.atendenteNome))}</span>` : ''}${c.status === 'encerrada' && c.motivo ? `<span class="ch">${escapeHtml(c.motivo.split(' — ')[0])}</span>` : ''}${(c.etiquetas || []).slice(0, 2).map(t => `<span class="ch tag">${escapeHtml(t)}</span>`).join('')}${c.lembreteEm && c.lembreteUid === perfil.uid && W.ms(c.lembreteEm) <= Date.now() ? '<span class="ch fech">🔔 lembrete</span>' : ''}${c.simulado ? '<span class="ch sim">teste</span>' : ''}</div></div>
+        <div class="chips">${j ? `<span class="ch jan">⏱ ${j}</span>` : c.status !== 'encerrada' ? '<span class="ch fech">janela fechada</span>' : ''}${c.orcamentoNumero ? `<span class="ch orc">#${numOrc(c.orcamentoNumero)}</span>` : ''}${c.status === 'fila' ? '<span class="ch">na fila</span>' : ''}${c.atendenteNome && st.aba !== 'meus' && c.status !== 'fila' ? `<span class="ch">${escapeHtml(primeiroNome(c.atendenteNome))}</span>` : ''}${c.status === 'encerrada' && c.motivo ? `<span class="ch">${escapeHtml(c.motivo.split(' — ')[0])}</span>` : ''}${ordemTags(c.etiquetas).slice(0, 2).map(t => `<span class="ch tag t-${corTag(t)}">${escapeHtml(t)}</span>`).join('')}${c.lembreteEm && c.lembreteUid === perfil.uid && W.ms(c.lembreteEm) <= Date.now() ? '<span class="ch fech">🔔 lembrete</span>' : ''}${c.simulado ? '<span class="ch sim">teste</span>' : ''}</div></div>
       <div class="rt">${hora(c.ultimaEm)}${c.naoLidas ? `<span class="un">${c.naoLidas}</span>` : ''}</div></div>`; }).join('') || `<div class="at-vazio" style="padding:30px 10px">${st.aba === 'fila' ? 'Fila vazia 🎉' : 'Nada aqui.'}</div>`;
   }
   $('tabs').addEventListener('click', e => { const b = e.target.closest('[data-aba]'); if (!b) return; st.aba = b.dataset.aba; st.fixo = false; lista({ manual: true }); });
@@ -122,7 +127,7 @@ export async function montarAtendimento(el, { perfil }) {
       if (m.direcao === 'sistema') return sep + `<div class="at-sys">— ${escapeHtml(m.texto)} · ${hora(m.em)} —</div>`;
       if (m.direcao === 'nota') return sep + `<div class="at-m nota">📝 <b>Nota interna</b> · ${escapeHtml(primeiroNome(m.autorNome))}<br>${fmtTxt(m.texto)}<div class="t">${hora(m.em)}</div></div>`;
       const cls = m.direcao === 'entrada' ? '' : m.autor === 'bot' ? 'bot' : 'out';
-      const quem = m.direcao === 'entrada' ? 'Paciente' : m.autor === 'bot' ? '🤖 Assistente Célula' : escapeHtml(primeiroNome(m.autorNome));
+      const quem = m.direcao === 'entrada' ? 'Paciente' : m.autor === 'bot' ? '🤖 Assistente Dra Lávia' : escapeHtml(primeiroNome(m.autorNome));
       const img = m.imagem || m.midiaUrl; const arq = m.arquivo ? `<button class="at-doc" data-doc="${m.id}" title="Abrir o anexo">${tipoArq(m.arquivo.mime).ic} <b>${escapeHtml(m.arquivo.nome || 'arquivo')}</b><small>${tipoArq(m.arquivo.mime).rt}${m.arquivo.tamanho ? ' · ' + Math.round(m.arquivo.tamanho / 1024) + ' KB' : ''} · clique para abrir</small></button>` : '';
       const tick = m.direcao === 'saida' ? (m.status === 'erro' ? ' ⚠ não enviada' : m.status === 'simulado' ? ' · teste' : m.status === 'read' ? ' ✓✓' : m.status === 'delivered' ? ' ✓✓' : m.status === 'sent' ? ' ✓' : ' …') : '';
       return sep + `<div class="at-m ${cls}"><div class="who">${quem}</div>${img ? `<img class="at-img" src="${img}" data-zoom alt="imagem enviada">` : ''}${arq}${m.texto ? `<div>${fmtTxt(m.texto)}</div>` : ''}
@@ -137,7 +142,7 @@ export async function montarAtendimento(el, { perfil }) {
     const j = restante(c); const pct = j ? Math.max(3, (W.ms(c.janelaAte) - Date.now()) / W.JANELA_MS * 100) : 0;
     comp.innerHTML = `<div class="at-jan">⏱ Janela de 24h: ${j ? `<b style="color:var(--ok)">${j} restantes</b><span class="bar"><i style="width:${pct}%"></i></span><span>respostas grátis</span>` : '<b style="color:var(--red)">fechada</b><span class="bar"></span><span>só modelo aprovado (em breve)</span>'}</div>
       <div class="at-qr"><button data-q="/orcamento">/orcamento</button><button data-q="/preparo">/preparo</button><button data-q="/prelink">/prelink</button><button data-q="/unidades">/unidades</button><button data-q="/perfil">/perfil</button><button data-nota class="${st.notaModo ? 'on' : ''}">📝 Nota interna</button></div>
-      <div class="at-row"><label class="at-ib" title="Anexar imagem (em breve pela API)">📎</label>
+      <div class="at-row">${j && !st.notaModo ? '<label class="at-ib on" title="Anexar imagem ou PDF (até 16 MB) — o texto digitado vai como legenda">📎<input type="file" id="anx" accept="image/jpeg,image/png,image/webp,application/pdf" hidden></label>' : '<span class="at-ib" title="Anexo disponível com a janela de 24h aberta">📎</span>'}
         <textarea class="in" id="txt" rows="2" placeholder="${st.notaModo ? 'Nota interna — o paciente NÃO vê' : j ? 'Digite / para respostas rápidas (preços vêm do catálogo)…' : 'Janela fechada: aguarde o paciente escrever ou use um modelo aprovado'}" ${!j && !st.notaModo ? 'disabled' : ''}></textarea>
         <button class="btn blue" id="bEnv" ${!j && !st.notaModo ? 'disabled' : ''}>${st.notaModo ? 'Salvar nota' : 'Enviar ➤'}</button></div>`;
   }
@@ -192,7 +197,7 @@ export async function montarAtendimento(el, { perfil }) {
   const podeMexer = () => minha() || admin || st.conv?.status === 'fila';
   function cardEtiquetas(c) {
     const tem = new Set(c.etiquetas || []);
-    return `<div class="at-card"><h3>🏷 Etiquetas</h3><div class="at-tags">${[...new Set([...etiquetasCfg(), ...tem])].map(t => `<button class="at-tag ${tem.has(t) ? 'on' : ''}" data-tag="${escapeHtml(t)}" ${podeMexer() ? '' : 'disabled'}>${escapeHtml(t)}</button>`).join('')}</div></div>`;
+    return `<div class="at-card"><h3>🏷 Etiquetas</h3><div class="at-tags">${[...new Set([...etiquetasCfg(), ...tem])].map(t => `<button class="at-tag t-${corTag(t)} ${tem.has(t) ? 'on' : ''}" data-tag="${escapeHtml(t)}" ${podeMexer() ? '' : 'disabled'}>${escapeHtml(t)}</button>`).join('')}</div></div>`;
   }
   const fmtData = t => new Date(W.ms(t)).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   function cardLembrete(c) {
@@ -220,6 +225,8 @@ export async function montarAtendimento(el, { perfil }) {
     const dc = e.target.closest('[data-doc]'); if (dc) { const m = st.msgs.find(x => x.id === dc.dataset.doc); const aba = window.open('', '_blank');
       try { let blob; if (m?.arquivo?.dataUrl) { const b64 = m.arquivo.dataUrl.split(',')[1]; blob = new Blob([Uint8Array.from(atob(b64), ch => ch.charCodeAt(0))], { type: m.arquivo.mime || 'application/pdf' }); }
         else if (m?.midiaKey) { dc.disabled = true; blob = await W.baixarMidia(m.midiaKey, st.cfg); }
+        else if (m?.arquivo?.orcamentoId) { aba.location = `orcamento.html?id=${encodeURIComponent(m.arquivo.orcamentoId)}`; return; }
+        else toast('O paciente recebeu o arquivo, mas a cópia não ficou guardada (arquivo grande).');
         if (blob) aba.location = URL.createObjectURL(blob); else aba.close(); } catch (er) { aba.close(); toast('Não foi possível abrir o anexo: ' + er.message); } finally { dc.disabled = false; } return; }
     const tg = e.target.closest('[data-tag]');
     if (tg) { const set = new Set(st.conv.etiquetas || []); set.has(tg.dataset.tag) ? set.delete(tg.dataset.tag) : set.add(tg.dataset.tag); try { await W.etiquetar(st.sel, [...set]); } catch (err) { toast('Erro: ' + err.message); } return; }
@@ -248,6 +255,22 @@ export async function montarAtendimento(el, { perfil }) {
     try { if (st.notaModo) { await W.nota(st.sel, v, perfil); st.notaModo = false; } else await W.enviar(st.sel, v, perfil, st.cfg); t.value = ''; rodape(); }
     catch (err) { toast('Não enviou: ' + err.message); } finally { const n = $('txt'); if (n) { n.disabled = false; n.focus(); } }
   }
+  // 📎 anexo da atendente: imagem (comprimida) ou PDF; o texto digitado vai junto como legenda
+  el.addEventListener('change', async e => { if (e.target.id !== 'anx') return; const f = e.target.files[0]; e.target.value = ''; if (f) await enviarAnexo(f); });
+  async function enviarAnexo(f) {
+    const pdf = f.type === 'application/pdf', img = /^image\/(jpeg|png|webp)$/.test(f.type);
+    if (!pdf && !img) { toast('Envie uma imagem (JPG/PNG) ou um PDF.'); return; }
+    if (f.size > 16e6) { toast('Arquivo acima de 16 MB.'); return; }
+    const t = $('txt'); const leg = (t?.value || '').trim(); const lbl = el.querySelector('.at-ib.on'); if (lbl) lbl.style.pointerEvents = 'none';
+    toast(`Enviando ${pdf ? 'PDF' : 'imagem'}…`, true);
+    try {
+      if (img) await W.enviar(st.sel, leg, perfil, st.cfg, { tipo: 'image', imagem: await comprimirImagem(f, 1600, .82) });
+      else { const dataUrl = await new Promise((ok, er) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => er(new Error('não consegui ler o arquivo')); r.readAsDataURL(f); });
+        await W.enviar(st.sel, leg, perfil, st.cfg, { tipo: 'document', arquivo: { nome: f.name, mime: 'application/pdf', tamanho: f.size, dataUrl } }); }
+      if (t) t.value = ''; toast('Anexo enviado ✓', true);
+    } catch (err) { toast('Anexo não enviado: ' + err.message); }
+    finally { if (lbl) lbl.style.pointerEvents = ''; }
+  }
   el.addEventListener('change', async e => { if (e.target.id !== 'lemQuando' || !e.target.value) return; const d = new Date(e.target.value); if (d <= new Date()) { toast('Escolha uma data futura.'); return; }
     try { await W.definirLembrete(st.sel, d, $('lemTxt')?.value.trim(), perfil); toast(`🔔 Lembrete para ${fmtData(d)}`, true); } catch (err) { toast('Erro: ' + err.message); } });
   el.addEventListener('keydown', e => { if (e.target.id === 'txt' && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarTxt(); } });
@@ -256,7 +279,7 @@ export async function montarAtendimento(el, { perfil }) {
       pop.innerHTML = ops.map(o => `<div data-q="${escapeHtml(o[0])}"><b>${escapeHtml(o[0])}</b> <span>${escapeHtml(o[1])}</span></div>`).join(''); pop.hidden = !ops.length; } else pop.hidden = true; });
 
   function transferirModal() {
-    const us = st.users.filter(u => u.ativo !== false && u.id !== st.conv.atendenteUid);
+    const us = st.users.filter(u => u.ativo !== false && (u.papel === 'admin' || u.usaAtendimento === true) && u.id !== st.conv.atendenteUid);
     modal(`<div class="modal-b"><h2 style="margin:0 0 10px">Transferir conversa</h2><div style="display:flex;flex-direction:column;gap:6px">${us.map(u => `<button class="btn ghost" data-para="${u.id}" style="justify-content:space-between">${escapeHtml(u.nome)} <small>${escapeHtml(u.status || 'offline')}</small></button>`).join('')}</div></div>`, { largura: 420 });
     document.getElementById('modalBg').addEventListener('click', async ev => { const p = ev.target.closest('[data-para]'); if (!p) return; const u = us.find(x => x.id === p.dataset.para); try { await W.transferir(st.sel, u, perfil); fecharModal(); toast(`Transferida para ${u.nome}`, true); } catch (err) { toast('Erro: ' + err.message); } });
   }
@@ -298,7 +321,7 @@ export async function montarAtendimento(el, { perfil }) {
       if (c.atendenteUid && c.atendenteUid !== perfil.uid && c.status !== 'fila') { toast(`Orçamento gravado. A conversa está com ${primeiroNome(c.atendenteNome)} — o PDF não foi enviado.`); return; }
       if (!restante(c)) { toast('Orçamento gravado, mas a janela de 24h está fechada — o PDF não pode ser enviado agora.'); return; }
       if (c.status === 'fila' || !c.atendenteUid) await W.assumir(st.sel, perfil);
-      await W.enviar(st.sel, textoOrcamento(d.orc), perfil, st.cfg, { tipo: 'document', arquivo: { nome: d.nome, mime: 'application/pdf', dataUrl: d.pdf } });
+      await W.enviar(st.sel, textoOrcamento(d.orc), perfil, st.cfg, { tipo: 'document', arquivo: { nome: d.nome, mime: 'application/pdf', dataUrl: d.pdf, orcamentoId: d.id } });
       D.mudarStatus(d.id, 'enviado').catch(() => {});
       fecharEditor(); toast(`Orçamento #${numOrc(d.numero)} enviado em PDF na conversa`, true);
     } catch (err) { toast('Orçamento gravado, mas o PDF não foi enviado: ' + err.message); }
@@ -310,7 +333,7 @@ export async function montarAtendimento(el, { perfil }) {
     const linhas = st.msgs.map(m => {
       const quando = new Date(W.ms(m.em) || Date.now()).toLocaleString('pt-BR');
       if (m.direcao === 'sistema') return `<p class="sys">— ${escapeHtml(m.texto)} · ${quando} —</p>`;
-      const quem = m.direcao === 'entrada' ? escapeHtml(c.nome || 'Paciente') : m.direcao === 'nota' ? `📝 Nota interna · ${escapeHtml(m.autorNome || '')}` : m.autor === 'bot' ? 'Assistente Célula' : escapeHtml(m.autorNome || 'Atendente');
+      const quem = m.direcao === 'entrada' ? escapeHtml(c.nome || 'Paciente') : m.direcao === 'nota' ? `📝 Nota interna · ${escapeHtml(m.autorNome || '')}` : m.autor === 'bot' ? 'Assistente Dra Lávia' : escapeHtml(m.autorNome || 'Atendente');
       return `<div class="m ${m.direcao}"><b>${quem}</b> <small>${quando}</small>${m.imagem ? `<br><img src="${m.imagem}">` : ''}${m.arquivo ? `<br>📎 ${escapeHtml(m.arquivo.nome || 'arquivo')}` : ''}<div>${fmtTxt(m.texto)}</div></div>`;
     }).join('');
     w.document.write(`<!doctype html><meta charset="utf-8"><title>Atendimento ${escapeHtml(c.protocolo || c.id)}</title><style>body{font:13px system-ui,sans-serif;max-width:760px;margin:24px auto;color:#111}h1{font-size:18px;margin:0}.cab{border-bottom:2px solid #1d4ed8;padding-bottom:8px;margin-bottom:12px}.m{border:1px solid #ddd;border-radius:8px;padding:6px 10px;margin:6px 0;break-inside:avoid}.m.entrada{background:#f8fafc}.m.saida{background:#eff6ff;margin-left:40px}.m.nota{background:#fff7d6}.sys{text-align:center;color:#666;font-size:11px}img{max-width:260px;max-height:300px;border-radius:6px;margin-top:4px}small{color:#666}</style>
@@ -330,7 +353,7 @@ export async function montarAtendimento(el, { perfil }) {
   $('bEq')?.addEventListener('click', async () => {
     st.users = await D.usuarios().catch(() => st.users); const hoje = new Date().toDateString(), agora = Date.now();
     const todas = [...st.convs, ...st.enc];
-    const linhas = st.users.filter(u => u.ativo !== false).map(u => { const sEf = D.statusEfetivo(u);
+    const linhas = st.users.filter(u => u.ativo !== false && (u.papel === 'admin' || u.usaAtendimento === true)).map(u => { const sEf = D.statusEfetivo(u);
       const n = npsDe(todas.filter(c => c.npsAtendenteUid === u.id && c.nps != null && agora - W.ms(c.npsEm) < 7 * 864e5));
       return `<tr><td><b>${escapeHtml(u.nome || u.email)}</b></td><td>${{ online: '🟢', ocupado: '🔴', pausa: '🟠', almoco: '🍽️', finalizado: '⚪', offline: '⚫' }[sEf] || ''} ${escapeHtml(D.STATUS_LABEL[sEf] || sEf)}</td>
         <td class="num">${st.convs.filter(c => c.atendenteUid === u.id && c.status === 'aberta').length}</td><td class="num">${st.convs.filter(c => c.atendenteUid === u.id && c.status === 'aguardando').length}</td>
