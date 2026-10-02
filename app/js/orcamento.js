@@ -564,7 +564,7 @@ function montarDados(status) {
     totalConv1: st.itens.filter(i => i.tab !== 2).reduce((a, i) => a + vTot(i), 0), totalConv2: st.itens.filter(i => i.tab === 2).reduce((a, i) => a + vTot(i), 0),
     paciente: $('pac').value.trim() || null, pacienteBusca: norm($('pac').value), telefone: $('tel').value.trim() || null, telefoneDigitos: soDigitos($('tel').value),
     itens, total: st.itens.reduce((a, i) => a + vTot(i), 0), qtd: itens.length, mnemonicos: itens.map(i => i.mnemonico).filter(Boolean),
-    leituraIA: st.leitura ? { modelo: st.leitura.modelo, ms: st.leitura.ms, exames: st.leitura.exames.length, medico: st.leitura.medico || null, crm: st.leitura.crm || null, descartados: st.descartados } : null };
+    leituraIA: st.leitura ? { modelo: st.leitura.modelo, modo: st.leitura.modo || null, escalou: !!st.leitura.escalou, tokens: st.leitura.tokens || null, ms: st.leitura.ms, exames: st.leitura.exames.length, medico: st.leitura.medico || null, crm: st.leitura.crm || null, descartados: st.descartados } : null };
 }
 /** Como terminou cada leitura da IA (para o painel de acurácia): auto = IA acertou sozinha; confirmado = estava em dúvida e a atendente confirmou;
  *  corrigido = a atendente trocou o exame; conferencia = foi para a gestão; null = item adicionado à mão (não é leitura). */
