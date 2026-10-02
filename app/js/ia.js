@@ -54,6 +54,8 @@ export async function lerPedido(entradas, { onStatus = () => {}, tentativas = 4,
         return { ...json, modelo: nome, ms: Date.now() - t0, tokens: r.response.usageMetadata?.totalTokenCount };
       } catch (e) {
         ultimoErro = e; const msg = String(e.message || e);
+        // 403 de faturamento ("dunning"/billing): conta do Google Cloud com pagamento pendente — não adianta repetir
+        if (/dunning|billing|faturamento|BILLING_DISABLED/i.test(msg)) throw new Error('IA bloqueada pelo Google: a conta de faturamento do projeto CelulaMS está com pagamento pendente. A gestão precisa regularizar em console.cloud.google.com → Faturamento. Enquanto isso, adicione os exames pela busca manual.');
         if (/404|not found|no longer available/i.test(msg)) continue;          // modelo indisponível: próximo
         // 429 no Vertex é "Resource exhausted" momentâneo (capacidade compartilhada): passa pro reserva e repete em seguida
         if (/429|quota|RESOURCE_EXHAUSTED|resource exhausted/i.test(msg)) { quota = true; onStatus(`Modelo ${nome} ocupado — tentando o modelo reserva…`); continue; }
