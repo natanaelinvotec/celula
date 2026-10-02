@@ -27,7 +27,12 @@ const dorme = ms => new Promise(r => setTimeout(r, ms));
  * Lê uma ou mais imagens (dataURL JPEG/PNG) e devolve { paciente, medico, exames:[...], modelo, ms }.
  * onStatus(texto) recebe mensagens de progresso para a tela.
  */
-export async function lerPedido(entradas, { onStatus = () => {}, tentativas = 4, dicas = [] } = {}) {
+// Custo (teste de 02/10 com 11 pedidos reais): o "raciocínio" do Gemini era ~75% do custo. Leitura RÁPIDA (sem raciocínio)
+// acertou o mesmo que a completa em 9 de 11 pedidos, pela metade do preço e em menos da metade do tempo.
+// Por isso: lê primeiro no modo rápido; se a leitura parecer duvidosa (algum exame com confiança < LIMIAR_DUVIDA ou nenhum exame),
+// relê sozinho no modo completo — o custo maior fica só para as caligrafias difíceis.
+const LIMIAR_DUVIDA = 0.6;
+export async function lerPedido(entradas, { onStatus = () => {}, tentativas = 4, dicas = [], completo = false } = {}) {
   // entradas: dataURLs de imagem (foto/PDF convertido) e/ou objetos { texto } (pedido em Word)
   const partes = [{ text: PROMPT }];
   if (dicas.length) partes.push({ text: 'Grafias já confirmadas pela recepção deste laboratório (use como referência quando a caligrafia parecer com alguma delas):\n' + dicas.map(d => `"${d.texto}" = ${d.nome}`).join('\n') });
@@ -44,14 +49,21 @@ export async function lerPedido(entradas, { onStatus = () => {}, tentativas = 4,
         onStatus(`Lendo o pedido com ${nome}${i ? ` (tentativa ${i + 1})` : ''}…`);
         // No backend Vertex o modo JSON estruturado funciona com imagens: resposta já vem em JSON puro.
         // Os modelos gemini-3.x "pensam" antes de responder e esses tokens contam no limite de saída: 4096 estourava em pedidos grandes e cortava o JSON.
-        const model = getGenerativeModel(ai, { model: nome, generationConfig: { temperature: 0.1, maxOutputTokens: 32768, responseMimeType: 'application/json' } });
+        const model = getGenerativeModel(ai, { model: nome, generationConfig: { temperature: 0.1, maxOutputTokens: 32768, responseMimeType: 'application/json', ...(completo ? {} : { thinkingConfig: { thinkingLevel: 'MINIMAL' } }) } });
         const t0 = Date.now();
         const r = await model.generateContent(parts);
         const fim = r.response.candidates?.[0]?.finishReason; const texto = r.response.text();
         const json = extrairJson(texto);
         if (!json || !Array.isArray(json.exames)) { console.warn('IA: resposta inválida', { modelo: nome, fim, uso: r.response.usageMetadata, inicio: String(texto).slice(0, 200) }); throw new Error(fim === 'MAX_TOKENS' ? 'RESPOSTA_CORTADA' : 'Resposta da IA sem lista de exames'); }
         json.exames = json.exames.filter(e => e && e.texto).map(e => ({ texto: String(e.texto).trim(), normalizado: String(e.normalizado || e.texto).trim().toUpperCase(), confianca: Math.max(0, Math.min(1, Number(e.confianca) || 0.5)), quantidade: Math.max(1, Math.min(12, parseInt(e.quantidade) || 1)) }));
-        return { ...json, modelo: nome, ms: Date.now() - t0, tokens: r.response.usageMetadata?.totalTokenCount };
+        const u = r.response.usageMetadata || {};
+        const res = { ...json, modelo: nome, ms: Date.now() - t0, tokens: u.totalTokenCount, pensamento: u.thoughtsTokenCount || 0, modo: completo ? 'completo' : 'rapido' };
+        if (!completo && (!json.exames.length || json.exames.some(e => e.confianca < LIMIAR_DUVIDA))) {
+          onStatus('Caligrafia difícil — conferindo com a leitura detalhada…');
+          try { const det = await lerPedido(entradas, { onStatus, tentativas: 2, dicas, completo: true }); return { ...det, ms: res.ms + det.ms, tokens: (res.tokens || 0) + (det.tokens || 0), escalou: true }; }
+          catch { return res; } // a detalhada falhou: fica com a rápida
+        }
+        return res;
       } catch (e) {
         ultimoErro = e; const msg = String(e.message || e);
         // 403 de faturamento ("dunning"/billing): conta do Google Cloud com pagamento pendente — não adianta repetir
