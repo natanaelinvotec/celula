@@ -5,12 +5,12 @@
 //  Veja o passo a passo completo em LEIA-ME-ORDEM.md
 // =====================================================================
 export const firebaseConfig = {
-  apiKey: "COLE_AQUI",
-  authDomain: "SEU-PROJETO.firebaseapp.com",
-  projectId: "SEU-PROJETO",
-  storageBucket: "SEU-PROJETO.appspot.com",
-  messagingSenderId: "000000000000",
-  appId: "1:000000000000:web:0000000000000000000000"
+  apiKey: "AIzaSyC90ChGGQ2lXQkRNkNfKrqo0DQGqRt_eOU",
+  authDomain: "invotec-os.firebaseapp.com",
+  projectId: "invotec-os",
+  storageBucket: "invotec-os.firebasestorage.app",
+  messagingSenderId: "202577019726",
+  appId: "1:202577019726:web:f3dc0ae98184ee45ab941f"
 };
 
 // Dados da empresa que aparecem no cabeçalho do laudo
