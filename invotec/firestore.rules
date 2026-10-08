@@ -1,0 +1,17 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Só usuários autenticados (seu login) podem ler e gravar.
+    // Quem não estiver logado não consegue nem listar as O.S.
+    match /ordens/{ordem} {
+      allow read, write: if request.auth != null;
+      match /imagens/{imagem} {
+        allow read, write: if request.auth != null;
+      }
+    }
+    // Perfil (nome e assinatura padrão): cada usuário só acessa o seu.
+    match /perfil/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+  }
+}
