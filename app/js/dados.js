@@ -365,7 +365,7 @@ export async function importarAutolac(json, onProgress = () => {}) {
   const ops = [];
   for (const e of json.exames) {
     const cur = cat[e.m]; const cor = cfg.setores?.[e.setor]?.cor || cur?.cor || '#278d8c';
-    const dados = { bancada: e.bancada || null, material: e.material || null, metodo: e.metodo || null, prazoDias: e.prazoDias || null, jejum: e.jejum || null, preparo: e.preparo || null,
+    const dados = { bancada: e.bancada || null, material: e.material || null, metodo: e.metodo || null, prazoDias: e.prazoDias || null, jejum: e.jejum || cur?.jejum || null, preparo: e.preparo || cur?.preparo || null, // o que o AutoLAC não traz não apaga o que a gestão preencheu (ex.: jejum das curvas)
       meios: e.meios || null, meiosOrigem: e.meiosOrigem || null, sinonimia: e.sinonimia || null, nomeAutolac: e.nomeAutolac || null, foraAutolac: false, autolacEm: serverTimestamp() };
     if (cur) ops.push(['update', doc(db, 'exames', e.m), { ...dados, setor: e.setor || cur.setor, cor, laboratorio: e.setor === 'Próprio' ? 'CELULA' : (cur.laboratorio || 'DB') }]);
     else ops.push(['set', doc(db, 'exames', e.m), { mnemonico: e.m, nome: e.nome.toUpperCase(), nomeBusca: norm(e.nome), setor: e.setor, cor, laboratorio: e.setor === 'Próprio' ? 'CELULA' : 'DB', codigoTuss: null, precos: {}, renal: false, ativo: true, origem: 'autolac', criadoEm: serverTimestamp(), criadoPor: u.uid, ...dados }]);
