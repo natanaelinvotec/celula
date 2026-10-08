@@ -25,6 +25,7 @@ import { login, resetSenha, auth, toast } from './js/firebase.js';
 import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/12.3.0/firebase-auth.js';
 const $ = id => document.getElementById(id);
 const next = new URLSearchParams(location.search).get('next');
+try { if (sessionStorage.getItem('saiuPorInatividade')) { sessionStorage.removeItem('saiuPorInatividade'); $('err').textContent = 'Sessão encerrada após 1 hora sem uso. Entre novamente.'; $('err').hidden = false; } } catch {}
 if (new URLSearchParams(location.search).get('inativo')) { $('err').textContent = 'Este usuário está desativado. Fale com a administração.'; $('err').hidden = false; }
 onAuthStateChanged(auth, u => { if (u) location.replace(next && /^[\w-]+\.html$/.test(next) ? next : 'orcamento.html'); });
 const MSG = { 'auth/invalid-credential': 'E-mail ou senha incorretos.', 'auth/user-not-found': 'E-mail não cadastrado.', 'auth/wrong-password': 'Senha incorreta.', 'auth/too-many-requests': 'Muitas tentativas. Aguarde alguns minutos.', 'auth/invalid-email': 'E-mail inválido.', 'auth/network-request-failed': 'Sem conexão com a internet.' };
