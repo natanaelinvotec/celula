@@ -1,5 +1,31 @@
 // shell.js — barra lateral + topo comuns a todas as páginas logadas.
-import { sair, temaInit, iniciais, escapeHtml } from './firebase.js';
+import { sair, temaInit, iniciais, escapeHtml, toast } from './firebase.js';
+
+// ---------- sessão expira após 1 h sem movimento ----------
+// Qualquer mouse/teclado/toque/rolagem em QUALQUER aba ou no editor embutido conta como atividade (fica no localStorage,
+// que é compartilhado entre as abas do sistema). Só a janela principal controla o tempo; aviso 2 min antes de sair.
+const INATIVO_MS = 60 * 60e3, AVISO_MS = 2 * 60e3, CHAVE_ATIV = 'celula:ultimaAtividade';
+function vigiarInatividade(principal) {
+  const ler = () => { try { return Number(localStorage.getItem(CHAVE_ATIV)) || 0; } catch { return 0; } };
+  let ultima = Date.now(), gravada = 0, avisado = false, saindo = false;
+  const gravar = () => { gravada = ultima; try { localStorage.setItem(CHAVE_ATIV, String(ultima)); } catch {} };
+  const marcar = () => { ultima = Date.now(); avisado = false; if (ultima - gravada > 15e3) gravar(); };
+  gravar();
+  for (const ev of ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart', 'scroll']) addEventListener(ev, marcar, { passive: true, capture: true });
+  if (!principal) return;
+  const conferir = async () => {
+    if (saindo) return;
+    const resta = INATIVO_MS - (Date.now() - Math.max(ultima, ler()));
+    if (resta <= 0) {
+      saindo = true;
+      try { sessionStorage.setItem('saiuPorInatividade', '1'); } catch {}
+      try { const D = await import('./dados.js'); await D.setStatusAtendente('offline'); } catch {}
+      sair().catch(() => location.replace('login.html'));
+    } else if (resta <= AVISO_MS && !avisado) { avisado = true; toast('Sem atividade há quase 1 hora: você será desconectado em 2 minutos. Mexa o mouse para continuar.'); }
+  };
+  setInterval(conferir, 20e3);
+  addEventListener('visibilitychange', () => { if (!document.hidden) conferir(); }); // voltou de suspensão/outra aba: confere na hora
+}
 
 const ICONS = {
   wa: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20l1.3-3.9A8 8 0 1 1 8 19z"/><path d="M9 9.5c.3 2 2 3.8 4.5 4.5l1-1.2 2 .8c-.2 1.2-1.2 2-2.5 1.8C10.5 15 8 12.5 7.6 9.5 7.4 8.2 8.2 7.2 9.4 7l.8 2z"/></svg>',
@@ -56,6 +82,7 @@ export function montarShell({ perfil, ativo, titulo, subtitulo, painel = false }
     <div id="conteudo"></div>
   </main></div>`);
   document.getElementById('btnSair').addEventListener('click', sair);
+  vigiarInatividade(window.top === window);
   const sel = document.getElementById('selStatus');
   if (sel && window.top === window) { // embutido (editor na tela de Atendimento): não mexe no status/presença da atendente
     // status escolhido + batimento a cada 60 s; ao fechar/sair do sistema vira offline automaticamente (a gestão também considera offline sem batimento há 3 min)
