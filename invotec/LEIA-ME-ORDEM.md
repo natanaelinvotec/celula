@@ -72,7 +72,7 @@ Google Cloud Console → **APIs e serviços → Credenciais** → clique na *Bro
 ## Manutenção
 
 - **Novo equipamento / cliente, telefone mudou, novo texto pronto, mudar atendente padrão:** edite `firebase-config.js` (listas `EQUIPAMENTOS`, `TEXTOS_PRONTOS`, `EMPRESA`) e faça o commit. Nada mais muda.
-- **Backup:** Firestore Database → Importar/Exportar (ou peça para eu gerar um botão de exportar tudo em JSON).
+- **Backup:** botão **⬇ Backup** no painel baixa todas as O.S. com fotos em um arquivo JSON; **⬆ Importar** restaura esse arquivo (ou carrega o histórico). O.S. com número já existente são puladas.
 - **Custo:** plano gratuito do Firebase (Spark) cobre com folga: cada foto ocupa ~50 KB (uma O.S. com 10 fotos, ~0,5 MB); o limite grátis é 1 GB armazenado e 50 mil leituras/dia.
 
 ## Se algo não funcionar

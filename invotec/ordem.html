@@ -205,7 +205,7 @@ td.num{font-weight:800;font-variant-numeric:tabular-nums;color:var(--brand-dark)
     <span class="user"><span class="nome" id="user-nome"></span><button class="btn sm" id="btn-sair">Sair</button></span></header>
   <div class="wrap">
     <div class="page-head"><div><h2>Painel de O.S.</h2><p>O.S. gravadas na nuvem. Filtre, reabra, edite e baixe o PDF novamente.</p></div>
-      <button class="btn primary" data-nova>＋ Cadastrar Ordem de Serviço</button></div>
+      <div class="actions"><label class="btn" title="Importa O.S. de um arquivo JSON (histórico ou backup)">⬆ Importar<input type="file" id="imp-file" accept="application/json,.json" hidden></label><button class="btn" id="btn-exportar" title="Baixa todas as O.S. com fotos em um arquivo JSON">⬇ Backup</button><button class="btn primary" data-nova>＋ Cadastrar Ordem de Serviço</button></div></div>
     <div class="stats">
       <div class="stat"><div class="n" id="st-total">–</div><div class="l">O.S. no total</div></div>
       <div class="stat"><div class="n" id="st-mes">–</div><div class="l">Este mês</div></div>

@@ -80,7 +80,7 @@ async function carregarPainel() {
   try {
     const snap = await getDocs(collection(db, "ordens"));
     ordens = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    ordens.sort((a, b) => (b.numeroOrd - a.numeroOrd) || (b.data || "").localeCompare(a.data || ""));
+    ordens.sort((a, b) => (b.data || "").localeCompare(a.data || "") || (b.numeroOrd - a.numeroOrd));
     const cli = $("#f-cli"), tipo = $("#f-tipo");
     cli.innerHTML = '<option value="">Todos</option>' + [...new Set(ordens.map(o => o.cliente?.nome).filter(Boolean))].sort().map(c => `<option>${esc(c)}</option>`).join("");
     tipo.innerHTML = '<option value="">Todos</option>' + TIPOS_SERVICO.map(t => `<option>${esc(t)}</option>`).join("");
@@ -366,4 +366,50 @@ async function baixarPDF() {
   finally { loading(false); }
 }
 $("#btn-salvar").onclick = async () => { if (await gravar()) mostrar("painel"); };
+
+// --------------------------------------------------------------- importar / exportar (JSON)
+// Formato: { ordens: [ { numero, data, atendente, equipamento, cliente{...}, tipo, descricao, etapas{...}, tecnico, clienteAssinante, assinaturas{tec,cli}, imagens:[{ordem,desc,data,orient}] } ] }
+async function importarOS(json, { sobrescrever = false } = {}) {
+  const lista = Array.isArray(json) ? json : (json.ordens || []);
+  if (!lista.length) throw new Error("Arquivo sem O.S.");
+  let novas = 0, puladas = 0;
+  for (const o of lista) {
+    const numero = String(o.numero || "").trim(); if (!numero) { puladas++; continue; }
+    const id = "os-" + numero.replace(/[^\w-]/g, "_");
+    loading(true, `Importando O.S. ${numero}…`);
+    if (!sobrescrever && (await getDoc(doc(db, "ordens", id))).exists()) { puladas++; continue; }
+    const imgs = o.imagens || [];
+    const dados = { numero, numeroOrd: parseInt(numero, 10) || 0, data: o.data || "", atendente: o.atendente || EMPRESA.atendentePadrao, equipamento: o.equipamento || "", cliente: o.cliente || null,
+      tipo: o.tipo || "", descricao: o.descricao || "", etapas: o.etapas || { recebido: "", chegada: "", concluido: "" }, tecnico: o.tecnico || EMPRESA.tecnicoPadrao,
+      clienteAssinante: o.clienteAssinante || "", assinaturas: o.assinaturas || { tec: "", cli: "" }, qtdImagens: imgs.length, uid: usuario.uid, importadoEm: serverTimestamp(), atualizadoEm: serverTimestamp(), criadoEm: serverTimestamp() };
+    const batch = writeBatch(db);
+    batch.set(doc(db, "ordens", id), dados);
+    imgs.forEach((im, i) => batch.set(doc(db, "ordens", id, "imagens", "img-" + pad(i + 1)), { ordem: i, desc: im.desc || "", data: im.data, orient: im.orient || "retrato" }));
+    await batch.commit(); novas++;
+  }
+  loading(false);
+  return { novas, puladas };
+}
+window.importarOS = importarOS; // uso avançado pelo console
+$("#imp-file").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return; e.target.value = "";
+  try {
+    const json = JSON.parse(await f.text());
+    const n = (Array.isArray(json) ? json : json.ordens || []).length;
+    if (!(await confirmar("Importar " + n + " O.S.?", "O.S. com número já existente serão puladas. As demais entram no histórico com suas fotos."))) return;
+    const r = await importarOS(json);
+    toast(`Importação concluída: ${r.novas} gravadas, ${r.puladas} puladas.`); await carregarPainel();
+  } catch (err) { loading(false); toast("Falha na importação: " + err.message, true); console.error(err); }
+};
+$("#btn-exportar").onclick = async () => {
+  loading(true, "Montando backup…");
+  try {
+    const todas = [];
+    for (const o of ordens) { const c = await carregarCompleta(o.id); loading(true, "Montando backup… " + o.numero); if (c) { const { id, uid, criadoEm, atualizadoEm, importadoEm, qtdImagens, ...resto } = c; todas.push(resto); } }
+    const blob = new Blob([JSON.stringify({ versao: 1, exportadoEm: new Date().toISOString(), ordens: todas })], { type: "application/json" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `backup-os-invotec-${hojeISO()}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    toast(`Backup com ${todas.length} O.S. gerado.`);
+  } catch (err) { toast("Erro no backup: " + err.message, true); }
+  finally { loading(false); }
+};
 $("#btn-salvar-pdf").onclick = async () => { if (await gravar()) await baixarPDF(); };
