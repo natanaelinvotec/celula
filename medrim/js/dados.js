@@ -59,6 +59,14 @@
     },
   };
 
+  // Admissional: os 29 da anual menos ureia pós-diálise = 28 (sem controle extra — glicose, creatinina e Hb glicada já estão dentro)
+  M.BATERIAS.admissional = {
+    rotulo: 'Admissional', cor: 'var(--teal)', qtd: 28, semControle: true, especial: true,
+    exames: M.BATERIAS.anual.exames.filter(c => c !== 'URPOS'),
+  };
+  // baterias que podem ser escolhidas no cadastro de quem veio sem pedido no CSV
+  M.BATERIAS_MANUAIS = ['mensal', 'trimestral', 'semestral'];
+
   // Mês (1–12) → tipo de bateria
   M.CALENDARIO = { 1: 'anual', 2: 'mensal', 3: 'mensal', 4: 'trimestral', 5: 'mensal', 6: 'mensal', 7: 'semestral', 8: 'mensal', 9: 'mensal', 10: 'trimestral', 11: 'mensal', 12: 'mensal' };
   M.MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];

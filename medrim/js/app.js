@@ -65,9 +65,25 @@
   const nomeRef = () => `${M.MESES[E.ref.mes - 1]}/${E.ref.ano}`;
   const dataCadastro = () => new Date(E.ref.ano, E.ref.mes - 1, 1 - M.DIAS_ANTES_CADASTRO);
 
-  /** Exames do paciente na bateria de referência: base do mês + controles aplicáveis (matriz em E.regras). */
+  /** Admissão × lista do mês: 'atual' = entra nesta lista com a admissional (28); 'futura' = só na lista seguinte. */
+  function janelaAdm(p) {
+    if (!p || !p.admissao) return null;
+    const d = new Date(p.admissao + 'T12:00');
+    const cad = new Date(E.ref.ano, E.ref.mes - 1, 1 - M.DIAS_ANTES_CADASTRO, 23, 59);
+    const cadAnt = new Date(E.ref.ano, E.ref.mes - 2, 1 - M.DIAS_ANTES_CADASTRO, 23, 59);
+    if (d > cad) return 'futura';
+    if (d > cadAnt) return 'atual';
+    return null;
+  }
+  /** Tipo de bateria do paciente nesta lista: admissional, a escolhida no cadastro sem pedido, ou a do mês. */
+  function tipoDoPaciente(p) {
+    if (p && janelaAdm(p) === 'atual' && !p.admColetado && tipoRef() !== 'anual') return 'admissional';
+    if (p && p.bateriaManual && M.BATERIAS[p.bateriaManual]) return p.bateriaManual;
+    return tipoRef();
+  }
+  /** Exames do paciente: base da bateria dele + controles aplicáveis (matriz em E.regras). */
   function examesDo(p) {
-    const tipo = tipoRef(), b = M.BATERIAS[tipo];
+    const tipo = tipoDoPaciente(p), b = M.BATERIAS[tipo];
     const lista = b.exames.slice();
     if (!b.semControle && p && p.controles) {
       for (const [k, c] of Object.entries(M.CONTROLES)) {
@@ -83,10 +99,11 @@
     if (p.status === 'saiu') return { coleta: false, motivo: `Saiu da clínica em ${fmtData(p.saiuEm)}`, cor: 'var(--muted)', ic: 'userx' };
     if (p.status === 'internado') return { coleta: false, motivo: `Internado desde ${fmtData(p.internadoDesde)} — coleta só no retorno`, cor: 'var(--warn)', ic: 'bed' };
     if (p.status === 'transito' && !(p.transito && p.transito.incluir)) return { coleta: false, motivo: `Em trânsito${p.transito && p.transito.origem ? ' (' + p.transito.origem + ')' : ''} — fora da bateria`, cor: 'var(--c5)', ic: 'route' };
-    if (p.admissao && tipoRef() !== 'anual') {
-      const [a, m] = p.admissao.split('-').map(Number);
-      const dif = (E.ref.ano * 12 + E.ref.mes) - (a * 12 + m);
-      if (dif === 0 || dif === 1) return { coleta: false, motivo: `Admissional em ${fmtData(p.admissao)} — já fez a bateria completa (29)`, cor: 'var(--teal)', ic: 'userplus', adm: true };
+    const ja = janelaAdm(p);
+    if (ja === 'futura') return { coleta: false, motivo: `Admissão em ${fmtData(p.admissao)} — entra na lista do mês seguinte`, cor: 'var(--teal)', ic: 'userplus', adm: true };
+    if (ja === 'atual' && tipoRef() !== 'anual') {
+      if (p.admColetado) return { coleta: false, motivo: `Admissional já coletado (${fmtData(p.admissao)}) — não faz a bateria deste mês`, cor: 'var(--teal)', ic: 'userplus', adm: true };
+      return { coleta: true, adm: true, motivo: `Admissional (${fmtData(p.admissao)}) — 28 exames` };
     }
     if (p.origem === 'resultado') return { coleta: false, motivo: 'Sem pedido no CSV — identificado pelo TXT de resultados' };
     if (p.origem !== 'csv' && p.origem !== 'manual' && p.origem !== 'transito') return { coleta: false, motivo: 'Sem pedido no CSV da Hiperrim' };
@@ -241,15 +258,19 @@
     // perfil de controle dos pacientes que coletam
     const perfis = {};
     m.coletam.forEach(p => {
-      const extras = Object.keys(M.CONTROLES).filter(k => p.controles && p.controles[k] && E.regras[k][tipo] && !M.BATERIAS[tipo].exames.includes(M.CONTROLES[k].exame));
-      const chave = extras.join('+') || 'normal';
+      const tp = tipoDoPaciente(p);
+      let chave;
+      if (tp !== tipo) chave = 'bat:' + tp;
+      else chave = Object.keys(M.CONTROLES).filter(k => p.controles && p.controles[k] && E.regras[k][tipo] && !M.BATERIAS[tipo].exames.includes(M.CONTROLES[k].exame)).join('+') || 'normal';
       perfis[chave] = (perfis[chave] || 0) + 1;
     });
     const maxP = Math.max(1, ...Object.values(perfis));
-    const rotPerfil = k => k === 'normal' ? `Bateria ${b.rotulo.toLowerCase()} (${b.qtd})` : `+ ${k.split('+').map(x => M.CONTROLES[x].rotulo).join(' + ')} (${b.qtd + k.split('+').length})`;
+    const batDe = k => M.BATERIAS[k.slice(4)];
+    const rotPerfil = k => k === 'normal' ? `Bateria ${b.rotulo.toLowerCase()} (${b.qtd})` : k.startsWith('bat:') ? `Bateria ${batDe(k).rotulo.toLowerCase()} (${batDe(k).qtd})` : `+ ${k.split('+').map(x => M.CONTROLES[x].rotulo).join(' + ')} (${b.qtd + k.split('+').length})`;
+    const corPerfil = k => k === 'normal' ? b.cor : k.startsWith('bat:') ? batDe(k).cor : M.CONTROLES[k.split('+')[0]].cor;
     const perfisHtml = Object.entries(perfis).sort((a, b) => b[1] - a[1]).map(([k, n]) => `
-      <div class="linha"><span class="ks">${k === 'normal' ? `<span class="k" style="--cor:var(--b-${tipo === 'mensal' ? 'mensal' : tipo === 'trimestral' ? 'tri' : tipo === 'semestral' ? 'sem' : 'anual'})">${b.qtd}</span>` : k.split('+').map(x => `<span class="k" style="--cor:${M.CONTROLES[x].cor}">${M.CONTROLES[x].sigla}</span>`).join('')}&nbsp;${esc(rotPerfil(k))}</span>
-      <span class="barra" style="--cor:${k === 'normal' ? b.cor : M.CONTROLES[k.split('+')[0]].cor}"><i style="width:${n / maxP * 100}%"></i></span><span class="mono" style="text-align:right">${n}</span></div>`).join('');
+      <div class="linha"><span class="ks">${k === 'normal' || k.startsWith('bat:') ? `<span class="k" style="--cor:${corPerfil(k)}">${k === 'normal' ? b.qtd : batDe(k).qtd}</span>` : k.split('+').map(x => `<span class="k" style="--cor:${M.CONTROLES[x].cor}">${M.CONTROLES[x].sigla}</span>`).join('')}&nbsp;${esc(rotPerfil(k))}</span>
+      <span class="barra" style="--cor:${corPerfil(k)}"><i style="width:${n / maxP * 100}%"></i></span><span class="mono" style="text-align:right">${n}</span></div>`).join('');
 
     // mapa de ocupação
     const cols = [['SQS', 'M'], ['SQS', 'T'], ['SQS', 'N'], ['TQS', 'M'], ['TQS', 'T'], ['TQS', 'N']];
@@ -318,7 +339,7 @@
       ${kpi('plus', 'var(--teal)', m.livres, 'Vagas livres', 'máquina × dias × turno', '#/salao/1')}
       ${kpi('bed', 'var(--warn)', m.internados, 'Internados', 'fora da bateria', '#/painel')}
       ${kpi('route', 'var(--c5)', m.transito, 'Em trânsito', 'vindos de outra unidade', '#/painel')}
-      ${kpi('userplus', 'var(--teal)', m.adm, 'Admissionais', 'não coletam este mês', '#/relatorio')}
+      ${kpi('userplus', 'var(--teal)', m.adm, 'Admissionais', 'bateria de 28 exames', '#/relatorio')}
       ${kpi('userx', 'var(--muted)', m.obitos, 'Óbitos', 'registrados', '#/painel')}
     </div>
 
@@ -343,7 +364,7 @@
   const EVT = {
     transferencia: ['swap', 'var(--blue)'], internacao: ['bed', 'var(--warn)'], retorno: ['check', 'var(--ok)'],
     obito: ['userx', 'var(--muted)'], admissao: ['userplus', 'var(--teal)'], transito: ['route', 'var(--c5)'],
-    vinculo: ['link', 'var(--blue)'], importacao: ['upload', 'var(--rim)'], controle: ['flask', 'var(--k-glic)'],
+    vinculo: ['link', 'var(--blue)'], importacao: ['upload', 'var(--rim)'], controle: ['flask', 'var(--k-glic)'], remocao: ['x', 'var(--crit)'], cadastro: ['userplus', 'var(--blue)'],
   };
   const movHtml = e => { const [icn, cor] = EVT[e.tipo] || ['info', 'var(--muted)']; return `<div class="mov" style="--cor:${cor}"><span class="ic">${ic(icn)}</span><div>${esc(e.texto)}<br><small>${fmtDataHora(e.ts)}</small></div></div>`; };
 
@@ -434,7 +455,7 @@
   M.app = { $, $$, esc, ic, clone, titulo, nomeCurto, iniciais, fmtData, idade, fmtCpf, mascCpf, cpfValido, uid, hojeISO };
   Object.assign(M.app, {
     ui, salvar, toast, iniciar, marcar, desfazer, evento, estadoVazio, render, ir, rotaAtual,
-    tipoRef, bateriaRef, nomeRef, dataCadastro, examesDo, situacao, pacDe, vagaPor, ocupada, rotTurno, local, nomeExibicao, nomeFaixa,
+    tipoRef, bateriaRef, nomeRef, dataCadastro, examesDo, situacao, tipoDoPaciente, pacDe, vagaPor, ocupada, rotTurno, local, nomeExibicao, nomeFaixa,
     saloes, ordemRelatorio, divergencias, metricas, movHtml,
   });
   Object.defineProperty(M.app, 'E', { get: () => E, set: v => { E = v; }, configurable: true });

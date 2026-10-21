@@ -254,7 +254,7 @@
         : alt && P(alt.cpf) ? `<small style="color:var(--muted)">melhor palpite no CSV</small><br>${esc(P(alt.cpf).nome)} · ${Math.round(alt.score * 100)}%` : '<small style="color:var(--faint)">nenhum parecido no CSV</small>';
       return `<tr>${linhaLocal(v)}<td><span class="escala-nome">${esc(v.nomeEscala)}</span>${v.riscado ? ' <span class="chip b" style="--cor:var(--crit)">riscado</span>' : ''}${v.notaTransito ? ' <span class="chip b" style="--cor:var(--c5)">' + esc(v.notaTransito) + '</span>' : ''}</td>
       <td>${palpite}</td>
-      <td><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" data-s="vincular" data-v="${v.id}">${ic('link')} Vincular</button><button class="btn sm" data-s="cadastrar" data-v="${v.id}">${ic('userplus')} Cadastrar</button><button class="btn sm ghost" data-s="outrolab" data-v="${v.id}">${ic('flask')} Outro lab</button></div></td></tr>`;
+      <td><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" data-s="vincular" data-v="${v.id}">${ic('link')} Vincular</button><button class="btn sm" data-s="cadastrar" data-v="${v.id}" title="Cadastrar com bateria (sem pedido no CSV)">${ic('userplus')} Cadastrar</button><button class="btn sm ghost" data-s="outrolab" data-v="${v.id}">${ic('flask')} Outro lab</button><button class="btn sm perigo" data-s="excluir" data-v="${v.id}" title="Remover este nome da escala">${ic('x')} Excluir</button></div></td></tr>`;
     }).join('')).join('');
     const semVaga = d.csvSemVaga.map(p => `<tr><td>${pacCel(p)}</td><td><span class="chip">${M.GRUPOS[p.grupo].rotulo} · ${A.rotTurno(p.turno)}</span></td><td><span class="mono">${esc(p.codigo)}</span></td>
       <td><button class="btn sm pri" data-s="alocar" data-p="${p.id}">${ic('plus')} Alocar em máquina</button></td></tr>`).join('');
@@ -307,7 +307,8 @@
       if (s === 'continua') { A.marcar('riscado mantido'); v.riscado = false; v.match = Object.assign({}, v.match, { riscoResolvido: true }); A.salvar(); A.render(); A.toast('Mantido — entra na bateria', 'check', true); }
       if (s === 'saida') A.abrirFerramenta('obito', { origem: v.id });
       if (s === 'vincular') A.modalVincular(v.id);
-      if (s === 'cadastrar') A.abrirFerramenta('admissao', { destino: v.id, nome: v.nomeEscala });
+      if (s === 'cadastrar') A.cadastrarSemPedido(v.id);
+      if (s === 'excluir') A.removerDaEscala(v.id);
       if (s === 'outrolab') { A.marcar('outro laboratório'); E().outroLab[v.id] = !E().outroLab[v.id]; A.salvar(); A.render(); A.toast(E().outroLab[v.id] ? 'Marcado como outro laboratório' : 'Desmarcado', 'flask', true); }
       if (s === 'alocar') modalAlocar(b.dataset.p);
       if (s === 'vinctxt') A.vincularTxt([v.id]);
@@ -364,11 +365,15 @@
     const naoColeta = [...linhas, ...semVaga].filter(x => !x.st.coleta).length;
     const semCsv = A.divergencias().semCsv.length;
     const cpf = c => A.ui.relCpf ? fmtCpf(c) : mascCpf(c);
-    const exs = p => { const l = A.examesDo(p); return `<b class="mono">${l.length}</b> <span class="exs">${l.filter(c => !b.exames.includes(c)).map(c => { const k = Object.values(M.CONTROLES).find(x => x.exame === c); return `<span class="tag-exame extra" style="--cor:${k ? k.cor : 'var(--blue)'}">+${c}</span>`; }).join('')}</span>`; };
+    const exs = p => {
+      const l = A.examesDo(p), tp = A.tipoDoPaciente(p);
+      if (tp !== A.tipoRef()) { const bp = M.BATERIAS[tp]; return `<b class="mono">${l.length}</b> <span class="exs"><span class="tag-exame extra" style="--cor:${bp.cor}" title="${esc(l.join(', '))}">${esc(bp.rotulo)}</span>${l.filter(c => !bp.exames.includes(c)).map(c => `<span class="tag-exame extra" style="--cor:var(--blue)">+${c}</span>`).join('')}</span>`; }
+      return `<b class="mono">${l.length}</b> <span class="exs">${l.filter(c => !b.exames.includes(c)).map(c => { const k = Object.values(M.CONTROLES).find(x => x.exame === c); return `<span class="tag-exame extra" style="--cor:${k ? k.cor : 'var(--blue)'}">+${c}</span>`; }).join('')}</span>`;
+    };
     let grupo = '', html = '';
     const linha = x => `<tr class="${x.st.coleta ? '' : 'nao-coleta'}"><td class="mono">${x.n || '—'}</td><td class="mono">${x.v ? esc(x.v.maq) : '—'}</td>
       <td><b>${esc(x.p.nome)}</b></td><td class="mono">${esc(x.p.nasc || '—')}</td><td class="cpf">${cpf(x.p.cpf)}</td><td class="mono">${esc(x.p.codigo || '—')}</td>
-      <td>${x.st.coleta ? exs(x.p) : '<span style="color:var(--faint)">não cadastrar</span>'}</td><td><small>${esc(x.st.coleta ? [x.p.origem === 'transito' ? 'trânsito (incluído)' : x.p.origem === 'manual' ? 'cadastro manual' : '', x.v && x.v.riscado ? '⚠ riscado na escala — confirmar' : '', x.v && x.v.match && x.v.match.conf === 'media' ? 'conferir nome' : ''].filter(Boolean).join(' · ') : x.st.motivo)}</small></td></tr>`;
+      <td>${x.st.coleta ? exs(x.p) : '<span style="color:var(--faint)">não cadastrar</span>'}</td><td><small>${esc(x.st.coleta ? [x.p.origem === 'transito' ? 'trânsito (incluído)' : x.p.semPedido ? 'sem pedido no CSV da Hiperrim' : x.st.adm ? 'admissional' : x.p.origem === 'manual' ? 'cadastro manual' : '', x.v && x.v.riscado ? '⚠ riscado na escala — confirmar' : '', x.v && x.v.match && x.v.match.conf === 'media' ? 'conferir nome' : ''].filter(Boolean).join(' · ') : x.st.motivo)}</small></td></tr>`;
     for (const x of linhas) {
       const g = `${x.v.salao}|${x.v.grupo}|${x.v.turno}`;
       if (g !== grupo) { grupo = g; html += `<tr class="rel-grupo"><td colspan="8">Salão ${x.v.salao} · ${M.GRUPOS[x.v.grupo].rotulo} · ${A.rotTurno(x.v.turno)} <span>(${M.TURNOS[x.v.turno].csv}º turno)</span></td></tr>`; }
@@ -408,7 +413,7 @@
         const cab = ['Ordem', 'Salão', 'Dias', 'Turno', 'Máquina', 'Nome', 'Nascimento', 'CPF', 'Código Hiperrim', 'Bateria', 'Qtd exames', 'Exames', 'Coleta', 'Observação'];
         const rows = [...linhas, ...semVaga].map(x => {
           const ex = x.st.coleta ? A.examesDo(x.p) : [];
-          return [x.n || '', x.v ? x.v.salao : '', x.v ? M.GRUPOS[x.v.grupo].rotulo : '', x.v ? A.rotTurno(x.v.turno) : '', x.v ? x.v.maq : '', x.p.nome, x.p.nasc, fmtCpf(x.p.cpf), x.p.codigo, A.bateriaRef().rotulo, ex.length, ex.join(' '), x.st.coleta ? 'SIM' : 'NÃO', x.st.coleta ? '' : x.st.motivo];
+          return [x.n || '', x.v ? x.v.salao : '', x.v ? M.GRUPOS[x.v.grupo].rotulo : '', x.v ? A.rotTurno(x.v.turno) : '', x.v ? x.v.maq : '', x.p.nome, x.p.nasc, fmtCpf(x.p.cpf), x.p.codigo, M.BATERIAS[A.tipoDoPaciente(x.p)].rotulo, ex.length, ex.join(' '), x.st.coleta ? 'SIM' : 'NÃO', x.st.coleta ? (x.p.semPedido ? 'Sem pedido no CSV da Hiperrim' : x.st.adm ? x.st.motivo : '') : x.st.motivo];
         });
         if (r === 'csv') {
           const q = s => { s = String(s == null ? '' : s); return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
@@ -427,7 +432,7 @@
     const regras = E() ? E().regras : M.REGRAS_PADRAO;
     const meses = t => Object.entries(M.CALENDARIO).filter(([, x]) => x === t).map(([m]) => M.MESES[m - 1].slice(0, 3)).join(', ');
     const cards = Object.entries(M.BATERIAS).map(([t, b]) => `<div class="card bateria-card" style="--cor:${b.cor}">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start"><div><h2>${b.rotulo}</h2><div class="meses">${meses(t)}</div></div><div class="qtd mono">${b.qtd}</div></div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start"><div><h2>${b.rotulo}</h2><div class="meses">${meses(t) || 'Na admissão · anual sem ureia pós'}</div></div><div class="qtd mono">${b.qtd}</div></div>
       <div class="lista-ex">${b.exames.map(c => `<div><code>${c}</code><span>${esc(M.EXAMES[c].nome)}${(b.aConfirmar || []).includes(c) ? ' <span class="chip b" style="--cor:var(--warn);padding:1px 6px">a confirmar</span>' : ''}</span></div>`).join('')}</div>
       ${b.semControle ? `<div class="alerta-box info" style="margin-top:12px">${ic('info')}<div>Todos fazem os mesmos ${b.qtd} — sem controle extra.</div></div>` : ''}
     </div>`).join('');
@@ -441,7 +446,8 @@
         <div class="card"><h2>Controles por paciente</h2><p class="desc">Marcados no CSV (colunas Glic, CR, HB-Gli). Aqui você define em qual bateria cada controle acrescenta exame. A matriz vale para o relatório na hora.</p>${matriz}</div>
         <div class="card"><h2>Regras de exceção</h2>
           <ul style="margin:0;padding-left:18px;line-height:1.7">
-            <li><b>Admissional:</b> faz a bateria completa (29) na admissão; <b>não coleta</b> na bateria do mês seguinte (nem no próprio mês). Em janeiro, repete a anual normalmente.</li>
+            <li><b>Admissional:</b> 28 exames (a anual sem ureia pós), sem glicose/creatinina/Hb glicada extras. Entra na lista do mês da admissão no lugar da bateria do mês; no mês seguinte volta ao normal. Em janeiro faz a anual completa. Se o admissional já foi coletado, marque na admissão e ele não entra na lista.</li>
+            <li><b>Sem pedido no CSV:</b> quem está na escala sem pedido pode ser cadastrado com a bateria escolhida (mensal, trimestral ou semestral) e entra na sequência normal do relatório.</li>
             <li><b>Internado:</b> fora das baterias até o retorno; a máquina fica reservada.</li>
             <li><b>Trânsito:</b> fora da bateria por padrão (opção de incluir por paciente).</li>
             <li><b>Óbito / saída:</b> libera a máquina; o registro fica no histórico.</li>
@@ -499,7 +505,7 @@
         <li><b>Trimestral (14)</b> — <span style="color:var(--ok);font-weight:800">confirmado pelo TXT de outubro</span>: além dos 12 do print, todos têm cálcio (CA-DB) e capacidade de ligação/saturação do ferro (CAPAT-DB).</li>
         <li><b>Controles:</b> glicose entra na mensal, trimestral e semestral; creatinina na mensal e trimestral; Hb glicada na trimestral e semestral. <span style="color:var(--ok);font-weight:800">O TXT de outubro bate</span>: 124 com glicose, 123 com Hb glicada, 58 com creatinina. Falta confirmar a semestral.</li>
         <li><b>Creatinina:</b> no CSV de novembro, 54 dos 62 pacientes com CR têm os códigos mais recentes (≥ 4583000). Parece acompanhamento de pacientes novos (função renal residual). É isso? Por quantos meses?</li>
-        <li><b>Admissional:</b> não coleta no mês seguinte à admissão, nem no próprio mês; janeiro repete a anual normalmente.</li>
+        <li><b>Admissional:</b> 28 exames (anual sem ureia pós), entra na lista do mês da admissão no lugar da bateria do mês; janeiro faz a anual completa.</li>
         <li><b>Trânsito:</b> fora da bateria por padrão, com opção de incluir.</li>
         <li><b>Ordem do relatório:</b> Salão → Seg/Qua/Sex (manhã, tarde, noite) → Ter/Qui/Sáb (manhã, tarde, noite) → máquina, com HDF logo após a máquina anterior.</li>
         <li><b>Nomes sem CSV</b>${s4 ? ` (principalmente no Salão 4: ${s4.sem} de ${s4.tot})` : ''}: são de outro laboratório ou convênio? Se forem, marco “outro lab” e eles saem das pendências. Alguns fizeram a bateria de outubro (estão no TXT) e sumiram do CSV de novembro — faltou no pedido?</li>

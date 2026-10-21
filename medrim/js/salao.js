@@ -104,6 +104,8 @@
       }
       if (p && p.controles) badges += Object.entries(M.CONTROLES).filter(([k]) => p.controles[k]).map(([, c]) => `<span class="k" style="--cor:${c.cor}" title="${c.rotulo}">${c.sigla}</span>`).join('');
       if (st.ic && p) badges += `<span class="st" style="--cor:${st.cor}" title="${esc(st.motivo)}">${ic(st.ic)}</span>`;
+      else if (st.adm && p) badges += `<span class="st" style="--cor:var(--teal)" title="${esc(st.motivo)}">${ic('userplus')}</span>`;
+      if (p && p.semPedido) badges += `<span class="st" style="--cor:var(--blue)" title="Sem pedido no CSV da Hiperrim · bateria ${esc(M.BATERIAS[p.bateriaManual].rotulo)}">${ic('info')}</span>`;
       if (v.riscado) badges += `<span class="st" style="--cor:var(--crit)" title="Riscado na escala">${ic('x')}</span>`;
     }
     const filtrar = A.ui.soDivergencias && !temDiv;
@@ -184,7 +186,7 @@
     const p = pid ? E().pacientes[pid] : A.pacDe(v);
     if (!v && p && p.vagaId) v = A.vagaPor(p.vagaId);
     const g = $('#gaveta');
-    const st = A.situacao(p), b = A.bateriaRef(), tipo = A.tipoRef();
+    const st = A.situacao(p), tipo = p ? A.tipoDoPaciente(p) : A.tipoRef(), b = M.BATERIAS[tipo];
     const nome = p ? titulo(p.nome) : v.nomeEscala;
     const conf = v && v.match;
     const rotConf = conf ? ({ alta: 'Casamento automático', media: 'Revisar casamento', confirmado: 'Vínculo confirmado', manual: 'Cadastro manual' })[conf.conf] : 'Sem vínculo';
@@ -199,7 +201,7 @@
       const alts = (v.alternativas || []).filter(a => E().pacientes[a.cpf]);
       vinculo = `<div class="bloco"><h4>${ic('link')} Escala × CSV</h4>
         <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center"><span class="escala-nome">${esc(v.variantes.join('  /  ') || v.nomeEscala)}</span><svg class="i" style="transform:rotate(-90deg);color:var(--faint)" aria-hidden="true"><use href="#i-chev"/></svg>
-        <b>${p && p.origem === 'csv' ? esc(p.nome) : '<span style="color:var(--crit)">sem correspondente no CSV</span>'}</b></div>
+        <b>${p && p.origem === 'csv' ? esc(p.nome) : p && p.semPedido ? `${esc(p.nome)} <span class="chip b" style="--cor:var(--blue)">sem pedido no CSV · ${esc(M.BATERIAS[p.bateriaManual].rotulo)}</span>` : '<span style="color:var(--crit)">sem correspondente no CSV</span>'}</b></div>
         ${conf && conf.score != null && conf.conf !== 'manual' ? `<div class="conf" style="margin-top:8px">Semelhança <span class="barra" style="--cor:${corConf}"><i style="width:${Math.round(conf.score * 100)}%"></i></span> ${Math.round(conf.score * 100)}%</div>` : ''}
         ${conf && conf.foraDoBolsao ? `<div class="alerta-box" style="margin-top:10px">${ic('alert')}<div>No CSV este paciente está em <b>${M.GRUPOS[conf.foraDoBolsao.grupo].rotulo} · ${A.rotTurno(conf.foraDoBolsao.turno)}</b>; na escala, em ${M.GRUPOS[v.grupo].rotulo} · ${A.rotTurno(v.turno)}.</div></div>` : ''}
         ${v.riscado ? `<div class="alerta-box" style="margin-top:10px">${ic('x')}<div>Nome <b>riscado</b> na escala do Word. Confirme se saiu (óbito, alta, transferência) ou se continua.</div></div>` : ''}
@@ -212,7 +214,12 @@
           </select>
           ${doCsv ? `<button class="btn sm ghost" data-f="desvincular">${ic('x')} Desvincular</button>` : ''}
           ${!doCsv ? `<button class="btn sm" data-f="outrolab" aria-pressed="${!!E().outroLab[v.id]}">${ic('flask')} ${E().outroLab[v.id] ? 'Marcado: outro laboratório' : 'É de outro laboratório'}</button>` : ''}
-        </div></div>`;
+        </div>
+        ${!p || ['escala', 'resultado'].includes(p.origem) ? `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)">
+          <button class="btn sm pri" data-f="cadsem">${ic('userplus')} Cadastrar com bateria</button>
+          <button class="btn sm perigo" data-f="remover">${ic('x')} Remover da escala</button>
+          <small class="faint" style="flex-basis:100%">Cadastrar: entra no relatório como “sem pedido no CSV da Hiperrim”, com a bateria que você escolher.</small></div>` : ''}
+        </div>`;
     }
 
     g.innerHTML = `
@@ -284,6 +291,8 @@
     if (f === 'cpf') { A.ui.revelarCpf = !A.ui.revelarCpf; return reabrir(); }
     if (f === 'confirmar') { confirmarVinculo(v.id); return reabrir(); }
     if (f === 'desvincular') { trocarVinculo(v.id, ''); return reabrir(); }
+    if (f === 'cadsem') return cadastrarSemPedido(v.id);
+    if (f === 'remover') { fechar(); return removerDaEscala(v.id); }
     if (f === 'outrolab') { A.marcar('outro laboratório'); E().outroLab[v.id] = !E().outroLab[v.id]; A.salvar(); A.render(); return reabrir(); }
     if (f === 'trocar') { if (el.value === '*') return modalVincular(v.id); trocarVinculo(v.id, el.value); return reabrir(); }
     if (f === 'controle') {
@@ -424,9 +433,10 @@
         titulo: 'Marcar admissão', ic: 'userplus', cor: 'var(--teal)',
         corpo: `<div class="bloco" style="padding:10px 12px"><b>${esc(A.nomeExibicao(v))}</b> · ${esc(A.local(v, true))}</div>
           <label class="f">Data da admissão<input type="date" name="data" value="${hojeISO()}"></label>
-          <div class="alerta-box info">${ic('info')}<div>Admissional = bateria completa (29). Quem fez admissional no mês <b>não coleta na bateria do mês seguinte</b>; em janeiro repete a anual.</div></div>`,
+          ${textoAdmissional()}
+          <label style="display:flex;gap:8px;align-items:center;font-weight:800"><input type="checkbox" name="jaColetado"> Admissional já foi coletado (não entra nesta lista)</label>`,
         botoes: [{ rot: 'Cancelar' }, { rot: 'Salvar', cls: 'pri', ic: 'check', acao: f => {
-          A.marcar('admissão'); const p = garantirPaciente(v); p.admissao = f.data.value || hojeISO();
+          A.marcar('admissão'); const p = garantirPaciente(v); p.admissao = f.data.value || hojeISO(); p.admColetado = f.jaColetado.checked;
           A.evento('admissao', p.id, `${nomeCurto(p.nome)}: admissão em ${fmtData(p.admissao)}`);
           fechar(); A.salvar(); A.render(); flash([v.id]); A.toast('Admissão registrada', 'userplus', true);
         } }],
@@ -445,8 +455,8 @@
             <div class="linha-f"><label class="f">De<input type="date" name="de" value="${hojeISO()}"></label><label class="f">Até<input type="date" name="ate"></label></div>
             <label style="display:flex;gap:8px;align-items:center;font-weight:800"><input type="checkbox" name="incluir"> Incluir na bateria do mês</label>`
           : `<label class="f">Data da admissão<input type="date" name="adm" value="${hojeISO()}"></label>
-            <div style="display:flex;flex-wrap:wrap;gap:8px">${Object.entries(M.CONTROLES).map(([k, c]) => `<label class="toggle" style="--cor:${c.cor}"><input type="checkbox" name="k_${k}" style="accent-color:${c.cor}"> ${c.rotulo}</label>`).join('')}</div>
-            <div class="alerta-box info">${ic('info')}<div>Na admissão o paciente faz a <b>bateria completa (29)</b>. Ele fica sinalizado para <b>não coletar no mês seguinte</b>.</div></div>`}
+            ${textoAdmissional()}
+            <label style="display:flex;gap:8px;align-items:center;font-weight:800"><input type="checkbox" name="jaColetado"> Admissional já foi coletado (não entra nesta lista)</label>`}
           ${htmlDestino('d', pad)}`,
         botoes: [{ rot: 'Cancelar' }, { rot: tr ? 'Colocar em trânsito' : 'Admitir', cls: 'pri', ic: 'check', acao: f => {
           const nome = f.nome.value.trim().replace(/\s+/g, ' ');
@@ -458,7 +468,7 @@
           const nasc = f.nasc.value ? f.nasc.value.split('-').reverse().join('/') : '';
           const dados = { nome: nome.toUpperCase(), cpf, nasc };
           if (tr) Object.assign(dados, { status: 'transito', origem: 'transito', transito: { origem: f.origem.value.trim(), de: f.de.value, ate: f.ate.value, incluir: f.incluir.checked } });
-          else Object.assign(dados, { origem: 'manual', admissao: f.adm.value || hojeISO(), controles: Object.fromEntries(Object.keys(M.CONTROLES).map(k => [k, f['k_' + k].checked])) });
+          else Object.assign(dados, { origem: 'manual', admissao: f.adm.value || hojeISO(), admColetado: f.jaColetado.checked, controles: { glic: false, cr: false, hbgl: false } });
           fechar(); alocarNovo(dados, f.dvaga.value, tr);
         } }],
         aoAbrir: (m, f) => ligarDestino(f, 'd', { soLivres: 'escala', padraoVaga: ctx.destino || (vEsc && vEsc.id) }),
@@ -483,6 +493,63 @@
   }
 
   // ================= AÇÕES =================
+  function textoAdmissional() {
+    const b = M.BATERIAS.admissional;
+    return `<div class="alerta-box info">${ic('info')}<div><b>Bateria admissional: ${b.qtd} exames</b> — a anual sem a ureia pós-diálise (glicose, creatinina e Hb glicada já estão dentro).
+      Entra <b>nesta lista</b> no lugar da bateria do mês; no mês seguinte volta ao normal. Em janeiro faz a anual completa.
+      <details style="margin-top:6px"><summary style="cursor:pointer;font-weight:800">Ver os ${b.qtd} exames</summary><div class="exames" style="margin-top:6px">${b.exames.map(c => `<span class="tag-exame" title="${esc(M.EXAMES[c].nome)}">${c}</span>`).join('')}</div></details></div></div>`;
+  }
+
+  /** Quem está na escala sem pedido no CSV: cadastra com nome/CPF/nascimento e a bateria escolhida, entra na sequência normal. */
+  function cadastrarSemPedido(vagaId) {
+    const v = A.vagaPor(vagaId), ant = A.pacDe(v);
+    const sugerido = ant && ant.origem === 'resultado' ? ant.nome : M.tokensAbrev(v.nomeEscala).join(' ');
+    const padrao = M.BATERIAS_MANUAIS.includes(A.tipoRef()) ? A.tipoRef() : 'mensal';
+    abrirModal({
+      titulo: 'Cadastrar sem pedido no CSV', ic: 'userplus', cor: 'var(--blue)',
+      corpo: `<div>Na escala: <span class="escala-nome">${esc(v.nomeEscala)}</span> · ${esc(A.local(v, true))}</div>
+        <label class="f">Nome completo<input name="nome" value="${esc(sugerido)}" placeholder="Como está no documento"></label>
+        <div class="linha-f"><label class="f">CPF (opcional)<input name="cpf" inputmode="numeric" placeholder="000.000.000-00" value="${esc(ant && ant.cpf ? ant.cpf : '')}"></label><label class="f">Nascimento (opcional)<input type="date" name="nasc"></label></div>
+        <label class="f">Bateria<select name="bat">${M.BATERIAS_MANUAIS.map(t => `<option value="${t}" ${t === padrao ? 'selected' : ''}>${M.BATERIAS[t].rotulo} (${M.BATERIAS[t].qtd} exames)</option>`).join('')}</select></label>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">${Object.entries(M.CONTROLES).map(([k, c]) => `<label class="toggle" style="--cor:${c.cor}"><input type="checkbox" name="k_${k}" style="accent-color:${c.cor}"> ${c.rotulo}</label>`).join('')}</div>
+        <div class="alerta-box info">${ic('info')}<div>Entra no <b>relatório de cadastro na posição desta máquina</b>, marcado como “sem pedido no CSV da Hiperrim”.${v.riscado ? ' O nome estava <b>riscado</b> no Word — cadastrar indica que o paciente continua.' : ''}</div></div>`,
+      botoes: [{ rot: 'Cancelar' }, { rot: 'Cadastrar', cls: 'pri', ic: 'check', acao: f => {
+        const nome = f.nome.value.trim().replace(/\s+/g, ' ');
+        if (nome.split(' ').length < 2) return erroCampo(f, 'nome', 'Informe nome e sobrenome.');
+        const cpf = M.soDigitos(f.cpf.value);
+        if (cpf && !cpfValido(cpf)) return erroCampo(f, 'cpf', 'CPF inválido (confira os dígitos).');
+        const existe = cpf && E().pacientes[cpf];
+        if (existe && existe.origem === 'csv') return erroCampo(f, 'cpf', 'Este CPF já veio no CSV — use “Vincular”.');
+        if (existe && existe.vagaId && existe.vagaId !== v.id) return erroCampo(f, 'cpf', 'Este CPF já está em ' + A.local(A.vagaPor(existe.vagaId), true));
+        A.marcar('cadastro sem pedido');
+        if (ant && ['escala', 'resultado'].includes(ant.origem)) delete E().pacientes[ant.id];
+        const id = cpf || uid();
+        const p = { id, cpf, nome: nome.toUpperCase(), nasc: f.nasc.value ? f.nasc.value.split('-').reverse().join('/') : '', codigo: '', origem: 'manual', semPedido: true,
+          bateriaManual: f.bat.value, status: 'ativo', controles: Object.fromEntries(Object.keys(M.CONTROLES).map(k => [k, f['k_' + k].checked])), vagaId: v.id, grupo: v.grupo, turno: v.turno };
+        E().pacientes[id] = p;
+        v.pacienteId = id; v.match = { conf: 'manual', score: null }; v.riscado = false;
+        delete E().outroLab[v.id];
+        E().apelidos[M.chaveApelido(v.nomeEscala, v.grupo, v.turno)] = id;
+        A.evento('cadastro', id, `Cadastrado sem pedido no CSV: ${p.nome} (${A.local(v, true)}) — bateria ${M.BATERIAS[p.bateriaManual].rotulo}`);
+        fechar(); A.salvar(); A.render(); flash([v.id]);
+        A.toast(`${nomeCurto(p.nome)} entra no relatório · bateria ${M.BATERIAS[p.bateriaManual].rotulo}`, 'userplus', true);
+      } }],
+    });
+  }
+
+  /** Tira o nome da escala (libera a máquina). Usado para limpar quem não deveria estar lá. */
+  function removerDaEscala(vagaId) {
+    const v = A.vagaPor(vagaId), p = A.pacDe(v);
+    const nome = A.nomeExibicao(v), onde = A.local(v, true);
+    A.marcar('remoção de ' + nome);
+    if (p && ['escala', 'resultado'].includes(p.origem)) delete E().pacientes[p.id]; else if (p) p.vagaId = null;
+    Object.assign(v, JSON.parse(JSON.stringify(VAZIO)));
+    delete E().outroLab[v.id];
+    A.evento('remocao', null, `Removido da escala: ${nome} (${onde}) — máquina livre`);
+    A.salvar(); A.render();
+    A.toast(`${nome} removido · ${onde} livre`, 'x', true);
+  }
+
   function garantirPaciente(v) {
     if (v.pacienteId && E().pacientes[v.pacienteId]) return E().pacientes[v.pacienteId];
     const id = uid();
@@ -579,7 +646,7 @@
     setTimeout(() => ids.forEach(id => { const el = document.querySelector(`[data-vaga="${id}"]`); if (el) { el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); } }), 30);
   }
 
-  Object.assign(A, { abrirFicha, fechar, abrirModal, abrirFerramenta, confirmarVinculo, trocarVinculo, registrarSaida, transferir, modalVincular, garantirPaciente, moverOcupante: mover });
+  Object.assign(A, { abrirFicha, fechar, abrirModal, abrirFerramenta, confirmarVinculo, trocarVinculo, registrarSaida, transferir, modalVincular, garantirPaciente, moverOcupante: mover, cadastrarSemPedido, removerDaEscala });
   A.views.vSalao = vSalao;
   A.ligar.salao = ligarSalao;
 })(window.MED = window.MED || {});
