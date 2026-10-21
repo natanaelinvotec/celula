@@ -16,7 +16,7 @@
         <p class="lead">Solte aqui o Word da escala (salões, turnos e máquinas) e os CSVs da bateria. O MedRim casa os nomes abreviados com nome completo, CPF e nascimento — tudo <b>dentro do seu navegador</b>: nenhum dado de paciente é enviado para servidor ou para o GitHub.</p>
         <div class="drop" id="drop" tabindex="0" role="button" aria-label="Escolher arquivos">
           ${ic('upload')}<b>Arraste os arquivos aqui ou clique para escolher</b>
-          <small>1 arquivo .docx da escala + os CSVs (ex.: “SEG QUA E SEX 1 TURNO.csv”, “TER QUI E SAB 3 TURNO.csv”)</small>
+          <small>1 arquivo .docx da escala + os CSVs (ex.: “SEG QUA E SEX 1 TURNO.csv”, “TER QUI E SAB 3 TURNO.csv”). Se tiver a lista conferida (.xlsx), solte junto.</small>
         </div>
         <div class="lista-arq" id="lista-arq"></div>
         <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:16px">
@@ -64,6 +64,7 @@
       if (grupo && turno) return { tipo: 'CSV', cor: '#15803d', txt: `${M.GRUPOS[grupo].rotulo} · ${M.TURNOS[turno].csv}º turno (${M.TURNOS[turno].rotulo})`, ok: true };
       return { tipo: 'CSV', cor: '#b45309', txt: 'Não reconheci dias/turno pelo nome — renomeie (ex.: “SEG QUA E SEX 1 TURNO.csv”)', ok: false };
     }
+    if (/\.xlsx$/i.test(f.name)) return { tipo: 'XLSX', cor: '#107c41', txt: 'Lista conferida — aplica salão, dias, turno e equipamento e confirma os vínculos', ok: true };
     return { tipo: '?', cor: '#94a3b8', txt: 'Tipo não suportado', ok: false };
   }
   function ligarImportar() {
@@ -71,7 +72,8 @@
     const pintar = () => {
       lista.innerHTML = [...selecionados.values()].map(f => { const d = descreverArquivo(f); return `<div class="arq"><span class="tipo" style="--cor:${d.cor}">${d.tipo}</span><div><b>${esc(f.name)}</b><div class="meta">${esc(d.txt)} · ${(f.size / 1024).toFixed(0)} KB</div></div><span class="ok" style="${d.ok ? '' : 'color:var(--warn)'}">${ic(d.ok ? 'check' : 'alert')}</span></div>`; }).join('');
       const arr = [...selecionados.values()];
-      btn.disabled = !arr.some(f => /\.csv$/i.test(f.name)) || (!arr.some(f => /\.docx$/i.test(f.name)) && !(E() && E().vagas.length));
+      const temEstado = !!(E() && E().vagas.length), tem = re => arr.some(f => re.test(f.name));
+      btn.disabled = !((tem(/\.csv$/i) && (tem(/\.docx$/i) || temEstado)) || (tem(/\.xlsx$/i) && temEstado));
     };
     const adicionar = fs => { [...fs].forEach(f => selecionados.set(f.name, f)); pintar(); };
     drop.onclick = () => inp.click();
@@ -86,7 +88,10 @@
         const r = await importar([...selecionados.values()]);
         selecionados.clear();
         location.hash = '#/painel';
-        A.toast(`${r.alta} casados automaticamente · ${r.revisar.length + r.semCsv.length + r.foraDoBolsao.length + r.csvSemVaga.length} para conferir`, 'sync');
+        if (r.lista) {
+          const l = r.lista, prob = l.naoEncontrados.length + l.vagaInexistente.length;
+          A.toast(`Lista conferida: ${l.confirmados} confirmados${l.movidos ? ` · ${l.movidos} mudaram de máquina` : ''}${prob ? ` · ${prob} linhas com problema (ver Movimentações)` : ''}`, 'check');
+        } else A.toast(`${r.alta} casados automaticamente · ${r.revisar.length + r.semCsv.length + r.foraDoBolsao.length + r.csvSemVaga.length} para conferir`, 'sync');
       } catch (err) {
         console.error(err); A.toast(err.message || 'Falha ao importar', 'alert'); btn.disabled = false; btn.innerHTML = `${ic('sync')} Importar e sincronizar`;
       }
@@ -95,10 +100,54 @@
     pintar();
   }
 
+  /** Aplica a planilha conferida: posiciona cada CPF no salão/dias/turno/equipamento indicado e confirma o vínculo. */
+  async function aplicarLista(xlsx) {
+    const linhas = await M.lerPlanilhaXlsx(xlsx);
+    const st = E();
+    A.marcar('lista conferida');
+    const res = { confirmados: 0, movidos: 0, semPosicao: 0, naoEncontrados: [], vagaInexistente: [], repetidos: [] };
+    const usados = {};
+    for (const l of linhas) {
+      const p = st.pacientes[l.cpf];
+      if (!p) { res.naoEncontrados.push(`${l.nome || l.cpf} (linha ${l.linha})`); continue; }
+      if (!l.salao || !l.grupo || !l.turno || !l.maq) { res.semPosicao++; continue; }
+      const alvo = st.vagas.find(v => v.salao === l.salao && v.grupo === l.grupo && v.turno === l.turno && v.maq === l.maq);
+      if (!alvo) { res.vagaInexistente.push(`${l.nome}: Salão ${l.salao} · ${M.GRUPOS[l.grupo].curto} · ${A.rotTurno(l.turno)} · Máq ${l.maq} (linha ${l.linha})`); continue; }
+      if (usados[alvo.id]) res.repetidos.push(`${l.nome} e ${usados[alvo.id]} na mesma máquina (${A.local(alvo, true)})`);
+      usados[alvo.id] = l.nome;
+      const atual = p.vagaId ? A.vagaPor(p.vagaId) : null;
+      if (!atual || atual.id !== alvo.id) {
+        if (atual) A.moverOcupante(atual, alvo);
+        else {
+          const outro = A.pacDe(alvo);
+          if (outro && outro.origem === 'csv') outro.vagaId = null; else if (outro) delete st.pacientes[outro.id];
+          if (!alvo.nomeEscala) Object.assign(alvo, { nomeEscala: A.nomeCurto(p.nome), variantes: [], dias: M.GRUPOS[alvo.grupo].dias.slice() });
+          alvo.pacienteId = p.id; p.vagaId = alvo.id;
+        }
+        res.movidos++;
+      }
+      alvo.match = Object.assign({}, alvo.match, { conf: 'confirmado', riscoResolvido: true });
+      delete alvo.match.foraDoBolsao;
+      alvo.riscado = false;
+      if (alvo.nomeEscala) st.apelidos[M.chaveApelido(alvo.nomeEscala, alvo.grupo, alvo.turno)] = p.id;
+      res.confirmados++;
+    }
+    const prob = [...res.naoEncontrados.map(x => 'CPF não está nos CSVs: ' + x), ...res.vagaInexistente.map(x => 'Máquina não existe na escala: ' + x), ...res.repetidos.map(x => 'Repetido: ' + x)];
+    prob.slice(0, 30).forEach(t => A.evento('vinculo', null, t));
+    A.evento('vinculo', null, `Lista conferida aplicada (${xlsx.name}): ${res.confirmados} confirmados${res.movidos ? ` · ${res.movidos} mudaram de máquina` : ''}${res.semPosicao ? ` · ${res.semPosicao} sem posição na planilha` : ''}${prob.length ? ` · ${prob.length} problemas` : ''}`);
+    A.salvar();
+    return res;
+  }
+
   async function importar(files) {
     const docx = files.find(f => /\.docx$/i.test(f.name));
     const csvs = files.filter(f => /\.csv$/i.test(f.name));
+    const xlsx = files.find(f => /\.xlsx$/i.test(f.name));
     const ant = E();
+    if (!csvs.length && xlsx && ant && ant.vagas.length) {
+      const lista = await aplicarLista(xlsx);
+      return Object.assign(M.resumoDivergencias(E().vagas, E().pacientes), { lista });
+    }
     if (!csvs.length) throw new Error('Inclua pelo menos um CSV da bateria.');
     if (!docx && !(ant && ant.vagas.length)) throw new Error('Inclua o .docx da escala.');
     const novo = A.estadoVazio(ant);
@@ -128,6 +177,7 @@
     A.E = novo;
     A.evento('importacao', null, `Importação: ${docx ? docx.name + ' + ' : ''}${csvs.length} CSV · ${Object.values(pacs).filter(p => p.origem === 'csv').length} pedidos · ${r.alta} casados automaticamente`);
     A.salvar();
+    if (xlsx) { const lista = await aplicarLista(xlsx); return Object.assign(M.resumoDivergencias(E().vagas, E().pacientes), { lista }); }
     return r;
   }
 

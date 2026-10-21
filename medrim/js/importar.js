@@ -156,6 +156,59 @@
     return pacientes;
   };
 
+  // ---------- planilha conferida (.xlsx) ----------
+  M.abrirZip = abrirZip;
+  const SS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+  const colIdx = ref => { let n = 0; for (const ch of ref.replace(/\d+/g, '')) n = n * 26 + ch.charCodeAt(0) - 64; return n - 1; };
+  /** Lê a planilha "Lista de pacientes" (Nome, CPF, Salão, Dias, Turno, Equipamento) → linhas para aplicar na escala. */
+  M.lerPlanilhaXlsx = async function (arquivo) {
+    const ler = await abrirZip(await arquivo.arrayBuffer());
+    const dp = x => new DOMParser().parseFromString(x, 'application/xml');
+    const wb = dp(await ler('xl/workbook.xml') || '');
+    const rels = dp(await ler('xl/_rels/workbook.xml.rels') || '');
+    const folhas = Array.from(wb.getElementsByTagNameNS(SS, 'sheet'));
+    if (!folhas.length) throw new Error(arquivo.name + ': não parece uma planilha do Excel.');
+    const folha = folhas.find(f => M.norm(f.getAttribute('name')) === 'PACIENTES') || folhas[0];
+    const rid = folha.getAttribute('r:id') || folha.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id');
+    const rel = Array.from(rels.getElementsByTagName('Relationship')).find(r => r.getAttribute('Id') === rid);
+    const alvo = rel ? rel.getAttribute('Target').replace(/^\//, '').replace(/^(?!xl\/)/, 'xl/') : 'xl/worksheets/sheet1.xml';
+    const ssXml = await ler('xl/sharedStrings.xml');
+    const comp = ssXml ? Array.from(dp(ssXml).getElementsByTagNameNS(SS, 'si')).map(si => Array.from(si.getElementsByTagNameNS(SS, 't')).map(t => t.textContent).join('')) : [];
+    const sh = dp(await ler(alvo) || '');
+    const linhas = Array.from(sh.getElementsByTagNameNS(SS, 'row')).map(r => {
+      const out = [];
+      for (const c of r.getElementsByTagNameNS(SS, 'c')) {
+        const t = c.getAttribute('t'), v = c.getElementsByTagNameNS(SS, 'v')[0];
+        let val = '';
+        if (t === 's') val = comp[+(v && v.textContent)] || '';
+        else if (t === 'inlineStr') val = Array.from(c.getElementsByTagNameNS(SS, 't')).map(x => x.textContent).join('');
+        else val = v ? v.textContent : '';
+        out[colIdx(c.getAttribute('r'))] = val;
+      }
+      return out;
+    });
+    const iCab = linhas.findIndex(l => l.some(x => M.norm(x) === 'CPF'));
+    if (iCab < 0) throw new Error(arquivo.name + ': não achei a coluna CPF.');
+    const cab = linhas[iCab].map(x => M.norm(x || ''));
+    const col = nome => cab.findIndex(h => h === nome || h.startsWith(nome));
+    const c = { nome: col('NOME'), cpf: col('CPF'), salao: col('SALAO'), dias: col('DIAS'), turno: col('TURNO'), maq: col('EQUIPAMENTO') >= 0 ? col('EQUIPAMENTO') : col('MAQ') };
+    const res = [];
+    linhas.slice(iCab + 1).forEach((l, k) => {
+      const cpf = M.soDigitos(l[c.cpf]).padStart(11, '0');
+      if (!l[c.cpf] || cpf === '00000000000') return;
+      const dias = M.norm(l[c.dias] || ''), turno = M.norm(l[c.turno] || ''), maqT = String(l[c.maq] == null ? '' : l[c.maq]).trim();
+      const hdf = maqT.toUpperCase().match(/HDF\s*(\d)/);
+      res.push({
+        linha: iCab + k + 2, nome: (l[c.nome] || '').trim(), cpf,
+        salao: parseInt(l[c.salao], 10) || null,
+        grupo: /SEG/.test(dias) ? 'SQS' : /TER/.test(dias) ? 'TQS' : null,
+        turno: /MANH|^1/.test(turno) ? 'M' : /TARD|^2/.test(turno) ? 'T' : /NOIT|^3/.test(turno) ? 'N' : null,
+        maq: hdf ? 'HDF' + hdf[1] : /^\d+(\.0+)?$/.test(maqT) ? String(parseInt(maqT, 10)).padStart(2, '0') : maqT || null,
+      });
+    });
+    return res;
+  };
+
   // ---------- utilitários de texto compartilhados ----------
   M.semAcento = s => (s || '').normalize('NFKD').replace(/[̀-ͯ]/g, '');
   M.norm = s => M.semAcento(s).toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();

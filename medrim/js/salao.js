@@ -575,7 +575,7 @@
     setTimeout(() => ids.forEach(id => { const el = document.querySelector(`[data-vaga="${id}"]`); if (el) { el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); } }), 30);
   }
 
-  Object.assign(A, { abrirFicha, fechar, abrirModal, abrirFerramenta, confirmarVinculo, trocarVinculo, registrarSaida, transferir, modalVincular, garantirPaciente });
+  Object.assign(A, { abrirFicha, fechar, abrirModal, abrirFerramenta, confirmarVinculo, trocarVinculo, registrarSaida, transferir, modalVincular, garantirPaciente, moverOcupante: mover });
   A.views.vSalao = vSalao;
   A.ligar.salao = ligarSalao;
 })(window.MED = window.MED || {});
