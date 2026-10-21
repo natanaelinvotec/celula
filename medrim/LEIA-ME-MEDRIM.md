@@ -71,7 +71,8 @@ No mockup, os resultados ficam no IndexedDB do navegador (não vão para o GitHu
 - Trimestral = 14: os 12 do print + `CA-DB` e `CAPAT-DB` — confirmado pelo TXT de outubro.
 - Controles: glicose → mensal/trimestral/semestral; creatinina → mensal/trimestral; Hb glicada → trimestral/semestral; anual sem controle.
   (Editável na tela **Baterias & regras** ou em `M.REGRAS_PADRAO`, no `js/dados.js`.)
-- Admissional: não coleta no mês seguinte (nem no próprio mês); janeiro repete a anual.
+- Admissional: 28 exames (anual sem ureia pós, sem controles extras); entra na lista do mês da admissão no lugar da bateria do mês; janeiro faz a anual completa. Se já foi coletado, marcar na admissão.
+- Sem pedido no CSV: cadastrar com a bateria escolhida (mensal/trimestral/semestral) — entra na sequência normal; “Excluir” tira o nome da escala.
 - Internado: fora até o retorno. Trânsito: fora por padrão. Óbito/saída: libera a máquina.
 - Ordem do relatório: Salão → Seg/Qua/Sex (manhã, tarde, noite) → Ter/Qui/Sáb (manhã, tarde, noite) → máquina.
 
