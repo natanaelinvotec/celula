@@ -39,7 +39,8 @@
   const CHAVE = 'medrim:v1';
   let E = null;
   const historico = [];
-  const ui = { revelarCpf: false, turno: {}, soDivergencias: false, relCpf: true };
+  let nomesCurtos = false; try { nomesCurtos = localStorage.getItem('medrim:nomes') === 'curtos'; } catch (e) { /* sem storage */ }
+  const ui = { revelarCpf: false, turno: {}, soDivergencias: false, relCpf: true, nomesCurtos };
   try { E = JSON.parse(localStorage.getItem(CHAVE)); } catch (e) { E = null; }
   function salvar() { try { localStorage.setItem(CHAVE, JSON.stringify(E)); } catch (e) { toast('Não consegui salvar neste navegador (armazenamento bloqueado).', 'alert'); } }
   function proximaRef() { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + 1); return { ano: d.getFullYear(), mes: d.getMonth() + 1 }; }

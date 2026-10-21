@@ -65,6 +65,7 @@
       <button class="btn sm" data-ferr="admissao">${ic('userplus')} Admissão / novo</button>
       <button class="btn sm" data-ferr="internar">${ic('bed')} Internação</button>
       <button class="btn sm" data-ferr="obito">${ic('userx')} Óbito</button>
+      <button class="btn sm" data-ferr="nomes" aria-pressed="${!A.ui.nomesCurtos}" title="Alternar entre nome completo do CSV e nome abreviado">${ic('userplus')} ${A.ui.nomesCurtos ? 'Nomes completos' : 'Nomes curtos'}</button>
       <button class="btn sm ${A.ui.soDivergencias ? 'pri' : ''}" data-ferr="filtro" aria-pressed="${A.ui.soDivergencias}">${ic('alert')} Só divergências</button>
     </div>
     <div class="legenda">
@@ -107,7 +108,9 @@
     }
     const filtrar = A.ui.soDivergencias && !temDiv;
     const g = v.grupo === 'SQS' ? 'SEG<br>QUA<br>SEX' : 'TER<br>QUI<br>SÁB';
-    const nome = occ ? A.nomeFaixa(v) : 'Livre';
+    const completo = occ && !A.ui.nomesCurtos && p && !['escala', 'resultado'].includes(p.origem);
+    if (completo) cls.push('completo');
+    const nome = occ ? (completo ? titulo(p.nome) : A.nomeFaixa(v)) : 'Livre';
     return `<div class="${cls.join(' ')}" role="button" tabindex="0" data-vaga="${v.id}" ${occ ? 'draggable="true"' : ''} style="${filtrar ? 'opacity:.28' : ''}"
       title="${esc(occ ? (p ? titulo(p.nome) : v.nomeEscala) + (v.nomeEscala ? ' · escala: ' + v.nomeEscala : '') : 'Vaga livre')}">
       <span class="g">${g}</span>
@@ -131,6 +134,7 @@
       if (f) {
         const t = f.dataset.ferr;
         if (t === 'filtro') { A.ui.soDivergencias = !A.ui.soDivergencias; A.render(); return; }
+        if (t === 'nomes') { A.ui.nomesCurtos = !A.ui.nomesCurtos; try { localStorage.setItem('medrim:nomes', A.ui.nomesCurtos ? 'curtos' : 'completos'); } catch (e2) { /* ok */ } A.render(); return; }
         abrirFerramenta(t, { salao: n, turno: A.ui.turno[n] });
         return;
       }

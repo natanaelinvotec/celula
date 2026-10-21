@@ -442,3 +442,9 @@ label.f{display:grid;gap:5px;font-size:12.5px;font-weight:800;color:var(--muted)
   .destaques{grid-template-columns:repeat(5,1fr)}
   .grid.g2{grid-template-columns:1fr 1fr}
 }
+
+.faixa.completo .nm{white-space:normal;overflow:visible}
+.faixa.completo .nm>span{display:block;font-size:12px;line-height:1.2;overflow-wrap:anywhere}
+.faixa.completo .nm small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.btn.perigo{color:var(--crit);border-color:color-mix(in srgb,var(--crit) 35%,var(--line))}
+.btn.perigo:hover{background:var(--crit-50)}

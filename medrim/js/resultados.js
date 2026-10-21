@@ -205,6 +205,10 @@
     A.toast(`Resultados de ${rotComp(comp)} importados${sug ? ` · ${sug} nomes da escala reconhecidos no TXT` : ''}`, 'check');
   }
   A.importarResultados = () => escolherTxt(previaImportacao);
+  A.limparResultados = async function () {
+    try { await op('lotes', 'readwrite', s => s.clear()); await op('arquivos', 'readwrite', s => s.clear()); } catch (e) { /* sem IndexedDB */ }
+    R.lotes = [];
+  };
 
   async function baixarArquivo(id, remapear) {
     let reg = null;

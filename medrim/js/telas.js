@@ -23,6 +23,7 @@
           <button class="btn pri" id="btn-importar" disabled>${ic('sync')} Importar e sincronizar</button>
           <button class="btn ghost" id="btn-restaurar">${ic('download')} Restaurar backup</button>
           ${tem ? `<a class="btn ghost" href="#/painel">Voltar ao painel</a>` : ''}
+          ${tem || (A.R && A.R.lotes.length) ? `<button class="btn perigo" id="btn-zerar">${ic('undo')} Começar do zero</button>` : ''}
         </div>
         <div class="alerta-box info" style="margin-top:14px">${ic('drop')}<div>Resultados dos pacientes (TXT do Nephrosys) entram em <a href="#/resultados"><b>Resultados</b></a>.</div></div>
         ${tem ? `<div class="alerta-box info" style="margin-top:14px">${ic('info')}<div>Reimportar mantém o que vocês já decidiram: <b>vínculos confirmados</b>, internações, óbitos, admissões e o histórico. Sem o .docx, só os CSVs são atualizados.</div></div>` : ''}
@@ -97,6 +98,21 @@
       }
     };
     $('#btn-restaurar').onclick = () => $('#arq-backup').click();
+    const zerar = $('#btn-zerar');
+    if (zerar) zerar.onclick = () => A.abrirModal({
+      titulo: 'Começar do zero', ic: 'undo', cor: 'var(--crit)',
+      corpo: `<p style="margin:0">Apaga <b>deste navegador</b> tudo o que o MedRim guardou: escala, sincronização, vínculos confirmados, internações/admissões/óbitos, histórico, observações e resultados de TXT. Seus arquivos (Word, CSVs, planilhas) não são tocados.</p>
+        <label style="display:flex;gap:8px;align-items:center;font-weight:800"><input type="checkbox" name="bk" checked> Baixar um backup antes de apagar</label>
+        <div class="alerta-box">${ic('alert')}<div>Depois de apagar não dá para desfazer (só restaurando o backup).</div></div>`,
+      botoes: [{ rot: 'Cancelar' }, { rot: 'Apagar tudo', cls: 'rim', ic: 'x', acao: async f => {
+        if (f.bk.checked && E()) A.exportarBackup();
+        try { localStorage.removeItem('medrim:v1'); } catch (e) { /* ok */ }
+        if (A.limparResultados) await A.limparResultados();
+        A.E = null; selecionados.clear();
+        location.hash = '#/importar'; A.render();
+        A.toast('Tudo limpo — solte o .docx da escala e os 6 CSVs', 'check');
+      } }],
+    });
     pintar();
   }
 
