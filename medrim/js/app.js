@@ -251,7 +251,8 @@
     const dc = dataCadastro(), hoje = new Date(); hoje.setHours(0, 0, 0, 0);
     const dias = Math.round((dc - hoje) / 864e5);
     const prazo = dias > 1 ? `faltam ${dias} dias` : dias === 1 ? 'amanhã' : dias === 0 ? 'hoje' : `há ${-dias} dias`;
-    const pct = m.pacientesEscala ? Math.round(m.sincronizados / m.pacientesEscala * 100) : 0;
+    // anel do topo: máquinas cheias × vazias (todas as vagas da escala: salão × dias × turno × máquina)
+    const pct = m.vagas ? Math.round(m.ocupadas / m.vagas * 100) : 0;
     const C = 2 * Math.PI * 62;
     const kpi = (icn, cor, v, l, s, h) => `<a class="kpi" href="${h || '#/painel'}" style="--cor:${cor}"><span class="ic">${ic(icn)}</span><span class="v mono" data-n="${v}">${v}</span><span class="l">${l}</span>${s ? `<span class="s">${s}</span>` : ''}</a>`;
 
@@ -325,10 +326,10 @@
           <a class="btn" href="#/sync">${ic('sync')} Resolver ${m.nDiv} divergências</a>
         </div>
       </div>
-      <div class="anel" title="Pacientes da escala sincronizados com o CSV">
+      <div class="anel" title="Máquinas da escala: ${m.ocupadas} cheias e ${m.livres} vazias, de ${m.vagas} vagas">
         <svg viewBox="0 0 150 150"><circle cx="75" cy="75" r="62" fill="none" stroke="rgba(255,255,255,.14)" stroke-width="12"/>
         <circle cx="75" cy="75" r="62" fill="none" stroke="#7ee2a3" stroke-width="12" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C}" style="transition:stroke-dashoffset 1.2s cubic-bezier(.2,.8,.2,1)" data-anel="${C * (1 - pct / 100)}"/></svg>
-        <div class="v"><div>${pct}%<small>SINCRONIZADOS</small></div></div>
+        <div class="v"><div>${pct}%<small>OCUPADAS</small><em><b class="mono" data-n="${m.ocupadas}">${m.ocupadas}</b> cheias<br><b class="mono" data-n="${m.livres}">${m.livres}</b> vazias</em></div></div>
       </div>
     </section>
 
