@@ -540,3 +540,54 @@ label.f{display:grid;gap:5px;font-size:12.5px;font-weight:800;color:var(--muted)
   body.imprimindo-mapa .mapa-pg.dois .mq-c{font-size:16px;margin-top:0}
   body.imprimindo-mapa .mapa-pg.dois>footer{margin-top:4px}
 }
+
+/* ---------- versão online: login, usuário, permissões ---------- */
+body.bloqueado .app{visibility:hidden}
+.login{position:fixed;inset:0;z-index:200;display:grid;place-items:center;padding:20px;
+  background:radial-gradient(1200px 600px at 10% -10%,color-mix(in srgb,var(--blue) 22%,transparent),transparent),radial-gradient(900px 500px at 110% 110%,color-mix(in srgb,var(--rim) 18%,transparent),transparent),var(--bg)}
+.login[hidden]{display:none}
+.login-card{width:min(400px,100%);background:var(--surface);border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow);padding:28px 26px;display:flex;flex-direction:column;gap:10px}
+.login-logos{display:flex;align-items:center;gap:10px;justify-content:center}
+.login-logos img{height:30px;width:auto}.login-logos span{color:var(--faint);font-weight:800}
+.login-titulo{margin:6px 0 0;text-align:center;font-size:30px;font-weight:900;letter-spacing:-.02em}.login-titulo b{color:var(--rim)}
+.login-sub{margin:0 0 6px;text-align:center;color:var(--muted);font-weight:700;font-size:13.5px}
+.login-form{display:flex;flex-direction:column;gap:10px}
+.login-form .btn.pri{justify-content:center;padding:11px}
+.login-chk{display:flex;gap:8px;align-items:center;font-size:13px;font-weight:700;color:var(--muted)}
+.login-link{background:none;border:0;color:var(--blue);font-weight:800;font-size:13px;cursor:pointer;padding:4px;align-self:center}
+.login-msg{min-height:18px;font-size:13px;font-weight:700;color:var(--crit)}
+.login-msg.ok{color:var(--ok)}
+.login-pe{text-align:center;color:var(--faint);font-size:11.5px;font-weight:700;margin-top:4px}
+.login-carregando{display:flex;align-items:center;gap:10px;justify-content:center;padding:18px 0;font-weight:800;color:var(--muted)}
+.login-aviso{display:flex;flex-direction:column;gap:8px;text-align:center}.login-aviso p{margin:0;color:var(--muted);font-size:14px}
+.login-aviso .btn{align-self:center}
+.spin{width:18px;height:18px;border-radius:50%;border:2.5px solid var(--line-2);border-top-color:var(--blue);animation:gira .8s linear infinite;display:inline-block}
+@keyframes gira{to{transform:rotate(360deg)}}
+.usuario{display:flex;gap:10px;align-items:center;padding:10px 8px;margin-bottom:6px;border-top:1px solid var(--line)}
+.usuario[hidden]{display:none}
+.usuario .av{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;background:var(--blue);color:#fff;font-weight:900;font-size:13px;flex:none}
+.usuario .nm{display:flex;flex-direction:column;min-width:0}.usuario .nm b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.usuario .nm small{font-size:11px;font-weight:700;color:var(--muted)}
+.nuvem-status{font-size:12px;font-weight:800;padding:4px 10px;border-radius:99px;background:var(--surface-3);color:var(--muted);white-space:nowrap}
+.nuvem-status[hidden]{display:none}
+.nuvem-status[data-s="salvo"]{background:color-mix(in srgb,var(--ok) 14%,transparent);color:var(--ok)}
+.nuvem-status[data-s="erro"],.nuvem-status[data-s="offline"]{background:color-mix(in srgb,var(--crit) 14%,transparent);color:var(--crit)}
+body:not(.nuvem) .so-nuvem{display:none!important}
+body.nuvem:not([data-papel="programador"]) .so-prog{display:none!important}
+/* resultados: subir/excluir só o laboratório */
+body.nuvem:not([data-papel="programador"]) [data-res="importar"],body.nuvem:not([data-papel="programador"]) [data-arq="importar"],body.nuvem:not([data-papel="programador"]) [data-arq="excluir"]{display:none!important}
+/* faturamento: só visualiza */
+body[data-papel="faturamento"] .so-edicao{display:none!important}
+body[data-papel="faturamento"] [data-ferr]:not([data-ferr="nomes"]):not([data-ferr="filtro"]){display:none!important}
+body[data-papel="faturamento"] #gaveta [data-f]:not([data-f="fechar"]):not([data-f="cpf"]):not([data-f="controle"]):not([data-f="unimed"]),body[data-papel="faturamento"] #gaveta .sel-cand{display:none!important}
+body[data-papel="faturamento"] #gaveta [data-f="controle"],body[data-papel="faturamento"] #gaveta [data-f="unimed"],body[data-papel="faturamento"] [data-destravar]{pointer-events:none}
+body[data-papel="faturamento"] .faixa.vaga{cursor:default}
+/* usuários / integração */
+.papel-linha{display:flex;gap:10px;align-items:baseline;padding:6px 0;border-bottom:1px dashed var(--line)}
+.papel-linha small{color:var(--muted);font-weight:700}
+.chip.papel-programador{--cor:var(--rim)}.chip.papel-enfermaria{--cor:var(--teal)}.chip.papel-faturamento{--cor:var(--blue)}
+.form-usuario{display:flex;flex-direction:column;gap:10px}
+.pedido{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid var(--line)}
+.pedido>div{flex:1;min-width:200px}
+pre.codigo{background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:12px 14px;overflow:auto;font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre}
+@media print{.login,.usuario,.nuvem-status{display:none!important}body.bloqueado .app{visibility:visible}}
