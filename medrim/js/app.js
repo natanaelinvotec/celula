@@ -52,6 +52,7 @@
       eventos: (anterior && anterior.eventos) || [], outroLab: {},
       travas: (anterior && anterior.travas) || fixos().travas || {},
       convenios: (anterior && anterior.convenios) || fixos().convenios || {},
+      etiquetas: (anterior && anterior.etiquetas) || null,
     };
   }
   /** Regras que valem todos os meses e sobrevivem ao "Começar do zero" (guardadas à parte). */
@@ -203,6 +204,7 @@
     salao: { t: 'Salão', ic: 'room' },
     sync: { t: 'Sincronização escala × CSV', ic: 'sync' },
     relatorio: { t: 'Relatório de cadastro', ic: 'report' },
+    etiquetas: { t: 'Etiquetas & mapa de coleta', ic: 'tag' },
     baterias: { t: 'Baterias & regras', ic: 'flask' },
     proposta: { t: 'Proposta & próximos passos', ic: 'bulb' },
     importar: { t: 'Importar arquivos', ic: 'upload' },
@@ -235,6 +237,8 @@
       html += `<div class="nav-t">Bateria do mês</div>`;
       html += item('#/sync', 'Sincronização', 'sync', nDiv ? `<span class="cnt alerta">${nDiv}</span>` : `<span class="cnt">✓</span>`, r === 'sync');
       html += item('#/relatorio', 'Relatório de cadastro', 'report', '', r === 'relatorio');
+      const re = M.app.resumoEtiquetas && M.app.resumoEtiquetas();
+      html += item('#/etiquetas', 'Etiquetas & mapa', 'tag', re && re.itens.length ? (re.semEtiqueta.length ? `<span class="cnt alerta" title="coletam sem etiqueta">${re.semEtiqueta.length}</span>` : `<span class="cnt">✓</span>`) : '', r === 'etiquetas');
     }
     const nLotes = M.app.R ? M.app.R.lotes.length : 0;
     html += `<div class="nav-t">Resultados</div>`;
@@ -270,7 +274,7 @@
     renderNav(); renderTopo();
     const { r, a } = rotaAtual();
     const V = M.app.views;
-    const views = { painel: V.vPainel, salao: () => V.vSalao(+a || 1, M.app.rotaAtual().b), sync: V.vSync, relatorio: V.vRelatorio, baterias: V.vBaterias, proposta: V.vProposta, importar: V.vImportar,
+    const views = { painel: V.vPainel, salao: () => V.vSalao(+a || 1, M.app.rotaAtual().b), sync: V.vSync, relatorio: V.vRelatorio, etiquetas: V.vEtiquetas, baterias: V.vBaterias, proposta: V.vProposta, importar: V.vImportar,
       resultados: () => V.vResultados(a), paciente: () => V.vPaciente(a), arquivos: V.vArquivos, interface: V.vInterface };
     const alvo = $('#conteudo');
     alvo.onclick = alvo.onchange = alvo.onkeydown = null;

@@ -256,6 +256,7 @@
           <div class="campo"><small>Origem</small><b>${p.origem === 'csv' ? 'CSV · ' + esc((p.arquivo || '').replace(/\.csv$/i, '')) : p.origem === 'escala' ? 'Só na escala' : p.origem === 'resultado' ? 'TXT de resultados (sem pedido no CSV)' : p.origem === 'transito' ? 'Trânsito' : 'Cadastro manual'}</b></div>
           ${p.lab ? `<div class="campo"><small>Lab. cliente (CSV)</small><b>${esc(p.lab)}</b></div>` : ''}
           ${p.admissao ? `<div class="campo"><small>Admissão</small><b>${fmtData(p.admissao)}</b></div>` : ''}
+          ${A.etiquetaDe && A.etiquetaDe(p) ? `<div class="campo"><small>Protocolo (etiqueta)</small><b class="mono">${esc(A.etiquetaDe(p).protocolo)}</b></div>` : ''}
           ${p.cpf ? `<div class="campo"><small>Convênio</small><button class="toggle" data-f="unimed" aria-pressed="${conv === 'unimed'}" title="Marca pelo CPF — vale todos os meses">${seloConvenio('unimed')} Unimed</button></div>` : ''}
         </div>` : ''}
         ${v ? `<div class="bloco"><h4>${ic('room')} Posição</h4><b>${esc(A.local(v))}</b>
