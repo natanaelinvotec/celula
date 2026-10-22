@@ -20,6 +20,7 @@ Pasta para o repositório `celula`. Depois de enviada, a página fica em **`celu
 | `js/salao.js` | Salões/máquinas, ficha do paciente, ferramentas (transferir, trânsito, admissão, internação, óbito). |
 | `js/telas.js` | Importação, sincronização, relatório de cadastro, baterias & regras, proposta. |
 | `js/nephrosys.js` | **Configuração da interface de resultados**: tabela de códigos do PDF Nephrosys, como cada código do TXT é interpretado, alvos e valores críticos. |
+| `js/etiquetas.js` | Lê os PDFs de etiquetas do Autolac (sem biblioteca externa), liga protocolo → paciente e monta o mapa de coleta. |
 | `js/resultados.js` | Importa o TXT de resultados, guarda o histórico, visão do médico, ficha do paciente, arquivos para download e tela da interface. |
 | `img/` | Logos (Célula e Hiperrim) e ícone da aba. |
 
@@ -46,7 +47,12 @@ Pasta para o repositório `celula`. Depois de enviada, a página fica em **`celu
    **Importar arquivos**: a máquina é a chave (Salão + Dias + Turno + Equipamento + Nome na escala). Ação em branco com
    nome preenchido = cadastrar; sem nome = continua pendente. Linhas com CPF inválido/repetido ou máquina que mudou são
    recusadas e aparecem em Movimentações. Reenviar a mesma planilha não duplica nada.
-7. **Backup (JSON)** → guarda o estado (contém dados pessoais: salve em local seguro, fora do GitHub).
+7. **Etiquetas & mapa de coleta** → depois de cadastrar no Autolac, solte os PDFs “Resumo de Solicitações Incluídas”
+   (um por perfil: `normal`, `gli`, `cr`, `glicr` — o perfil vem do nome do arquivo e pode ser trocado na tela).
+   O MedRim liga cada protocolo (13-XXXXXX) ao paciente, aponta quem coleta sem etiqueta, protocolo sem paciente e perfil
+   diferente do MedRim, e imprime o **mapa de coleta**: uma folha A4 deitada por salão e turno, máquinas na ordem do salão,
+   nome + protocolo em letra grande (filtro Seg/Qua/Sex, Ter/Qui/Sáb ou ambos). Os PDFs são lidos no navegador.
+8. **Backup (JSON)** → guarda o estado (contém dados pessoais: salve em local seguro, fora do GitHub).
    Para levar tudo para outro computador: **Importar arquivos → Restaurar backup**.
 
 ## Resultados (TXT padrão Nephrosys)
