@@ -1,4 +1,28 @@
-# MedRim — gestor das baterias Hiperrim (mockup)
+# MedRim — gestor das baterias Hiperrim
+
+**Versão online (desde 22/10/2026):** login por e-mail e senha e dados no Firestore do projeto `celulams`
+(`js/nuvem.js`). Papéis em `medrim_usuarios/{uid}`, aplicados no servidor pelas regras (`app/firestore.rules`, bloco MedRim):
+
+| Papel | Pode |
+|---|---|
+| **programador** | Tudo: importação mensal (Word + CSVs), etiquetas, resultados, regras, usuários, integração, backup. |
+| **enfermaria** | Editar pacientes e escala: transferência, internação, óbito, admissão, cadastro sem pedido, travas, convênio, observações. |
+| **faturamento** | Ver painel, salões, relatório, etiquetas e resultados; baixar o TXT para o Nephrosys. Não edita. |
+
+- Primeiro acesso: quem está em `config/app.admins` (administração do app Célula) vira **programador** sozinho.
+  Os demais acessos são criados em **Usuários e acessos**. Quem já tem login do Célula e entra no MedRim gera um pedido para liberar.
+- Contas do MedRim **não** ganham perfil no app de atendimento (regra em `usuarios/{uid}`).
+- Gravação: só o que mudou (um campo por vaga/paciente/chave), com mesclagem em tempo real entre usuários e
+  histórico com o nome de quem fez. Nada de paciente fica guardado no navegador.
+- Coleções: `medrim_vagas` (1 doc por salão/turno), `medrim_pacientes` (16 páginas), `medrim_meta`
+  (estado, apelidos, travas, convenios, notas, etiquetas), `medrim_eventos/{AAAA-MM}`, `medrim_lotes` e `medrim_txt`
+  (fatiados), `medrim_entrada` (integração), `medrim_pedidos`.
+- Integração: ver a tela **Integração (API)** — o sistema do laboratório grava o TXT em `medrim_entrada` pela API REST.
+- Para testar sem nuvem: em `index.html`, `window.MED = { nuvem: false }` (volta ao modo só-navegador).
+
+---
+
+## Versão local (histórico)
 
 Pasta para o repositório `celula`. Depois de enviada, a página fica em **`celulams.com.br/medrim/`**
 (ou `natanaelinvotec.github.io/celula/medrim/`, se o domínio ainda não estiver apontado).

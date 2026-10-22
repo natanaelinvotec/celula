@@ -10,9 +10,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap">
-<link rel="stylesheet" href="css/medrim.css?v=20261022g">
+<link rel="stylesheet" href="css/medrim.css?v=20261022i">
 </head>
-<body>
+<body class="bloqueado">
+<!-- versão online: login + dados no Firestore (js/nuvem.js). Para testar sem nuvem, troque nuvem:true por false. -->
+<script>window.MED = { nuvem: true };</script>
+<div id="login" class="login"><div class="login-card"><div class="login-carregando"><span class="spin"></span>Abrindo o MedRim…</div></div></div>
 <div class="app">
   <aside class="side" aria-label="Navegação">
     <div class="brand">
@@ -21,14 +24,16 @@
         <span class="x" aria-hidden="true">×</span>
         <span class="hip"><img src="img/hiperrim.png" alt="Hiperrim"></span>
       </div>
-      <div class="nome"><span>Med<b>Rim</b></span><small>MOCKUP</small></div>
+      <div class="nome"><span>Med<b>Rim</b></span><small>ONLINE</small></div>
     </div>
     <nav id="nav" style="display:contents"></nav>
     <div class="grow"></div>
     <div class="rodape">
-      <button class="nav" data-acao="importar"><svg class="i"><use href="#i-upload"/></svg>Importar arquivos</button>
-      <button class="nav" data-acao="backup"><svg class="i"><use href="#i-download"/></svg>Backup (JSON)</button>
+      <div class="usuario" id="usuario" hidden></div>
+      <button class="nav so-prog" data-acao="importar"><svg class="i"><use href="#i-upload"/></svg>Importar arquivos</button>
+      <button class="nav so-prog" data-acao="backup"><svg class="i"><use href="#i-download"/></svg>Backup (JSON)</button>
       <button class="nav" data-acao="tema"><svg class="i"><use href="#i-moon"/></svg><span id="rot-tema">Tema escuro</span></button>
+      <button class="nav so-nuvem" data-acao="sair"><svg class="i"><use href="#i-x"/></svg>Sair</button>
     </div>
   </aside>
 
@@ -38,6 +43,7 @@
         <h1 id="titulo">MedRim</h1>
         <div class="sub" id="subtitulo"></div>
       </div>
+      <span id="nuvem-status" class="nuvem-status" hidden aria-live="polite"></span>
       <div class="esp"></div>
       <div class="busca" role="search">
         <svg class="i"><use href="#i-search"/></svg>
@@ -119,14 +125,24 @@
   </symbol>
 </svg>
 
-<script src="js/dados.js?v=20261022g"></script>
-<script src="js/importar.js?v=20261022g"></script>
-<script src="js/sincronizar.js?v=20261022g"></script>
-<script src="js/nephrosys.js?v=20261022g"></script>
-<script src="js/app.js?v=20261022g"></script>
-<script src="js/salao.js?v=20261022g"></script>
-<script src="js/resultados.js?v=20261022g"></script>
-<script src="js/etiquetas.js?v=20261022g"></script>
-<script src="js/telas.js?v=20261022g"></script>
+<script src="js/dados.js?v=20261022i"></script>
+<script src="js/importar.js?v=20261022i"></script>
+<script src="js/sincronizar.js?v=20261022i"></script>
+<script src="js/nephrosys.js?v=20261022i"></script>
+<script src="js/app.js?v=20261022i"></script>
+<script src="js/salao.js?v=20261022i"></script>
+<script src="js/resultados.js?v=20261022i"></script>
+<script src="js/etiquetas.js?v=20261022i"></script>
+<script src="js/telas.js?v=20261022i"></script>
+<script type="module" src="js/nuvem.js?v=20261022i"></script>
+<script>
+  // se o login não carregar (sem internet / bloqueio), avisa em vez de girar para sempre
+  setTimeout(function () {
+    if (window.MED && window.MED.nuvem && !window.MED.nuvemApi) {
+      var c = document.querySelector('#login .login-card');
+      if (c) c.innerHTML = '<div class="login-aviso"><b>Não consegui abrir o login</b><p>Confira a internet e recarregue a página (Ctrl+F5). Se continuar, o acesso ao Firebase (gstatic.com) pode estar bloqueado nesta rede.</p></div>';
+    }
+  }, 20000);
+</script>
 </body>
 </html>
