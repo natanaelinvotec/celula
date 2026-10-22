@@ -1,5 +1,5 @@
-/* MedRim · aplicação (mockup). Estado salvo só neste navegador (localStorage).
-   Versão final: mesmo modelo de dados no Firestore do projeto celulams, com login (ver LEIA-ME-MEDRIM.md). */
+/* MedRim · aplicação. Versão online (window.MED.nuvem = true): login e dados no Firestore do projeto celulams
+   (js/nuvem.js). Sem a nuvem, o estado fica só neste navegador (localStorage) — modo de teste/desenvolvimento. */
 (function (M) {
   'use strict';
 
@@ -41,8 +41,10 @@
   const historico = [];
   let nomesCurtos = false; try { nomesCurtos = localStorage.getItem('medrim:nomes') === 'curtos'; } catch (e) { /* sem storage */ }
   const ui = { revelarCpf: false, turno: {}, soDivergencias: false, relCpf: true, nomesCurtos };
-  try { E = JSON.parse(localStorage.getItem(CHAVE)); } catch (e) { E = null; }
-  function salvar() { guardarFixos(); try { localStorage.setItem(CHAVE, JSON.stringify(E)); } catch (e) { toast('Não consegui salvar neste navegador (armazenamento bloqueado).', 'alert'); } }
+  try { E = M.nuvem ? null : JSON.parse(localStorage.getItem(CHAVE)); } catch (e) { E = null; }
+  function salvar() {
+    if (M.nuvem) { if (M.nuvemApi) M.nuvemApi.salvar(); return; }   // grava na nuvem só o que mudou
+    guardarFixos(); try { localStorage.setItem(CHAVE, JSON.stringify(E)); } catch (e) { toast('Não consegui salvar neste navegador (armazenamento bloqueado).', 'alert'); } }
   function proximaRef() { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + 1); return { ano: d.getFullYear(), mes: d.getMonth() + 1 }; }
   function estadoVazio(anterior) {
     return {
@@ -56,14 +58,29 @@
     };
   }
   /** Regras que valem todos os meses e sobrevivem ao "Começar do zero" (guardadas à parte). */
-  function fixos() { try { return JSON.parse(localStorage.getItem('medrim:fixos')) || {}; } catch (e) { return {}; } }
+  function fixos() { if (M.nuvem) return {}; try { return JSON.parse(localStorage.getItem('medrim:fixos')) || {}; } catch (e) { return {}; } }
   function guardarFixos() { try { if (E) localStorage.setItem('medrim:fixos', JSON.stringify({ travas: E.travas || {}, convenios: E.convenios || {} })); } catch (e) { /* sem storage */ } }
   function marcar(rotulo) { historico.push({ rotulo, json: JSON.stringify(E) }); if (historico.length > 20) historico.shift(); }
   function desfazer() {
     const h = historico.pop(); if (!h) return;
     E = JSON.parse(h.json); salvar(); render(); toast('Desfeito: ' + h.rotulo);
   }
-  function evento(tipo, pid, texto) { E.eventos.unshift({ ts: new Date().toISOString(), tipo, pid, texto }); E.eventos = E.eventos.slice(0, 300); }
+  function evento(tipo, pid, texto) {
+    const u = M.sessao && M.sessao.perfil;
+    E.eventos.unshift(Object.assign({ ts: new Date().toISOString(), tipo, pid, texto }, u ? { por: u.nome || u.email } : {}));
+    E.eventos = E.eventos.slice(0, 300);
+  }
+
+  // ================= papéis (versão online) =================
+  // programador: tudo · enfermaria: edita pacientes/escala · faturamento: só visualiza (salões, resultados, TXT).
+  const papel = () => (M.nuvem ? (M.sessao && M.sessao.papel) || null : 'programador');
+  const podeEditar = () => ['programador', 'enfermaria'].includes(papel());
+  const ehProgramador = () => papel() === 'programador';
+  const ROTAS_PAPEL = {
+    enfermaria: ['painel', 'salao', 'sync', 'relatorio', 'etiquetas', 'baterias', 'resultados', 'paciente', 'arquivos', 'interface'],
+    faturamento: ['painel', 'salao', 'relatorio', 'etiquetas', 'baterias', 'resultados', 'paciente', 'arquivos', 'interface'],
+  };
+  const rotaPermitida = r => ehProgramador() || (ROTAS_PAPEL[papel()] || []).includes(r);
 
   // ================= regras de negócio =================
   const tipoRef = () => M.CALENDARIO[E.ref.mes];
@@ -207,17 +224,25 @@
     etiquetas: { t: 'Etiquetas & mapa de coleta', ic: 'tag' },
     baterias: { t: 'Baterias & regras', ic: 'flask' },
     proposta: { t: 'Proposta & próximos passos', ic: 'bulb' },
+    usuarios: { t: 'Usuários e acessos', ic: 'shield' },
+    integracao: { t: 'Integração com o sistema do laboratório', ic: 'link' },
+    migrar: { t: 'Enviar dados para a nuvem', ic: 'upload' },
     importar: { t: 'Importar arquivos', ic: 'upload' },
     resultados: { t: 'Resultados', ic: 'drop' },
     paciente: { t: 'Ficha de resultados', ic: 'chart' },
     arquivos: { t: 'Arquivos TXT', ic: 'download' },
     interface: { t: 'Interface Nephrosys', ic: 'link' },
   };
-  const SEM_ESCALA = ['proposta', 'baterias', 'resultados', 'paciente', 'arquivos', 'interface'];
+  const SEM_ESCALA = ['proposta', 'baterias', 'resultados', 'paciente', 'arquivos', 'interface', 'usuarios', 'integracao', 'migrar'];
   function rotaAtual() {
-    const [r, a, b] = location.hash.replace(/^#\/?/, '').split('/');
-    if (!E || !E.vagas.length) return { r: SEM_ESCALA.includes(r) ? r : 'importar', a, b };
-    return { r: rotas[r] ? r : 'painel', a, b };
+    let [r, a, b] = location.hash.replace(/^#\/?/, '').split('/');
+    if (!E || !E.vagas.length) {
+      if (!SEM_ESCALA.includes(r)) r = 'importar';
+      if (!rotaPermitida(r)) r = ehProgramador() ? 'importar' : 'resultados';
+      return { r, a, b };
+    }
+    if (!rotas[r] || !rotaPermitida(r)) r = 'painel';
+    return { r, a, b };
   }
   const ir = h => { if (location.hash === h) render(); else location.hash = h; };
 
@@ -235,7 +260,7 @@
         html += item('#/salao/' + s, 'Salão ' + s, 'room', `<span class="mini" title="${oc}/${vs.length} ocupadas"><i style="width:${Math.round(oc / vs.length * 100)}%"></i></span>`, r === 'salao' && +a === s);
       }
       html += `<div class="nav-t">Bateria do mês</div>`;
-      html += item('#/sync', 'Sincronização', 'sync', nDiv ? `<span class="cnt alerta">${nDiv}</span>` : `<span class="cnt">✓</span>`, r === 'sync');
+      if (rotaPermitida('sync')) html += item('#/sync', 'Sincronização', 'sync', nDiv ? `<span class="cnt alerta">${nDiv}</span>` : `<span class="cnt">✓</span>`, r === 'sync');
       html += item('#/relatorio', 'Relatório de cadastro', 'report', '', r === 'relatorio');
       const re = M.app.resumoEtiquetas && M.app.resumoEtiquetas();
       html += item('#/etiquetas', 'Etiquetas & mapa', 'tag', re && re.itens.length ? (re.semEtiqueta.length ? `<span class="cnt alerta" title="coletam sem etiqueta">${re.semEtiqueta.length}</span>` : `<span class="cnt">✓</span>`) : '', r === 'etiquetas');
@@ -247,8 +272,19 @@
     html += item('#/interface', 'Interface Nephrosys', 'link', '', r === 'interface');
     html += `<div class="nav-t">Referência</div>`;
     html += item('#/baterias', 'Baterias & regras', 'flask', '', r === 'baterias');
-    html += item('#/proposta', 'Proposta & roadmap', 'bulb', '', r === 'proposta');
+    if (rotaPermitida('proposta')) html += item('#/proposta', 'Proposta & roadmap', 'bulb', '', r === 'proposta');
+    if (M.nuvem && ehProgramador()) {
+      html += `<div class="nav-t">Administração</div>`;
+      html += item('#/usuarios', 'Usuários e acessos', 'shield', M.sessao && M.sessao.pedidos ? `<span class="cnt alerta" title="pedidos de acesso">${M.sessao.pedidos}</span>` : '', r === 'usuarios');
+      html += item('#/integracao', 'Integração (API)', 'link', '', r === 'integracao');
+    }
     $('#nav').innerHTML = html;
+    const u = $('#usuario');
+    if (u) {
+      const s = M.sessao;
+      u.hidden = !(M.nuvem && s && s.perfil);
+      if (!u.hidden) u.innerHTML = `<span class="av">${esc(iniciais(s.perfil.nome || s.perfil.email))}</span><span class="nm"><b>${esc(s.perfil.nome || s.perfil.email)}</b><small>${esc(({ programador: 'Programador · acesso total', enfermaria: 'Enfermaria · edita pacientes', faturamento: 'Faturamento · visualização' })[s.papel] || s.papel)}</small></span>`;
+    }
   }
 
   function renderTopo() {
@@ -274,7 +310,7 @@
     renderNav(); renderTopo();
     const { r, a } = rotaAtual();
     const V = M.app.views;
-    const views = { painel: V.vPainel, salao: () => V.vSalao(+a || 1, M.app.rotaAtual().b), sync: V.vSync, relatorio: V.vRelatorio, etiquetas: V.vEtiquetas, baterias: V.vBaterias, proposta: V.vProposta, importar: V.vImportar,
+    const views = { usuarios: V.vUsuarios, integracao: V.vIntegracao, migrar: V.vMigrar, painel: V.vPainel, salao: () => V.vSalao(+a || 1, M.app.rotaAtual().b), sync: V.vSync, relatorio: V.vRelatorio, etiquetas: V.vEtiquetas, baterias: V.vBaterias, proposta: V.vProposta, importar: V.vImportar,
       resultados: () => V.vResultados(a), paciente: () => V.vPaciente(a), arquivos: V.vArquivos, interface: V.vInterface };
     const alvo = $('#conteudo');
     alvo.onclick = alvo.onchange = alvo.onkeydown = null;
@@ -510,8 +546,16 @@
         const novo = escuro ? 'light' : 'dark'; aplicarTema(novo); try { localStorage.setItem('medrim:tema', novo); } catch (e2) {}
       }
       if (ac === 'backup') M.app.exportarBackup();
+      if (ac === 'sair' && M.nuvemApi) M.nuvemApi.sair();
     });
-    $('#ref').addEventListener('change', e => { const [a, m] = e.target.value.split('-').map(Number); E.ref = { ano: a, mes: m }; salvar(); render(); toast(`Bateria de referência: ${bateriaRef().rotulo} de ${nomeRef()}`, 'calendar'); });
+    $('#ref').addEventListener('change', e => {
+      const [a, m] = e.target.value.split('-').map(Number); E.ref = { ano: a, mes: m };
+      if (M.nuvem && !ehProgramador()) { render(); return toast(`Visualizando ${bateriaRef().rotulo} de ${nomeRef()} (só nesta tela)`, 'calendar'); }
+      salvar(); render(); toast(`Bateria de referência: ${bateriaRef().rotulo} de ${nomeRef()}`, 'calendar');
+    });
+    document.body.dataset.papel = papel() || '';
+    document.body.classList.toggle('nuvem', !!M.nuvem);
+    if (!M.nuvem) { document.body.classList.remove('bloqueado'); const l = $('#login'); if (l) l.hidden = true; }   // modo só-navegador: sem login
     document.addEventListener('keydown', e => {
       if (e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) { e.preventDefault(); $('#busca').focus(); }
       if (e.key === 'Escape') M.app.fechar();
@@ -529,6 +573,7 @@
     tipoRef, bateriaRef, nomeRef, dataCadastro, examesDo, situacao, tipoDoPaciente, pacDe, vagaPor, ocupada, rotTurno, local, nomeExibicao, nomeFaixa,
     saloes, ordemRelatorio, divergencias, metricas, movHtml,
     travaDe, travaPorCpf, travar, destravar, normalizar, convenioDe, definirConvenio,
+    papel, podeEditar, ehProgramador, rotaPermitida,
   });
   Object.defineProperty(M.app, 'E', { get: () => E, set: v => { E = v; }, configurable: true });
   M.app.views = { vPainel };

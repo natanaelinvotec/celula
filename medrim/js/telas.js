@@ -13,7 +13,7 @@
       <div>
         <span class="chip b" style="--cor:var(--rim)">Célula Diagnósticos × Hiperrim</span>
         <h2 style="margin-top:12px">Escala e bateria do mês,<br><em>sincronizadas</em> em segundos.</h2>
-        <p class="lead">Solte aqui o Word da escala (salões, turnos e máquinas) e os CSVs da bateria. O MedRim casa os nomes abreviados com nome completo, CPF e nascimento — tudo <b>dentro do seu navegador</b>: nenhum dado de paciente é enviado para servidor ou para o GitHub.</p>
+        <p class="lead">Solte aqui o Word da escala (salões, turnos e máquinas) e os CSVs da bateria. O MedRim casa os nomes abreviados com nome completo, CPF e nascimento. ${M.nuvem ? 'Os arquivos são lidos neste navegador; o resultado vai para a <b>nuvem do laboratório</b> (Firebase, com login e permissões) — nunca para o GitHub.' : 'Tudo <b>dentro do seu navegador</b>: nenhum dado de paciente é enviado para servidor ou para o GitHub.'}</p>
         <div class="drop" id="drop" tabindex="0" role="button" aria-label="Escolher arquivos">
           ${ic('upload')}<b>Arraste os arquivos aqui ou clique para escolher</b>
           <small>1 arquivo .docx da escala + os CSVs (ex.: “SEG QUA E SEX 1 TURNO.csv”, “TER QUI E SAB 3 TURNO.csv”). Se tiver a lista conferida (.xlsx), solte junto.</small>
@@ -23,7 +23,7 @@
           <button class="btn pri" id="btn-importar" disabled>${ic('sync')} Importar e sincronizar</button>
           <button class="btn ghost" id="btn-restaurar">${ic('download')} Restaurar backup</button>
           ${tem ? `<a class="btn ghost" href="#/painel">Voltar ao painel</a>` : ''}
-          ${tem || (A.R && A.R.lotes.length) ? `<button class="btn perigo" id="btn-zerar">${ic('undo')} Começar do zero</button>` : ''}
+          ${!M.nuvem && (tem || (A.R && A.R.lotes.length)) ? `<button class="btn perigo" id="btn-zerar">${ic('undo')} Começar do zero</button>` : ''}
         </div>
         <div class="alerta-box info" style="margin-top:14px">${ic('drop')}<div>Resultados dos pacientes (TXT do Nephrosys) entram em <a href="#/resultados"><b>Resultados</b></a>.</div></div>
         ${tem ? `<div class="alerta-box info" style="margin-top:14px">${ic('info')}<div>Reimportar mantém o que vocês já decidiram: <b>vínculos confirmados</b>, internações, óbitos, admissões e o histórico. Sem o .docx, só os CSVs são atualizados.</div></div>` : ''}
@@ -238,6 +238,7 @@
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
   }
   A.exportarBackup = () => {
+    if (!A.ehProgramador()) return A.toast('Só o laboratório (programador) baixa o backup.', 'shield');
     if (!E()) return A.toast('Nada para salvar ainda.', 'info');
     baixar(`medrim-backup-${A.hojeISO()}.json`, JSON.stringify(E(), null, 1), 'application/json');
     A.toast('Backup baixado — contém dados pessoais: guarde em local seguro.', 'shield');
@@ -248,7 +249,12 @@
       try {
         const d = JSON.parse(await f.text());
         if (!d || d.versao !== 1 || !Array.isArray(d.vagas)) throw new Error('Arquivo não é um backup do MedRim.');
-        A.marcar('restauração'); A.E = d; A.salvar(); location.hash = '#/painel'; A.render(); A.toast('Backup restaurado', 'check', true);
+        if (!A.ehProgramador()) throw new Error('Só o laboratório (programador) restaura backup.');
+        const aplicar = () => { A.marcar('restauração'); A.E = d; A.salvar(); location.hash = '#/painel'; A.render(); A.toast(M.nuvem ? 'Backup restaurado e enviado para a nuvem' : 'Backup restaurado', 'check', true); };
+        if (!M.nuvem) return aplicar();
+        A.abrirModal({ titulo: 'Restaurar backup na nuvem', ic: 'alert', cor: 'var(--crit)',
+          corpo: `<p style="margin:0">Substitui a escala, os pacientes e as decisões <b>para todos os usuários</b> pelo conteúdo de <b>${esc(f.name)}</b> (${d.vagas.length} vagas · ${Object.keys(d.pacientes || {}).length} pacientes).</p>`,
+          botoes: [{ rot: 'Cancelar' }, { rot: 'Substituir', cls: 'rim', ic: 'check', acao: () => { A.fechar(); aplicar(); } }] });
       } catch (err) { A.toast(err.message, 'alert'); }
     };
   }
@@ -499,6 +505,7 @@
   function ligarBaterias() {
     $('#conteudo').onclick = e => {
       const b = e.target.closest('[data-regra]'); if (!b || !E()) return;
+      if (!A.ehProgramador()) return A.toast('Só o laboratório altera as regras das baterias.', 'shield');
       const [k, t] = b.dataset.regra.split('|');
       A.marcar('regra de controle'); E().regras[k][t] = !E().regras[k][t]; A.salvar(); A.render();
       A.toast(`${M.CONTROLES[k].rotulo} ${E().regras[k][t] ? 'entra' : 'não entra'} na ${M.BATERIAS[t].rotulo.toLowerCase()}`, 'flask', true);
@@ -580,5 +587,5 @@
   Object.assign(A.views, { vImportar, vSync, vRelatorio, vBaterias, vProposta });
   Object.assign(A.ligar, { importar: ligarImportar, sync: ligarSync, relatorio: ligarRelatorio, baterias: ligarBaterias });
   ligarRestaurar();
-  A.iniciar();
+  if (!M.nuvem) A.iniciar();   // versão online: js/nuvem.js chama A.iniciar() depois do login
 })(window.MED = window.MED || {});

@@ -34,10 +34,19 @@
       t.onerror = () => rej(t.error); t.onabort = () => rej(t.error);
     });
   }
+  /** Armazém padrão: IndexedDB deste navegador. Na versão online, js/nuvem.js põe o Firestore em A.armazem. */
+  A.armazemLocal = {
+    carregar: async () => (await op('lotes', 'readonly', s => s.getAll())) || [],
+    salvar: async (lote, arq) => { await op('lotes', 'readwrite', s => s.put(lote)); await op('arquivos', 'readwrite', s => s.put(arq)); },
+    arquivo: async id => op('arquivos', 'readonly', s => s.get(id)),
+    excluir: async id => { await op('lotes', 'readwrite', s => s.delete(id)); await op('arquivos', 'readwrite', s => s.delete(id)); },
+    limpar: async () => { await op('lotes', 'readwrite', s => s.clear()); await op('arquivos', 'readwrite', s => s.clear()); },
+  };
+  const arm = () => A.armazem || A.armazemLocal;
   const ordenar = () => R.lotes.sort((a, b) => b.competencia.localeCompare(a.competencia) || b.importadoEm.localeCompare(a.importadoEm));
   A.carregarResultados = async function () {
-    try { R.lotes = (await op('lotes', 'readonly', s => s.getAll())) || []; ordenar(); }
-    catch (e) { R.ok = false; console.warn('IndexedDB indisponível', e); }
+    try { R.lotes = (await arm().carregar()) || []; ordenar(); }
+    catch (e) { R.ok = false; console.warn('Armazenamento de resultados indisponível', e); }
   };
 
   // ================= leitura do TXT =================
@@ -187,35 +196,39 @@
       botoes: [{ rot: 'Cancelar' }, { rot: 'Importar', cls: 'pri', ic: 'check', acao: f => { salvarLote(arquivo, buf, r, f.comp.value); } }],
     });
   }
-  async function salvarLote(arquivo, buf, r, comp) {
+  async function salvarLote(arquivo, buf, r, comp, silencioso) {
     const antigo = R.lotes.find(l => l.competencia === comp);
     const id = comp;
     const lote = {
       id, competencia: comp, arquivo: arquivo.name, tamanho: buf.byteLength, importadoEm: new Date().toISOString(),
       datas: r.datas, nResultados: r.nResultados, codigos: r.codigos, avisos: r.avisos, pacientes: r.pacientes,
     };
-    try {
-      await op('lotes', 'readwrite', s => s.put(lote));
-      await op('arquivos', 'readwrite', s => s.put({ id, nome: arquivo.name, bytes: buf, tipo: arquivo.type || 'text/plain' }));
-    } catch (e) { R.ok = false; lote._bytes = buf; }
+    try { await arm().salvar(lote, { id, nome: arquivo.name, bytes: buf, tipo: arquivo.type || 'text/plain' }); }
+    catch (e) {
+      if (A.armazem) { A.toast('Não consegui gravar os resultados na nuvem: ' + (e.message || e), 'alert'); throw e; }
+      R.ok = false; lote._bytes = buf;
+    }
     R.lotes = R.lotes.filter(l => l.competencia !== comp); R.lotes.push(lote); ordenar();
     if (E()) { A.evento('importacao', null, `Resultados ${rotComp(comp)}: ${arquivo.name} · ${Object.keys(r.pacientes).length} pacientes · ${r.nResultados} resultados${antigo ? ' (substituiu o lote anterior)' : ''}`); A.salvar(); }
+    if (silencioso) return lote;
     location.hash = '#/resultados/' + comp; A.render();
     const sug = Object.keys(A.sugestoesTxt()).length;
     A.toast(`Resultados de ${rotComp(comp)} importados${sug ? ` · ${sug} nomes da escala reconhecidos no TXT` : ''}`, 'check');
   }
   A.importarResultados = () => escolherTxt(previaImportacao);
+  A.salvarLoteResultados = salvarLote;
+  A.adivinharCompetencia = (nome, datas) => adivinharCompetencia(nome, datas);
   A.limparResultados = async function () {
-    try { await op('lotes', 'readwrite', s => s.clear()); await op('arquivos', 'readwrite', s => s.clear()); } catch (e) { /* sem IndexedDB */ }
+    try { await arm().limpar(); } catch (e) { /* sem armazenamento */ }
     R.lotes = [];
   };
 
   async function baixarArquivo(id, remapear) {
     let reg = null;
-    try { reg = await op('arquivos', 'readonly', s => s.get(id)); } catch (e) { /* sem IndexedDB */ }
+    try { reg = await arm().arquivo(id); } catch (e) { /* sem armazenamento */ }
     const lote = R.lotes.find(l => l.id === id);
     const bytes = reg ? reg.bytes : lote && lote._bytes;
-    if (!bytes) return A.toast('Arquivo original não encontrado neste navegador.', 'alert');
+    if (!bytes) return A.toast('Arquivo original não encontrado.', 'alert');
     let saida = bytes, nome = reg ? reg.nome : lote.arquivo;
     if (remapear) {
       const txt = new TextDecoder('windows-1252').decode(bytes);
@@ -241,7 +254,7 @@
       titulo: 'Excluir resultados de ' + rotComp(lote.competencia), ic: 'x', cor: 'var(--crit)',
       corpo: `<p style="margin:0">Remove o lote <b>${esc(lote.arquivo)}</b> e o TXT guardado deste navegador. O histórico dos outros meses continua.</p>`,
       botoes: [{ rot: 'Cancelar' }, { rot: 'Excluir', cls: 'rim', ic: 'x', acao: async () => {
-        try { await op('lotes', 'readwrite', s => s.delete(id)); await op('arquivos', 'readwrite', s => s.delete(id)); } catch (e) { /* memória */ }
+        try { await arm().excluir(id); } catch (e) { return A.toast('Não consegui excluir: ' + (e.message || e), 'alert'); }
         R.lotes = R.lotes.filter(l => l.id !== id); A.render(); A.toast('Lote excluído', 'x');
       } }],
     });
@@ -474,9 +487,9 @@
       <div class="destaques">${dest.map(card).join('')}</div>
       <div class="grid g2" style="margin-top:16px;align-items:start">${tabelas}</div>
       <div style="margin-top:16px">${tabHist}</div>
-      <div class="card no-print" style="margin-top:16px"><h3>Observações do médico</h3><p class="desc">Ficam no histórico do paciente (nesta versão, só neste navegador).</p>
-        <form data-fp="nota" style="display:flex;gap:8px;flex-wrap:wrap"><input name="t" class="sel-cand" style="flex:1;min-width:240px;max-width:none" placeholder="Ex.: ajustar quelante de fósforo; repetir K na próxima sessão" maxlength="400"><button class="btn pri sm">${ic('plus')} Registrar</button></form>
-        <div class="lista-mov" style="margin-top:10px">${notas.map(n => `<div class="mov" style="--cor:var(--blue)"><span class="ic">${ic('chat')}</span><div>${esc(n.texto)}<br><small>${new Date(n.ts).toLocaleString('pt-BR')} · ref. ${rotComp(n.comp)}</small></div></div>`).join('') || '<div class="faint" style="padding:6px">Sem observações.</div>'}</div>
+      <div class="card no-print" style="margin-top:16px"><h3>Observações do médico</h3><p class="desc">Ficam no histórico do paciente${M.nuvem ? ', com o nome de quem registrou.' : ' (nesta versão, só neste navegador).'}</p>
+        <form data-fp="nota" class="so-edicao" style="display:flex;gap:8px;flex-wrap:wrap"><input name="t" class="sel-cand" style="flex:1;min-width:240px;max-width:none" placeholder="Ex.: ajustar quelante de fósforo; repetir K na próxima sessão" maxlength="400"><button class="btn pri sm">${ic('plus')} Registrar</button></form>
+        <div class="lista-mov" style="margin-top:10px">${notas.map(n => `<div class="mov" style="--cor:var(--blue)"><span class="ic">${ic('chat')}</span><div>${esc(n.texto)}<br><small>${new Date(n.ts).toLocaleString('pt-BR')} · ref. ${rotComp(n.comp)}${n.por ? ' · ' + esc(n.por) : ''}</small></div></div>`).join('') || '<div class="faint" style="padding:6px">Sem observações.</div>'}</div>
       </div>
       <p class="desc" style="margin-top:12px">*Kt/V estimado por Daugirdas 2ª geração com sessão de 4 h e sem UF/peso — para o valor exato faltam tempo de sessão, UF e peso pós (dados da clínica). Alvos sugeridos KDIGO/KDOQI, a validar com o nefrologista responsável.</p>`;
   }
@@ -500,7 +513,8 @@
     if (form) form.onsubmit = e => {
       e.preventDefault(); const t = form.t.value.trim(); if (!t || !E()) return;
       A.marcar('observação'); E().notas = E().notas || {};
-      (E().notas[chave] = E().notas[chave] || []).unshift({ ts: new Date().toISOString(), texto: t, comp: R.lotes[0].competencia });
+      const quem = M.sessao && M.sessao.perfil ? (M.sessao.perfil.nome || M.sessao.perfil.email) : null;
+      (E().notas[chave] = E().notas[chave] || []).unshift(Object.assign({ ts: new Date().toISOString(), texto: t, comp: R.lotes[0].competencia }, quem ? { por: quem } : {}));
       A.salvar(); A.render(); A.toast('Observação registrada', 'chat', true);
     };
   }

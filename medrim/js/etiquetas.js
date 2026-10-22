@@ -190,6 +190,7 @@
   }
 
   async function importarPdfs(files) {
+    if (!A.ehProgramador()) return A.toast('Só o laboratório sobe as etiquetas.', 'shield');
     const pdfs = files.filter(f => /\.pdf$/i.test(f.name));
     if (!pdfs.length) return A.toast('Escolha os PDFs “Resumo de Solicitações Incluídas” do Autolac.', 'alert');
     const lidos = [], erros = [];
@@ -364,12 +365,12 @@
         </div>
       </div>
       ${outraComp ? `<div class="alerta-box" style="margin-top:12px">${ic('alert')}<div>As etiquetas guardadas são de <b>${esc(E().etiquetas.comp)}</b>. Para ${esc(A.nomeRef())}, solte os PDFs deste mês.</div></div>` : ''}
-      <div class="drop" id="etq-drop" tabindex="0" role="button" aria-label="Escolher PDFs de etiquetas" style="margin-top:14px">
+      <div class="drop so-prog" id="etq-drop" tabindex="0" role="button" aria-label="Escolher PDFs de etiquetas" style="margin-top:14px">
         ${ic('tag')}<b>Arraste os PDFs aqui ou clique para escolher</b><small>Ex.: 2110-normal.pdf · 2110-normalgli.pdf · 2110-normalcr.pdf · 2110-normalglicr.pdf</small>
       </div>
       <input type="file" id="etq-arq" accept=".pdf,application/pdf" multiple hidden>
-      ${temArq ? `<div class="tbl-wrap" style="margin-top:12px"><table class="tbl"><thead><tr><th>Arquivo</th><th>Perfil das etiquetas</th><th>Protocolos</th><th></th></tr></thead><tbody>${arquivos}</tbody></table></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn sm" data-etq="refazer">${ic('sync')} Refazer ligações automáticas</button><button class="btn sm perigo" data-etq="limpar">${ic('x')} Apagar etiquetas do mês</button></div>` : ''}
+      ${temArq ? `<div class="tbl-wrap so-prog" style="margin-top:12px"><table class="tbl"><thead><tr><th>Arquivo</th><th>Perfil das etiquetas</th><th>Protocolos</th><th></th></tr></thead><tbody>${arquivos}</tbody></table></div>
+        <div class="so-prog" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn sm" data-etq="refazer">${ic('sync')} Refazer ligações automáticas</button><button class="btn sm perigo" data-etq="limpar">${ic('x')} Apagar etiquetas do mês</button></div>` : ''}
     </section>
 
     <div class="no-print">
@@ -405,6 +406,7 @@
     const c = $('#conteudo');
     c.onchange = e => {
       const t = e.target, et = E().etiquetas;
+      if ((t.dataset.perfil || t.dataset.ligar) && !A.ehProgramador()) { A.render(); return A.toast('Só o laboratório altera as etiquetas.', 'shield'); }
       if (t.dataset.perfil) {
         A.marcar('perfil das etiquetas');
         const k = t.value ? t.value.split(',') : [];
@@ -434,6 +436,7 @@
       const b = e.target.closest('[data-etq]'); if (!b) return;
       const ac = b.dataset.etq, et = E().etiquetas;
       if (ac === 'imprimir') return imprimir();
+      if (!A.ehProgramador()) return A.toast('Só o laboratório altera as etiquetas.', 'shield');
       if (ac === 'refazer') { A.marcar('refazer ligações'); Object.values(et.itens).forEach(i => { if (i.conf !== 'manual') { i.pid = null; i.conf = null; i.score = null; } }); casar(); A.salvar(); A.render(); return A.toast('Ligações refeitas', 'sync'); }
       if (ac === 'limpar') return A.abrirModal({ titulo: 'Apagar etiquetas do mês', ic: 'x', cor: 'var(--crit)', corpo: `<p style="margin:0">Apaga os protocolos lidos de ${esc(A.nomeRef())} deste navegador. Os PDFs no seu computador não são tocados.</p>`,
         botoes: [{ rot: 'Cancelar' }, { rot: 'Apagar', cls: 'rim', ic: 'x', acao: () => { A.marcar('apagar etiquetas'); E().etiquetas = null; A.salvar(); A.fechar(); A.render(); } }] });

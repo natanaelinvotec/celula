@@ -117,7 +117,7 @@
     const completo = occ && !A.ui.nomesCurtos && p && !['escala', 'resultado'].includes(p.origem);
     if (completo) cls.push('completo');
     const nome = occ ? (completo ? titulo(p.nome) : A.nomeFaixa(v)) : 'Livre';
-    return `<div class="${cls.join(' ')}" role="button" tabindex="0" data-vaga="${v.id}" ${occ ? 'draggable="true"' : ''} style="${filtrar ? 'opacity:.28' : ''}"
+    return `<div class="${cls.join(' ')}" role="button" tabindex="0" data-vaga="${v.id}" ${occ && A.podeEditar() ? 'draggable="true"' : ''} style="${filtrar ? 'opacity:.28' : ''}"
       title="${esc(occ ? (p ? titulo(p.nome) : v.nomeEscala) + (v.nomeEscala ? ' · escala: ' + v.nomeEscala : '') : 'Vaga livre')}">
       <span class="g">${g}</span>
       <span class="nm"><span>${esc(nome)}</span><small>${esc(sub)}</small></span>
@@ -176,6 +176,7 @@
   function clicarVaga(id) {
     const v = A.vagaPor(id);
     if (A.ocupada(v)) return abrirFicha(id);
+    if (!A.podeEditar()) return;
     abrirModal({
       titulo: 'Vaga livre · ' + A.local(v, true), ic: 'plus', cor: 'var(--teal)',
       corpo: `<p style="margin:0;color:var(--muted)">O que fazer com esta vaga (${esc(M.GRUPOS[v.grupo].rotulo)}, ${esc(A.rotTurno(v.turno))})?</p>
@@ -305,6 +306,7 @@
     const reabrir = () => abrirFicha(v ? v.id : null, v ? null : p && p.id);
     if (f === 'fechar') return fechar();
     if (f === 'cpf') { A.ui.revelarCpf = !A.ui.revelarCpf; return reabrir(); }
+    if (!A.podeEditar()) return A.toast('Seu usuário só visualiza.', 'shield');
     if (f === 'confirmar') { confirmarVinculo(v.id); return reabrir(); }
     if (f === 'desvincular') { trocarVinculo(v.id, ''); return reabrir(); }
     if (f === 'cadsem') return cadastrarSemPedido(v.id);
@@ -603,6 +605,7 @@
   /** Cadeado: confirma antes de liberar. */
   function pedirDestravar(vagaId, depois) {
     const v = A.vagaPor(vagaId), t = v && A.travaDe(v); if (!t) return;
+    if (!A.podeEditar()) return A.toast('Seu usuário só visualiza.', 'shield');
     abrirModal({
       titulo: 'Destravar paciente', ic: 'unlock', cor: 'var(--warn)',
       corpo: `<div><b>${esc(A.nomeExibicao(v))}</b> · ${esc(A.local(v, true))}</div>
