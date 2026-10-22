@@ -88,8 +88,11 @@ Pasta para o repositório `celula`. Depois de enviada, a página fica em **`celu
 3. Clique no paciente para a **ficha**: destaques (URR, Kt/V estimado, Hb, K, P, Ca×P, PTH, ferritina, IST, albumina),
    tabelas por grupo, hemograma completo, histórico de todos os meses e observações do médico.
 4. **Arquivos TXT**: cada TXT fica guardado exatamente como foi exportado (mesmos bytes) para a Hiperrim baixar.
-5. **Interface Nephrosys**: códigos do TXT × tabela do PDF. Hoje 5 códigos significam outro exame no PDF
-   (043 sódio, 067 Hb glicada, 015 hemácias, 061 CHCM, 062 total do diferencial) — conferir com a Hiperrim.
+5. **Interface Nephrosys**: códigos do TXT × tabela do PDF, conferidos contra um laudo completo de bateria anual (dez/2025).
+   9 códigos significam outro exame no PDF: 015 hemácias (PDF: plaquetas), 041 alumínio (ácido úrico), 042 HIV (PTH),
+   043 sódio (transferrina), 061 CHCM (colesterol), 062 total do diferencial (HDL), 067 Hb glicada (anti-HIV),
+   068 vitamina D (sódio), 070 TSH (magnésio) — conferir com a Hiperrim qual tabela o Nephrosys deles usa.
+   O botão **Baixar TXT conforme o PDF** gera a cópia com os códigos padrão (ex.: 043→068 sódio, 068→090 vitamina D).
 
 Layout lido do TXT (separador `|`, ISO-8859-1, CRLF):
 
