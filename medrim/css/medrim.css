@@ -446,9 +446,6 @@ label.f{display:grid;gap:5px;font-size:12.5px;font-weight:800;color:var(--muted)
 .arq-ic{width:56px;height:64px;border-radius:12px;background:color-mix(in srgb,var(--cor) 12%,var(--surface));color:var(--cor);display:grid;place-items:center;align-content:center;gap:2px;font:900 11px 'Nunito',system-ui,sans-serif}
 .arq-ic svg{width:24px;height:24px}
 .avisos{margin:8px 0 0;padding-left:18px;font-size:12.5px;color:var(--muted);max-height:220px;overflow:auto;line-height:1.55}
-.tabela-pdf{columns:3 220px;column-gap:24px;margin-top:12px;font-size:13px}
-.tabela-pdf div{break-inside:avoid;padding:2px 0}
-.tabela-pdf code{font-weight:900;color:var(--blue);margin-right:6px}
 @media print{
   .mapa-wrap{max-height:none;overflow:visible;border:0}
   .tbl.mapa .fixa{position:static;box-shadow:none}
@@ -596,3 +593,7 @@ body[data-papel="faturamento"] .faixa.vaga{cursor:default}
 .pedido>div{flex:1;min-width:200px}
 pre.codigo{background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:12px 14px;overflow:auto;font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre}
 @media print{.login,.usuario,.nuvem-status{display:none!important}body.bloqueado .app{visibility:visible}}
+/* interface Nephrosys: exame da bateria → códigos do TXT */
+.tbl-cruz td{vertical-align:top}.tbl-cruz td:first-child{min-width:160px}
+code.cod{display:inline-block;margin:1px 0;padding:1px 6px;border-radius:6px;font-size:12px;background:var(--ok-50);border:1px solid color-mix(in srgb,var(--ok) 32%,transparent);cursor:default}
+code.cod.inf{background:transparent;border-style:dashed;border-color:var(--warn)}
