@@ -1,49 +1,14 @@
 /* MedRim · interface de resultados no padrão Nephrosys (TXT laboratório → clínica).
-   - M.NEPHRO_PDF: tabela de códigos do PDF "Requisição dos Exames Padrão Nephrosys TXT".
-   - M.RES: como cada código do TXT exportado pelo laboratório é interpretado (nome, unidade, alvo).
-     `pdf` = código equivalente na tabela padrão do Nephrosys: é ele que vai no "TXT conforme o PDF" (exportação).
-     Conferido valor a valor contra um laudo completo de bateria anual (dez/2025): os 28 exames do laudo
-     batem com 47 códigos do TXT. Continuam "inferido" só os que vieram zerados ou não estavam no laudo
-     (046/047/048/055 do diferencial, 062 = soma do diferencial e 067 = Hb glicada, que faltou na anual).
+   - Os códigos do TXT exportado pelo laboratório SÃO os códigos da integração com o Nephrosys da Hiperrim
+     (em produção, funcionando). O MedRim usa exatamente esses códigos — não a tabela do manual do Nephrosys.
+   - M.RES: como cada código do TXT é interpretado (nome, unidade, alvo, grupo) e de qual exame da bateria vem (ex).
+     Conferido valor a valor: laudo completo de uma bateria anual (dez/2025) × TXT do mesmo paciente —
+     os 28 exames do laudo batem com 47 códigos do TXT. "inferido" = não dava para conferir no laudo (motivo).
    - quali: resultado em texto. 'positivo' → "Reagente" é crítico (HBsAg, anti-HCV, HIV: isolamento/conduta);
      'protecao' → "Não reagente" é baixo (anti-HBs sem proteção: vacinar).
    - Alvos: sugestão baseada em KDIGO/KDOQI para hemodiálise — VALIDAR com o nefrologista responsável. */
 (function (M) {
   'use strict';
-
-  M.NEPHRO_PDF = {
-    '001': 'Ureia (pré-diálise)', '002': 'Ureia (pós-diálise)', '003': 'Creatinina', '004': 'Potássio', '005': 'Cálcio',
-    '006': 'Fósforo', '007': 'TGP', '008': 'Glicose', '009': 'Hemácias (eritrócitos)', '010': 'Hemoglobina',
-    '011': 'Hematócrito', '012': 'Leucócito', '013': 'HBsAg', '014': 'Anti HCV', '015': 'Plaquetas',
-    '021': 'Fosfatase alcalina', '022': 'Ferro sérico', '023': 'Cap. ligação do ferro', '024': 'Cap. latente do ferro',
-    '025': 'Proteínas totais e frações', '028': 'Anti HBs', '029': 'Ferritina', '030': 'Índice transferrina',
-    '041': 'Ácido úrico', '042': 'PTH', '043': 'Transferrina', '061': 'Colesterol', '062': 'Colesterol HDL',
-    '063': 'Colesterol LDL', '064': 'Colesterol VLDL', '065': 'Triglicérides', '066': 'Alumínio sérico', '067': 'Anti HIV',
-    '068': 'Sódio', '069': 'Anti HBC – IgM', '070': 'Magnésio', '080': 'Cálcio iônico', '081': 'Hemoglobina glicosada',
-    '082': 'Tacrolimus', '083': 'Ciclosporina', '084': 'Sirolimus', '085': 'CD4/CD3', '086': 'Potássio pós',
-    '087': 'Anti HBC – IgG', '088': 'Tipagem sanguínea', '089': 'Hemoglobina glicosada', '090': '25-hidroxivitamina D',
-    '091': 'TSH', '092': 'T4 (tiroxina)', '093': 'Bacterioscopia (Gram)', '094': 'Cultura de bactérias', '095': 'Hemocultura',
-    '100': 'Hemograma', '216': 'Eritrograma',
-    '601': 'PSA', '602': 'VDRL', '603': 'Chagas', '604': 'CMV IgG', '605': 'CMV IgM', '606': 'Toxoplasmose IgG',
-    '607': 'Toxoplasmose IgM', '608': 'Epstein-Barr IgG', '609': 'Epstein-Barr IgM', '610': 'TGO', '611': 'Gama GT',
-    '612': 'Reserva alcalina (bicarbonato)', '613': 'Proteína C reativa', '614': 'Homocisteína', '615': 'Beta-2 microglobulina',
-    '616': 'Ácido fólico', '617': 'Ácido úrico urinário', '618': 'Aldolase', '619': 'Alfafetoproteína', '620': 'Amilase',
-    '621': 'Antibiograma', '622': 'CEA', '623': 'Anti-TPO', '624': 'Bilirrubina direta', '625': 'Bilirrubina total',
-    '626': 'Calciúria 24 h', '627': 'Citratúria 24 h', '628': 'CK-MB', '629': 'Clearance de creatinina', '630': 'Complemento C3',
-    '631': 'Complemento C4', '632': 'Complemento CH50', '633': 'CPK', '634': 'Dismorfismo eritrocitário', '635': 'FAN',
-    '636': 'Fator reumatoide', '637': 'Gasometria venosa', '638': 'Glicose pós-prandial', '639': 'Insulina',
-    '640': 'Magnésio urina 24 h', '641': 'Microalbuminúria', '642': 'Oxalúria 24 h', '643': 'Potássio urina 24 h',
-    '644': 'Proteinúria 24 h', '645': 'Sodiúria 24 h', '646': 'T3', '647': 'T4 livre', '648': 'TTPA', '649': 'Tempo de protrombina',
-    '650': 'Testosterona', '651': 'Ureia urina 24 h', '652': 'Urina tipo I', '653': 'Urocultura', '654': 'VHS', '655': 'T3 livre',
-    '656': 'Anti-HBc total', '658': 'Colesterol não-HDL', '659': 'PSA livre', '660': 'PSA livre/total', '661': 'Vitamina B12',
-    '662': 'HCV PCR qualitativo', '670': 'Fosfatase ácida', '671': 'Anti-DNA', '672': 'Aldosterona', '673': 'Cortisol',
-    '674': 'Microalbumina na urina', '675': 'Creatinina no líquido amniótico', '676': 'Ácido vanilmandélico',
-    '677': 'Hemocultura aeróbica 1', '678': 'Hemocultura aeróbica 2', '679': 'Hemocultura aeróbica 3',
-    '680': 'Rel. proteínas/creatinina', '681': 'Proteinúria', '682': 'Creatinina urinária', '683': 'Eletroforese de proteínas',
-    '687': 'LDH', '688': 'Haptoglobina', '689': 'Reticulócitos', '690': 'HCV PCR quantitativo', '691': 'Digoxina',
-    '692': 'Rel. albumina/globulina', '693': 'Zinco', '694': 'Vitamina C', '695': 'Ácido oxálico', '697': 'Líquido peritoneal',
-    '698': 'BNP', '699': 'Procalcitonina', '700': 'NT-proBNP',
-  };
 
   // grupos para a ficha do médico
   M.RES_GRUPOS = {
@@ -52,61 +17,61 @@
     tireoide: 'Tireoide', sorologia: 'Sorologias (hepatites e HIV)',
   };
 
-  /** Código do TXT → interpretação. ref = [mín, máx] (null = sem limite); crit = valores críticos; pdf = código equivalente no PDF. */
+  /** Código do TXT → interpretação. ref = [mín, máx] (null = sem limite); crit = valores críticos; ex = exame(s) da bateria (M.EXAMES). */
   M.RES = {
-    '001': { nome: 'Ureia pré-diálise', curto: 'Ur pré', un: 'mg/dL', grupo: 'dialise', pdf: '001' },
-    '002': { nome: 'Ureia pós-diálise', curto: 'Ur pós', un: 'mg/dL', grupo: 'dialise', pdf: '002' },
-    '003': { nome: 'Creatinina', curto: 'Creat', un: 'mg/dL', grupo: 'renal', pdf: '003' },
-    '004': { nome: 'Potássio', curto: 'K', un: 'mEq/L', grupo: 'eletro', ref: [3.5, 5.5], crit: [3.0, 6.5], pdf: '004' },
-    '043': { nome: 'Sódio', curto: 'Na', un: 'mEq/L', grupo: 'eletro', ref: [135, 145], crit: [125, 155], pdf: '068' },
-    '005': { nome: 'Cálcio', curto: 'Ca', un: 'mg/dL', grupo: 'osso', ref: [8.4, 10.2], crit: [6.0, 12], pdf: '005' },
-    '006': { nome: 'Fósforo', curto: 'P', un: 'mg/dL', grupo: 'osso', ref: [3.5, 5.5], pdf: '006' },
-    '034': { nome: 'PTH intacto', curto: 'PTH', un: 'pg/mL', grupo: 'osso', ref: [130, 600], pdf: '042' },
-    '021': { nome: 'Fosfatase alcalina', curto: 'FAL', un: 'U/L', grupo: 'osso', ref: [40, 130], pdf: '021' },
-    '068': { nome: 'Vitamina D (25-hidroxi)', curto: 'Vit D', un: 'ng/mL', grupo: 'osso', ref: [30, 100], pdf: '090' },
-    '041': { nome: 'Alumínio sérico', curto: 'Al', un: 'µg/L', grupo: 'osso', ref: [null, 20], crit: [null, 60], pdf: '066' },
-    '016': { nome: 'Hemoglobina', curto: 'Hb', un: 'g/dL', grupo: 'anemia', ref: [10, 12], crit: [7, null], pdf: '010' },
-    '017': { nome: 'Hematócrito', curto: 'Ht', un: '%', grupo: 'anemia', ref: [30, 36], pdf: '011' },
-    '022': { nome: 'Ferro sérico', curto: 'Fe', un: 'µg/dL', grupo: 'anemia', ref: [50, 170], pdf: '022' },
-    '023': { nome: 'Cap. total de ligação do ferro', curto: 'CTLF', un: 'µg/dL', grupo: 'anemia', ref: [250, 450], pdf: '023' },
-    '030': { nome: 'Saturação da transferrina (IST)', curto: 'IST', un: '%', grupo: 'anemia', ref: [20, 50], pdf: '030' },
-    '029': { nome: 'Ferritina', curto: 'Ferrit', un: 'ng/mL', grupo: 'anemia', ref: [200, 800], pdf: '029' },
-    '015': { nome: 'Hemácias', curto: 'Hem', un: 'milhões/mm³', grupo: 'hemo', ref: [3.9, 5.9], pdf: '009' },
-    '059': { nome: 'VCM', curto: 'VCM', un: 'fL', grupo: 'hemo', ref: [80, 100] },
-    '060': { nome: 'HCM', curto: 'HCM', un: 'pg', grupo: 'hemo', ref: [27, 32] },
-    '061': { nome: 'CHCM', curto: 'CHCM', un: 'g/dL', grupo: 'hemo', ref: [32, 36] },
-    '058': { nome: 'RDW', curto: 'RDW', un: '%', grupo: 'hemo', ref: [11.5, 14.5] },
-    '012': { nome: 'Leucócitos', curto: 'Leuc', un: '/mm³', grupo: 'hemo', ref: [4000, 11000], crit: [1500, 30000], pdf: '012' },
-    '046': { nome: 'Mielócitos', curto: 'Miel', un: '%', grupo: 'hemo', abs: true, inferido: true },
-    '047': { nome: 'Metamielócitos', curto: 'Meta', un: '%', grupo: 'hemo', abs: true, inferido: true },
-    '048': { nome: 'Bastonetes', curto: 'Bast', un: '%', grupo: 'hemo', ref: [0, 5], abs: true, inferido: true },
-    '049': { nome: 'Segmentados', curto: 'Seg', un: '%', grupo: 'hemo', ref: [40, 75], abs: true },
-    '050': { nome: 'Eosinófilos', curto: 'Eos', un: '%', grupo: 'hemo', ref: [1, 6], abs: true },
-    '051': { nome: 'Linfócitos típicos', curto: 'Linf', un: '%', grupo: 'hemo', ref: [20, 45], abs: true },
-    '055': { nome: 'Linfócitos atípicos', curto: 'Atíp', un: '%', grupo: 'hemo', abs: true, inferido: true },
-    '052': { nome: 'Monócitos', curto: 'Mono', un: '%', grupo: 'hemo', ref: [2, 10], abs: true },
-    '053': { nome: 'Basófilos', curto: 'Baso', un: '%', grupo: 'hemo', ref: [0, 2], abs: true },
-    '056': { nome: 'Plaquetas', curto: 'Plaq', un: '/mm³', grupo: 'hemo', ref: [150000, 450000], crit: [50000, null], pdf: '015' },
-    '062': { nome: 'Total do diferencial', curto: 'Σ dif', un: '%', grupo: 'hemo', oculto: true, inferido: true },
-    '025': { nome: 'Proteínas totais', curto: 'PT', un: 'g/dL', grupo: 'prot', ref: [6.0, 8.3], pdf: '025' },
-    '026': { nome: 'Albumina', curto: 'Alb', un: 'g/dL', grupo: 'prot', ref: [3.5, 5.2] },
-    '027': { nome: 'Globulina', curto: 'Glob', un: 'g/dL', grupo: 'prot', ref: [2.0, 3.5] },
-    '008': { nome: 'Glicose', curto: 'Glic', un: 'mg/dL', grupo: 'glic', ref: [70, 180], crit: [50, 400], pdf: '008' },
-    '067': { nome: 'Hemoglobina glicada', curto: 'HbA1c', un: '%', grupo: 'glic', ref: [null, 7.5], pdf: '089', inferido: true },
-    '036': { nome: 'Colesterol total', curto: 'CT', un: 'mg/dL', grupo: 'lipides', ref: [null, 200], pdf: '061' },
-    '037': { nome: 'Colesterol HDL', curto: 'HDL', un: 'mg/dL', grupo: 'lipides', ref: [40, null], pdf: '062' },
-    '038': { nome: 'Colesterol LDL', curto: 'LDL', un: 'mg/dL', grupo: 'lipides', ref: [null, 100], pdf: '063' },
-    '040': { nome: 'Triglicerídeos', curto: 'TG', un: 'mg/dL', grupo: 'lipides', ref: [null, 150], pdf: '065' },
-    '007': { nome: 'TGP (ALT)', curto: 'TGP', un: 'U/L', grupo: 'figado', ref: [null, 41], pdf: '007' },
-    '070': { nome: 'TSH', curto: 'TSH', un: 'µUI/mL', grupo: 'tireoide', ref: [0.38, 5.33], pdf: '091' },
-    '071': { nome: 'T4 (tiroxina)', curto: 'T4', un: 'µg/dL', grupo: 'tireoide', ref: [5.1, 14.1], pdf: '092' },
-    '013': { nome: 'HBsAg', curto: 'HBsAg', un: '', grupo: 'sorologia', quali: 'positivo', pdf: '013' },
-    '018': { nome: 'HBsAg (índice)', curto: 'HBsAg i', un: 'índice', grupo: 'sorologia', ref: [null, 0.89], crit: [null, 0.99] },
-    '028': { nome: 'Anti-HBs', curto: 'aHBs', un: '', grupo: 'sorologia', quali: 'protecao', pdf: '028' },
-    '020': { nome: 'Anti-HBs (título)', curto: 'aHBs tít', un: 'mUI/mL', grupo: 'sorologia', ref: [10, null] },
-    '014': { nome: 'Anti-HCV', curto: 'aHCV', un: '', grupo: 'sorologia', quali: 'positivo', pdf: '014' },
-    '019': { nome: 'Anti-HCV (índice)', curto: 'aHCV i', un: 'índice', grupo: 'sorologia', ref: [null, 0.99], crit: [null, 0.99] },
-    '042': { nome: 'Anti-HIV I/II', curto: 'HIV', un: '', grupo: 'sorologia', quali: 'positivo', pdf: '067' },
+    '001': { nome: 'Ureia pré-diálise', curto: 'Ur pré', un: 'mg/dL', grupo: 'dialise', ex: ['U-DB'] },
+    '002': { nome: 'Ureia pós-diálise', curto: 'Ur pós', un: 'mg/dL', grupo: 'dialise', ex: ['URPOS'] },
+    '003': { nome: 'Creatinina', curto: 'Creat', un: 'mg/dL', grupo: 'renal', ex: ['CR-DB'] },
+    '004': { nome: 'Potássio', curto: 'K', un: 'mEq/L', grupo: 'eletro', ref: [3.5, 5.5], crit: [3.0, 6.5], ex: ['K-DB'] },
+    '043': { nome: 'Sódio', curto: 'Na', un: 'mEq/L', grupo: 'eletro', ref: [135, 145], crit: [125, 155], ex: ['NA-DB'] },
+    '005': { nome: 'Cálcio', curto: 'Ca', un: 'mg/dL', grupo: 'osso', ref: [8.4, 10.2], crit: [6.0, 12], ex: ['CA-DB'] },
+    '006': { nome: 'Fósforo', curto: 'P', un: 'mg/dL', grupo: 'osso', ref: [3.5, 5.5], ex: ['P-DB'] },
+    '034': { nome: 'PTH intacto', curto: 'PTH', un: 'pg/mL', grupo: 'osso', ref: [130, 600], ex: ['PTHI-DB'] },
+    '021': { nome: 'Fosfatase alcalina', curto: 'FAL', un: 'U/L', grupo: 'osso', ref: [40, 130], ex: ['FAL-DB'] },
+    '068': { nome: 'Vitamina D (25-hidroxi)', curto: 'Vit D', un: 'ng/mL', grupo: 'osso', ref: [30, 100], ex: ['VITD25-DB'] },
+    '041': { nome: 'Alumínio sérico', curto: 'Al', un: 'µg/L', grupo: 'osso', ref: [null, 20], crit: [null, 60], ex: ['AL-HP'] },
+    '016': { nome: 'Hemoglobina', curto: 'Hb', un: 'g/dL', grupo: 'anemia', ref: [10, 12], crit: [7, null], ex: ['HB', 'HEM'] },
+    '017': { nome: 'Hematócrito', curto: 'Ht', un: '%', grupo: 'anemia', ref: [30, 36], ex: ['HT', 'HEM'] },
+    '022': { nome: 'Ferro sérico', curto: 'Fe', un: 'µg/dL', grupo: 'anemia', ref: [50, 170], ex: ['FE-DB', 'CAPAT-DB'] },
+    '023': { nome: 'Cap. total de ligação do ferro', curto: 'CTLF', un: 'µg/dL', grupo: 'anemia', ref: [250, 450], ex: ['CAPAT-DB'] },
+    '030': { nome: 'Saturação da transferrina (IST)', curto: 'IST', un: '%', grupo: 'anemia', ref: [20, 50], ex: ['CAPAT-DB'] },
+    '029': { nome: 'Ferritina', curto: 'Ferrit', un: 'ng/mL', grupo: 'anemia', ref: [200, 800], ex: ['FERRI-DB'] },
+    '015': { nome: 'Hemácias', curto: 'Hem', un: 'milhões/mm³', grupo: 'hemo', ref: [3.9, 5.9], ex: ['HEM'] },
+    '059': { nome: 'VCM', curto: 'VCM', un: 'fL', grupo: 'hemo', ref: [80, 100], ex: ['HEM'] },
+    '060': { nome: 'HCM', curto: 'HCM', un: 'pg', grupo: 'hemo', ref: [27, 32], ex: ['HEM'] },
+    '061': { nome: 'CHCM', curto: 'CHCM', un: 'g/dL', grupo: 'hemo', ref: [32, 36], ex: ['HEM'] },
+    '058': { nome: 'RDW', curto: 'RDW', un: '%', grupo: 'hemo', ref: [11.5, 14.5], ex: ['HEM'] },
+    '012': { nome: 'Leucócitos', curto: 'Leuc', un: '/mm³', grupo: 'hemo', ref: [4000, 11000], crit: [1500, 30000], ex: ['HEM'] },
+    '046': { nome: 'Mielócitos', curto: 'Miel', un: '%', grupo: 'hemo', abs: true, ex: ['HEM'], motivo: 'veio zerado no laudo de conferência', inferido: true },
+    '047': { nome: 'Metamielócitos', curto: 'Meta', un: '%', grupo: 'hemo', abs: true, ex: ['HEM'], motivo: 'veio zerado no laudo de conferência', inferido: true },
+    '048': { nome: 'Bastonetes', curto: 'Bast', un: '%', grupo: 'hemo', ref: [0, 5], abs: true, ex: ['HEM'], motivo: 'veio zerado no laudo de conferência', inferido: true },
+    '049': { nome: 'Segmentados', curto: 'Seg', un: '%', grupo: 'hemo', ref: [40, 75], abs: true, ex: ['HEM'] },
+    '050': { nome: 'Eosinófilos', curto: 'Eos', un: '%', grupo: 'hemo', ref: [1, 6], abs: true, ex: ['HEM'] },
+    '051': { nome: 'Linfócitos típicos', curto: 'Linf', un: '%', grupo: 'hemo', ref: [20, 45], abs: true, ex: ['HEM'] },
+    '055': { nome: 'Linfócitos atípicos', curto: 'Atíp', un: '%', grupo: 'hemo', abs: true, ex: ['HEM'], motivo: 'veio zerado no laudo de conferência', inferido: true },
+    '052': { nome: 'Monócitos', curto: 'Mono', un: '%', grupo: 'hemo', ref: [2, 10], abs: true, ex: ['HEM'] },
+    '053': { nome: 'Basófilos', curto: 'Baso', un: '%', grupo: 'hemo', ref: [0, 2], abs: true, ex: ['HEM'] },
+    '056': { nome: 'Plaquetas', curto: 'Plaq', un: '/mm³', grupo: 'hemo', ref: [150000, 450000], crit: [50000, null], ex: ['HEM'] },
+    '062': { nome: 'Total do diferencial', curto: 'Σ dif', un: '%', grupo: 'hemo', oculto: true, ex: ['HEM'], motivo: 'soma do diferencial (100 %) — não sai no laudo', inferido: true },
+    '025': { nome: 'Proteínas totais', curto: 'PT', un: 'g/dL', grupo: 'prot', ref: [6.0, 8.3], ex: ['PTF-DB'] },
+    '026': { nome: 'Albumina', curto: 'Alb', un: 'g/dL', grupo: 'prot', ref: [3.5, 5.2], ex: ['PTF-DB'] },
+    '027': { nome: 'Globulina', curto: 'Glob', un: 'g/dL', grupo: 'prot', ref: [2.0, 3.5], ex: ['PTF-DB'] },
+    '008': { nome: 'Glicose', curto: 'Glic', un: 'mg/dL', grupo: 'glic', ref: [70, 180], crit: [50, 400], ex: ['GLI-DB'] },
+    '067': { nome: 'Hemoglobina glicada', curto: 'HbA1c', un: '%', grupo: 'glic', ref: [null, 7.5], ex: ['HBGL-DB'], motivo: 'não veio na bateria anual de exemplo; no TXT mensal os valores (5–8 %) são de Hb glicada', inferido: true },
+    '036': { nome: 'Colesterol total', curto: 'CT', un: 'mg/dL', grupo: 'lipides', ref: [null, 200], ex: ['COL-DB'] },
+    '037': { nome: 'Colesterol HDL', curto: 'HDL', un: 'mg/dL', grupo: 'lipides', ref: [40, null], ex: ['HDL-DB'] },
+    '038': { nome: 'Colesterol LDL', curto: 'LDL', un: 'mg/dL', grupo: 'lipides', ref: [null, 100], ex: ['LDL-DB'] },
+    '040': { nome: 'Triglicerídeos', curto: 'TG', un: 'mg/dL', grupo: 'lipides', ref: [null, 150], ex: ['TRIG-DB'] },
+    '007': { nome: 'TGP (ALT)', curto: 'TGP', un: 'U/L', grupo: 'figado', ref: [null, 41], ex: ['TGP-DB'] },
+    '070': { nome: 'TSH', curto: 'TSH', un: 'µUI/mL', grupo: 'tireoide', ref: [0.38, 5.33], ex: ['TSH-DB'] },
+    '071': { nome: 'T4 (tiroxina)', curto: 'T4', un: 'µg/dL', grupo: 'tireoide', ref: [5.1, 14.1], ex: ['T4-DB'] },
+    '013': { nome: 'HBsAg', curto: 'HBsAg', un: '', grupo: 'sorologia', quali: 'positivo', ex: ['HBSAG-DB'] },
+    '018': { nome: 'HBsAg (índice)', curto: 'HBsAg i', un: 'índice', grupo: 'sorologia', ref: [null, 0.89], crit: [null, 0.99], ex: ['HBSAG-DB'] },
+    '028': { nome: 'Anti-HBs', curto: 'aHBs', un: '', grupo: 'sorologia', quali: 'protecao', ex: ['AHBS-DB'] },
+    '020': { nome: 'Anti-HBs (título)', curto: 'aHBs tít', un: 'mUI/mL', grupo: 'sorologia', ref: [10, null], ex: ['AHBS-DB'] },
+    '014': { nome: 'Anti-HCV', curto: 'aHCV', un: '', grupo: 'sorologia', quali: 'positivo', ex: ['HCV-DB'] },
+    '019': { nome: 'Anti-HCV (índice)', curto: 'aHCV i', un: 'índice', grupo: 'sorologia', ref: [null, 0.99], crit: [null, 0.99], ex: ['HCV-DB'] },
+    '042': { nome: 'Anti-HIV I/II', curto: 'HIV', un: '', grupo: 'sorologia', quali: 'positivo', ex: ['HIV-HP'] },
   };
 
   // derivados calculados na tela (não vão no TXT)
@@ -146,7 +111,7 @@
     return d;
   };
 
-  M.defRes = c => M.RES[c] || M.RES_DERIVADOS[c] || { nome: 'Código ' + c + (M.NEPHRO_PDF[c] ? ' (' + M.NEPHRO_PDF[c] + ')' : ''), curto: c, un: '', grupo: 'outros', desconhecido: true };
+  M.defRes = c => M.RES[c] || M.RES_DERIVADOS[c] || { nome: 'Código ' + c, curto: c, un: '', grupo: 'outros', desconhecido: true };
 
   /** 'ok' | 'baixo' | 'alto' | 'crit-baixo' | 'crit-alto' | null */
   M.classificar = function (cod, v) {
@@ -168,14 +133,11 @@
     return 'ok';
   };
 
-  /** Situação do código do TXT frente à tabela do PDF */
-  M.statusInterface = function (cod) {
-    const r = M.RES[cod], pdfNome = M.NEPHRO_PDF[cod];
-    if (!r) return { st: 'desconhecido', txt: pdfNome ? `No PDF: ${pdfNome}` : 'Código não interpretado' };
-    if (r.pdf === cod) return { st: 'confere', txt: 'Confere com o PDF' };
-    if (pdfNome && r.pdf) return { st: 'diverge', txt: `No PDF o ${cod} é “${pdfNome}”; ${r.nome} é ${r.pdf}` };
-    if (pdfNome) return { st: 'diverge', txt: `No PDF o ${cod} é “${pdfNome}”` };
-    if (r.pdf) return { st: 'ausente', txt: `${cod} não existe no PDF; lá ${r.nome} é ${r.pdf}` };
-    return { st: 'ausente', txt: 'Não existe no PDF (detalhe do hemograma/frações)' };
+  /** Situação do código do TXT na conferência laudo × TXT */
+  M.conferencia = function (cod) {
+    const r = M.RES[cod];
+    if (!r) return { st: 'desconhecido', txt: 'Código não interpretado' };
+    if (r.inferido) return { st: 'inferido', txt: r.motivo || 'Deduzido pelos valores do arquivo' };
+    return { st: 'conferido', txt: 'Laudo × TXT' };
   };
 })(window.MED = window.MED || {});

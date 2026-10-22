@@ -94,7 +94,7 @@
       const d = M.derivados(p.valores);
       if (d.urr && d.urr.aviso) av('urr', `${p.nome}: ureia pós (${p.valores['002'].t}) ≥ pré (${p.valores['001'].t}) — conferir coleta`, p.chave);
     }
-    Object.keys(codigos).filter(c => !M.RES[c]).forEach(c => av('codigo', `Código ${c} não interpretado (${codigos[c]} resultados)${M.NEPHRO_PDF[c] ? ' — no PDF: ' + M.NEPHRO_PDF[c] : ''}`));
+    Object.keys(codigos).filter(c => !M.RES[c]).forEach(c => av('codigo', `Código ${c} não interpretado (${codigos[c]} resultados) — vai igual para a Hiperrim; só não aparece na visão do médico`));
     return { pacientes, avisos, codigos, datas, nResultados: nRes, nLinhas: linhas.filter(l => l.trim()).length };
   };
 
@@ -223,30 +223,17 @@
     R.lotes = [];
   };
 
-  async function baixarArquivo(id, remapear) {
+  async function baixarArquivo(id) {
     let reg = null;
     try { reg = await arm().arquivo(id); } catch (e) { /* sem armazenamento */ }
     const lote = R.lotes.find(l => l.id === id);
     const bytes = reg ? reg.bytes : lote && lote._bytes;
     if (!bytes) return A.toast('Arquivo original não encontrado.', 'alert');
-    let saida = bytes, nome = reg ? reg.nome : lote.arquivo;
-    if (remapear) {
-      const txt = new TextDecoder('windows-1252').decode(bytes);
-      let seq = 0;
-      const novo = txt.split('\r\n').map(l => {
-        if (!l) return l;
-        const c = l.split('|');
-        if (c[0] === '02') { const r = M.RES[c[2].trim()]; if (!r || !r.pdf) return null; c[2] = r.pdf; }
-        c[1] = String(++seq); return c.join('|');
-      }).filter(l => l !== null).join('\r\n');
-      const out = new Uint8Array(novo.length);
-      for (let i = 0; i < novo.length; i++) { const ch = novo.charCodeAt(i); out[i] = ch < 256 ? ch : 63; }
-      saida = out; nome = nome.replace(/(\.txt)?$/i, '_conforme-PDF_TESTE.txt');
-    }
-    const url = URL.createObjectURL(new Blob([saida], { type: 'text/plain' }));
+    const nome = reg ? reg.nome : lote.arquivo;
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'text/plain' }));
     const a = Object.assign(document.createElement('a'), { href: url, download: nome });
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
-    A.toast(remapear ? 'TXT conforme o PDF (teste) baixado — confirmar com a Hiperrim antes de importar' : 'TXT original baixado (idêntico ao exportado)', 'download');
+    A.toast('TXT original baixado (idêntico ao exportado)', 'download');
   }
   async function excluirLote(id) {
     const lote = R.lotes.find(l => l.id === id); if (!lote) return;
@@ -549,66 +536,49 @@
       const b = e.target.closest('[data-arq],[data-res]'); if (!b) return;
       const a = b.dataset.arq || b.dataset.res;
       if (a === 'importar') A.importarResultados();
-      if (a === 'baixar') baixarArquivo(b.dataset.id, false);
+      if (a === 'baixar') baixarArquivo(b.dataset.id);
       if (a === 'excluir') excluirLote(b.dataset.id);
     };
   }
 
   // ================= TELA: INTERFACE NEPHROSYS =================
+  // Os códigos do TXT do laboratório são os da integração com o Nephrosys da Hiperrim (em produção).
   function vInterface() {
     const lote = R.lotes[0];
     const cods = [...new Set([...Object.keys(M.RES), ...(lote ? Object.keys(lote.codigos) : [])])].sort();
-    const stCor = { confere: 'var(--ok)', diverge: 'var(--crit)', ausente: 'var(--warn)', desconhecido: 'var(--muted)' };
-    const stRot = { confere: 'confere', diverge: 'diverge do PDF', ausente: 'fora do PDF', desconhecido: 'não interpretado' };
+    const stCor = { conferido: 'var(--ok)', inferido: 'var(--warn)', desconhecido: 'var(--muted)' };
+    const stRot = { conferido: 'conferido', inferido: 'inferido', desconhecido: 'não interpretado' };
+    const exames = c => ((M.RES[c] && M.RES[c].ex) || []).join(' · ');
     const linhas = cods.map(c => {
-      const d = M.defRes(c), s = M.statusInterface(c);
-      return `<tr><td class="mono"><b>${c}</b></td><td>${esc(d.nome)}${d.inferido ? ' <span class="chip" title="Deduzido pelos valores do arquivo">inferido</span>' : ''}</td><td class="faint">${esc(d.un || '')}</td>
-        <td class="mono">${lote ? (lote.codigos[c] || 0) : '—'}</td><td class="faint">${esc(refTxt(c))}</td><td class="mono">${d.pdf || '—'}</td>
+      const d = M.defRes(c), s = M.conferencia(c);
+      return `<tr><td class="mono"><b>${c}</b></td><td>${esc(d.nome)}</td><td class="faint">${esc(d.un || '')}</td>
+        <td class="mono">${lote ? (lote.codigos[c] || 0) : '—'}</td><td class="faint">${esc(refTxt(c))}</td><td class="mono" style="font-size:12px">${esc(exames(c)) || '—'}</td>
         <td><span class="chip b" style="--cor:${stCor[s.st]}">${stRot[s.st]}</span><br><small class="faint">${esc(s.txt)}</small></td></tr>`;
     }).join('');
-    const div = cods.filter(c => M.statusInterface(c).st === 'diverge');
-    const aus = cods.filter(c => M.RES[c] && !M.RES[c].oculto && M.statusInterface(c).st === 'ausente');
-    const outroCod = aus.filter(c => M.RES[c].pdf), semPdf = aus.filter(c => !M.RES[c].pdf);
-    return `<div class="grid g2" style="margin-bottom:16px">
+    const porExame = Object.keys(M.EXAMES).map(ex => ({ ex, cods: Object.keys(M.RES).filter(c => (M.RES[c].ex || []).includes(ex)) }));
+    const nConf = Object.keys(M.RES).filter(c => M.conferencia(c).st === 'conferido').length;
+    const novos = lote ? Object.keys(lote.codigos).filter(c => !M.RES[c]) : [];
+    const chipCod = c => { const r = M.RES[c]; return `<code class="cod${r.inferido ? ' inf' : ''}" title="${esc(r.nome)}${r.inferido ? ' — inferido: ' + esc(r.motivo || '') : ''}">${c}</code>`; };
+    return `<div class="grid g2" style="margin-bottom:16px;align-items:start">
         <div class="card"><h2>Layout do TXT de resultados</h2><p class="desc">Lido do arquivo exportado pelo laboratório (separador <code>|</code>, ISO-8859-1, CRLF).</p>
           <table class="tbl"><thead><tr><th>Registro</th><th>Campos</th></tr></thead><tbody>
             <tr><td><code>01</code> paciente</td><td><code>01 | sequência | nome | (vazio) | (vazio) | CPF | data da coleta</code></td></tr>
             <tr><td><code>02</code> resultado</td><td><code>02 | sequência | código | valor | valor absoluto (diferencial) | (vazio) |</code></td></tr>
           </tbody></table>
-          <p class="desc" style="margin-top:10px">A sequência é contínua no arquivo inteiro. Decimal com vírgula; valores fora da faixa do aparelho vêm como texto (“Superior a 3.500,0”).</p></div>
-        <div class="card"><h2>O que encontrei comparando com o PDF</h2>
-          ${div.length ? `<div class="alerta-box" style="margin-bottom:10px">${ic('alert')}<div>${div.length} códigos do TXT significam <b>outro exame</b> na tabela do PDF do Nephrosys. Se o Nephrosys da Hiperrim usa essa tabela para importar, esses resultados podem estar entrando no exame errado. Vale conferir com eles.</div></div>` : ''}
-          <ul style="margin:0;padding-left:18px;line-height:1.7;font-size:14px">
-            ${div.map(c => `<li><b>${c}</b> — no TXT é <b>${esc(M.RES[c].nome)}</b>; no PDF ${c} é <b>${esc(M.NEPHRO_PDF[c])}</b>${M.RES[c].pdf ? ` (${esc(M.RES[c].nome)} = ${M.RES[c].pdf})` : ' — sem equivalente no PDF'}.</li>`).join('')}
-            ${outroCod.length ? `<li>Não existem no PDF, que usa outro código: ${outroCod.map(c => `<b>${c}</b> ${esc(M.RES[c].curto)} → ${M.RES[c].pdf}`).join(' · ')}.</li>` : ''}
-            ${semPdf.length ? `<li>Sem equivalente no PDF (ficam só no MedRim): ${semPdf.map(c => esc(M.RES[c].curto)).join(', ')}.</li>` : ''}
-          </ul>
-          <div class="no-print" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
-            ${lote ? `<button class="btn sm" data-int="remap">${ic('download')} Baixar TXT conforme o PDF (teste)</button>` : ''}
-          </div></div>
+          <p class="desc" style="margin-top:10px">A sequência é contínua no arquivo inteiro. Decimal com vírgula; valores fora da faixa do aparelho vêm como texto (“Superior a 3.500,0”).</p>
+          <div class="alerta-box ok" style="margin-top:12px">${ic('check')}<div><b>Integração em produção.</b> Estes são os códigos que o Nephrosys da Hiperrim já importa. O TXT vai exatamente como o laboratório exporta (aba <b>Arquivos TXT</b>) — o MedRim não altera nada no arquivo.</div></div>
+          ${novos.length ? `<div class="alerta-box" style="margin-top:10px">${ic('alert')}<div>O último TXT trouxe ${novos.length === 1 ? 'um código novo' : novos.length + ' códigos novos'} que o MedRim ainda não interpreta: <b>${novos.map(esc).join(', ')}</b>. O arquivo segue igual para a Hiperrim; só a visão do médico não mostra esses valores.</div></div>` : ''}</div>
+        <div class="card"><h2>Exames da bateria → códigos do TXT</h2>
+          <p class="desc">Conferido valor a valor: laudo completo de uma bateria anual (dez/2025) × o TXT do mesmo paciente. <b>${nConf} códigos conferidos, nenhuma divergência.</b></p>
+          <div class="tbl-wrap"><table class="tbl tbl-cruz"><thead><tr><th>Exame da bateria</th><th>Código(s) no TXT</th></tr></thead><tbody>
+            ${porExame.map(({ ex, cods: cs }) => `<tr><td>${esc(M.EXAMES[ex].nome)} <small class="faint mono">${esc(ex)}</small></td><td>${cs.length ? cs.map(chipCod).join(' ') : '<span class="faint">—</span>'}</td></tr>`).join('')}
+          </tbody></table></div>
+          <p class="desc" style="margin:8px 0 0"><code class="cod">001</code> conferido no laudo · <code class="cod inf">067</code> inferido (passe o mouse para ver o motivo).</p></div>
       </div>
-      <div class="card" style="margin-bottom:16px"><h2>Códigos do TXT → como o MedRim interpreta</h2><p class="desc">Base da visão do médico. “Inferido” = deduzido dos valores e conferido pela matemática do hemograma (VCM = Ht/Hemácias×10; HCM = Hb/Hemácias×10; CHCM = Hb/Ht×100; absoluto = % × leucócitos).</p>
-        <div style="overflow:auto"><table class="tbl"><thead><tr><th>Código</th><th>Exame</th><th>Unidade</th><th>Qtd no último TXT</th><th>Alvo sugerido</th><th>Cód. PDF</th><th>Situação</th></tr></thead><tbody>${linhas}</tbody></table></div></div>
-      <details class="card secao-sync"><summary><div><h2>Tabela completa do PDF Nephrosys</h2><p class="desc" style="margin:0">${Object.keys(M.NEPHRO_PDF).length} códigos de exames passíveis de importação.</p></div><svg class="i chev"><use href="#i-chev"/></svg></summary>
-        <div class="tabela-pdf">${Object.entries(M.NEPHRO_PDF).map(([c, n]) => `<div><code>${c}</code> ${esc(n)}</div>`).join('')}</div></details>`;
-  }
-  function ligarInterface() {
-    $('#conteudo').onclick = e => {
-      const b = e.target.closest('[data-int]'); if (!b) return;
-      const cods = Object.keys(M.RES).sort();
-      const troca = cods.filter(c => M.RES[c].pdf && M.RES[c].pdf !== c), fica = cods.filter(c => M.RES[c].pdf === c), sai = cods.filter(c => !M.RES[c].pdf);
-      A.abrirModal({
-        titulo: 'TXT com os códigos do PDF', ic: 'alert', cor: 'var(--warn)',
-        corpo: `<p style="margin:0 0 8px">Gera uma cópia do último TXT <b>só com códigos que existem no PDF com o mesmo exame</b> e renumera a sequência.</p>
-          <p style="margin:0 0 6px;font-size:13px"><b>Troca (${troca.length}):</b> ${troca.map(c => `<code>${c}</code>→<code>${M.RES[c].pdf}</code> ${esc(M.RES[c].curto)}`).join(' · ')}</p>
-          <p style="margin:0 0 6px;font-size:13px"><b>Mantém (${fica.length}):</b> ${fica.map(c => `<code>${c}</code>`).join(' ')}</p>
-          <p style="margin:0;font-size:13px"><b>Remove, sem equivalente no PDF (${sai.length}):</b> ${sai.map(c => esc(M.RES[c].curto)).join(', ')} e qualquer código não interpretado.</p>
-          <div class="alerta-box">${ic('alert')}<div>Serve para <b>teste com a Hiperrim</b>. Não envie para produção sem eles confirmarem qual tabela o Nephrosys usa na importação de resultados. O arquivo oficial continua sendo o original, na aba Arquivos TXT.</div></div>`,
-        botoes: [{ rot: 'Cancelar' }, { rot: 'Baixar cópia de teste', cls: 'pri', ic: 'download', acao: () => { baixarArquivo(R.lotes[0].id, true); } }],
-      });
-    };
+      <div class="card" style="margin-bottom:16px"><h2>Códigos do TXT → como o MedRim interpreta</h2><p class="desc">Base da visão do médico. “Conferido” = valor do TXT igual ao do laudo; “inferido” = não dava para conferir no laudo de exemplo (motivo abaixo do status).</p>
+        <div style="overflow:auto"><table class="tbl"><thead><tr><th>Código</th><th>Exame</th><th>Unidade</th><th>Qtd no último TXT</th><th>Alvo sugerido</th><th>Exame da bateria</th><th>Situação</th></tr></thead><tbody>${linhas}</tbody></table></div></div>`;
   }
 
   Object.assign(A.views, { vResultados, vPaciente, vArquivos, vInterface });
-  Object.assign(A.ligar, { resultados: ligarResultados, paciente: ligarPaciente, arquivos: ligarArquivos, interface: ligarInterface });
+  Object.assign(A.ligar, { resultados: ligarResultados, paciente: ligarPaciente, arquivos: ligarArquivos });
 })(window.MED = window.MED || {});
