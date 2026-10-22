@@ -39,7 +39,7 @@
     '@keyframes rc-danca{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(4deg)}}',
     '@keyframes rc-pulso{0%{box-shadow:0 0 0 0 rgba(211,26,33,.45)}70%{box-shadow:0 0 0 15px rgba(211,26,33,0)}100%{box-shadow:0 0 0 0 rgba(211,26,33,0)}}',
     '.rc-onda{transform-box:fill-box;transform-origin:left bottom}',
-    '.rc-balao{position:relative;background:#fff;color:#1e1b4b;border-radius:14px;padding:8px 30px 9px 12px;min-width:150px;',
+    '.rc-balao{position:relative;cursor:pointer;background:#fff;color:#1e1b4b;border-radius:14px;padding:8px 30px 9px 12px;min-width:150px;',
     '  box-shadow:0 6px 22px rgba(15,23,42,.18);opacity:0;transform:translateX(8px);pointer-events:none;transition:opacity .25s,transform .25s}',
     '.rc.mostrar .rc-balao,.rc:hover .rc-balao,.rc:focus-within .rc-balao{opacity:1;transform:none;pointer-events:auto}',
     '.rc-balao:after{content:"";position:absolute;right:-6px;top:50%;margin-top:-6px;border:6px solid transparent;border-right:0;border-left-color:#fff}',
@@ -114,6 +114,8 @@
     audio.src = AUDIO;
     audio.volume = VOLUME;
 
+    function ehCelular() { return window.innerWidth <= 900 || (window.matchMedia && matchMedia('(pointer: coarse)').matches); }
+
     function mostrarBalao(ms) {
       el.classList.add('mostrar');
       clearTimeout(timerBalao);
@@ -134,8 +136,8 @@
       if (p && p.then) {
         return p.then(function () { desarmar(); }, function () {
           // navegador bloqueou o som automático: espera o primeiro gesto do visitante
-          estado('aguardando', 'Toque para ouvir ♪');
-          mostrarBalao(6000);
+          estado('aguardando', ehCelular() ? 'Toque na tela para ouvir ♪' : 'Clique para ouvir ♪');
+          mostrarBalao(ehCelular() ? 0 : 8000);
           armar();
         });
       }
@@ -143,7 +145,7 @@
     }
 
     // ---- primeiro gesto em qualquer lugar da página destrava o som ----
-    var EVENTOS = ['pointerdown', 'touchend', 'keydown', 'click'];
+    var EVENTOS = ['pointerdown', 'pointerup', 'mousedown', 'touchstart', 'touchend', 'keydown', 'click'];
     var armado = false;
     function aoPrimeiroGesto(ev) {
       if (el.contains(ev.target)) return;            // clique no próprio rádio é tratado pelo botão
@@ -181,6 +183,10 @@
     btn.addEventListener('click', function () {
       if (audio.paused) { gravarPausa(false); tocar(); }
       else { gravarPausa(true); audio.pause(); desarmar(); }
+    });
+    el.querySelector('.rc-balao').addEventListener('click', function (ev) {
+      if (ev.target.closest('.rc-fechar')) return;
+      btn.click();
     });
     fecharBtn.addEventListener('click', function () {
       gravarPausa(true); audio.pause(); desarmar(); el.classList.add('oculto');
