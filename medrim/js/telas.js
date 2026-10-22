@@ -104,10 +104,11 @@
       titulo: 'Começar do zero', ic: 'undo', cor: 'var(--crit)',
       corpo: `<p style="margin:0">Apaga <b>deste navegador</b> tudo o que o MedRim guardou: escala, sincronização, vínculos confirmados, internações/admissões/óbitos, histórico, observações e resultados de TXT. Seus arquivos (Word, CSVs, planilhas) não são tocados.</p>
         <label style="display:flex;gap:8px;align-items:center;font-weight:800"><input type="checkbox" name="bk" checked> Baixar um backup antes de apagar</label>
+        <label style="display:flex;gap:8px;align-items:center;font-weight:800"><input type="checkbox" name="fixos" checked> Manter as travas de outro laboratório e os convênios (Unimed)</label>
         <div class="alerta-box">${ic('alert')}<div>Depois de apagar não dá para desfazer (só restaurando o backup).</div></div>`,
       botoes: [{ rot: 'Cancelar' }, { rot: 'Apagar tudo', cls: 'rim', ic: 'x', acao: async f => {
         if (f.bk.checked && E()) A.exportarBackup();
-        try { localStorage.removeItem('medrim:v1'); } catch (e) { /* ok */ }
+        try { localStorage.removeItem('medrim:v1'); if (!f.fixos.checked) localStorage.removeItem('medrim:fixos'); } catch (e) { /* ok */ }
         if (A.limparResultados) await A.limparResultados();
         A.E = null; selecionados.clear();
         location.hash = '#/importar'; A.render();
@@ -177,7 +178,7 @@
     const acao = l.acao || (l.nome ? 'cadastrar' : '');
     if (!acao) { res.aguardando++; return; }
     if (acao === 'excluir') { A.liberarVaga(v); res.excluidos++; return; }
-    if (acao === 'outrolab') { st.outroLab[v.id] = true; res.outroLab++; return; }
+    if (acao === 'outrolab') { A.travar(v); res.outroLab++; return; }
     if (l.cpf) {
       if (usados['cpf:' + l.cpf]) return recusa(`CPF repetido (também na linha ${usados['cpf:' + l.cpf]})`);
       usados['cpf:' + l.cpf] = l.linha;
@@ -288,13 +289,15 @@
         : alt && P(alt.cpf) ? `<small style="color:var(--muted)">melhor palpite no CSV</small><br>${esc(P(alt.cpf).nome)} · ${Math.round(alt.score * 100)}%` : '<small style="color:var(--faint)">nenhum parecido no CSV</small>';
       return `<tr>${linhaLocal(v)}<td><span class="escala-nome">${esc(v.nomeEscala)}</span>${v.riscado ? ' <span class="chip b" style="--cor:var(--crit)">riscado</span>' : ''}${v.notaTransito ? ' <span class="chip b" style="--cor:var(--c5)">' + esc(v.notaTransito) + '</span>' : ''}</td>
       <td>${palpite}</td>
-      <td><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" data-s="vincular" data-v="${v.id}">${ic('link')} Vincular</button><button class="btn sm" data-s="cadastrar" data-v="${v.id}" title="Cadastrar com bateria (sem pedido no CSV)">${ic('userplus')} Cadastrar</button><button class="btn sm ghost" data-s="outrolab" data-v="${v.id}">${ic('flask')} Outro lab</button><button class="btn sm perigo" data-s="excluir" data-v="${v.id}" title="Remover este nome da escala">${ic('x')} Excluir</button></div></td></tr>`;
+      <td><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" data-s="vincular" data-v="${v.id}">${ic('link')} Vincular</button><button class="btn sm" data-s="cadastrar" data-v="${v.id}" title="Cadastrar com bateria (sem pedido no CSV)">${ic('userplus')} Cadastrar</button><button class="btn sm ghost" data-s="outrolab" data-v="${v.id}" title="Trava: todo mês faz em outro laboratório">${ic('lock')} Outro lab</button><button class="btn sm perigo" data-s="excluir" data-v="${v.id}" title="Remover este nome da escala">${ic('x')} Excluir</button></div></td></tr>`;
     }).join('')).join('');
     const semVaga = d.csvSemVaga.map(p => `<tr><td>${pacCel(p)}</td><td><span class="chip">${M.GRUPOS[p.grupo].rotulo} · ${A.rotTurno(p.turno)}</span></td><td><span class="mono">${esc(p.codigo)}</span></td>
       <td><button class="btn sm pri" data-s="alocar" data-p="${p.id}">${ic('plus')} Alocar em máquina</button></td></tr>`).join('');
     const dups = d.duplicadas.map(v => `<tr>${linhaLocal(v)}<td><span class="escala-nome">${esc(v.nomeEscala)}</span></td><td>${pacCel(P(v.pacienteId))}</td><td>Principal: <b>${esc(A.local(A.vagaPor(v.match.duplicadaDe), true))}</b><br><small style="color:var(--muted)">Só a principal entra no relatório</small></td></tr>`).join('');
     const notas = E().foraDaGrade.map(f => `<tr><td><b>S${f.salao}</b> · ${A.rotTurno(f.turno)} · Máq ${esc(f.maq)}</td><td>${f.textos.map(t => `<span class="escala-nome">${esc(t)}</span>`).join(' ')}</td><td><small style="color:var(--muted)">Escrito fora das colunas de dias no Word — lista de espera? anotação?</small></td></tr>`).join('');
-    const outros = d.outroLab.map(v => `<tr>${linhaLocal(v)}<td><span class="escala-nome">${esc(v.nomeEscala)}</span></td><td><button class="btn sm ghost" data-s="outrolab" data-v="${v.id}">${ic('undo')} Desmarcar</button></td></tr>`).join('');
+    const outros = d.outroLab.sort(A.ordemRelatorio).map(v => { const p = P(v.pacienteId), t = A.travaDe(v);
+      return `<tr>${linhaLocal(v)}<td><span class="escala-nome">${esc(v.nomeEscala)}</span>${p && p.origem === 'csv' ? `<br><small style="color:var(--muted)">veio no CSV: ${esc(p.nome)}</small>` : ''}</td>
+      <td><button class="btn sm trava" data-s="destravar" data-v="${v.id}" title="Travado desde ${A.fmtData(t.desde)} — clique para liberar">${ic('lock')} Travado</button></td></tr>`; }).join('');
     const altas = E().vagas.filter(v => v.pacienteId && v.match && ['alta', 'confirmado'].includes(v.match.conf) && !v.match.foraDoBolsao && !v.match.duplicadaDe && P(v.pacienteId) && P(v.pacienteId).origem === 'csv').sort(A.ordemRelatorio);
     const altasHtml = altas.map(v => `<tr>${linhaLocal(v)}<td><span class="escala-nome">${esc(v.nomeEscala)}</span></td><td>${pacCel(P(v.pacienteId))}</td><td>${v.match.conf === 'confirmado' ? '<span class="chip b">confirmado</span>' : confBar(v.match.score)}</td></tr>`).join('');
 
@@ -325,7 +328,7 @@
       ${secao('semcsv', 'var(--blue)', 'info', 'Na escala, sem pedido no CSV', 'Não entram no relatório. Outro laboratório/convênio, paciente novo ou nome muito diferente?', d.semCsv.length, ['Local', 'Na escala', 'Palpite', ''], semCsv, nSugTxt > 0)}
       ${lote ? secao('foracsv', 'var(--teal)', 'drop', `Fizeram a bateria de ${A.rotComp(lote.competencia)}, mas não estão no CSV atual`, 'Comparação entre o último TXT de resultados e o CSV do mês: saíram da clínica ou faltou no pedido da Hiperrim?', foraCsv.length, ['Paciente (TXT)', 'Na escala', ''], foraCsvHtml, false) : ''}
       ${secao('dups', 'var(--muted)', 'link', 'Mesmo paciente em duas máquinas', 'Ex.: sessão de sábado em outra máquina.', d.duplicadas.length, ['Local', 'Na escala', 'Paciente', 'Observação'], dups, false)}
-      ${secao('outros', 'var(--muted)', 'flask', 'Marcados como outro laboratório', 'Ficam fora das pendências.', d.outroLab.length, ['Local', 'Na escala', ''], outros, false)}
+      ${secao('outros', 'var(--muted)', 'lock', 'Travados · outro laboratório', 'Fazem os exames em outro laboratório todo mês: ficam fora do relatório e das pendências, mesmo que a Hiperrim mande no CSV. Clique no cadeado para liberar.', d.outroLab.length, ['Local', 'Na escala', ''], outros, false)}
       ${secao('notas', 'var(--muted)', 'report', 'Anotações fora da grade do Word', 'Textos em colunas extras da tabela.', E().foraDaGrade.length, ['Local', 'Texto', ''], notas, false)}
       ${secao('altas', 'var(--ok)', 'check', 'Casados automaticamente', 'Para auditoria — passe o olho, se quiser.', altas.length, ['Local', 'Na escala', 'No CSV', 'Semelhança'], altasHtml, false)}`;
   }
@@ -343,7 +346,8 @@
       if (s === 'vincular') A.modalVincular(v.id);
       if (s === 'cadastrar') A.cadastrarSemPedido(v.id);
       if (s === 'excluir') A.removerDaEscala(v.id);
-      if (s === 'outrolab') { A.marcar('outro laboratório'); E().outroLab[v.id] = !E().outroLab[v.id]; A.salvar(); A.render(); A.toast(E().outroLab[v.id] ? 'Marcado como outro laboratório' : 'Desmarcado', 'flask', true); }
+      if (s === 'outrolab') A.travarVaga(v.id);
+      if (s === 'destravar') A.pedirDestravar(v.id);
       if (s === 'alocar') modalAlocar(b.dataset.p);
       if (s === 'vinctxt') A.vincularTxt([v.id]);
       if (s === 'vinctxt-todos') A.vincularTxt(Object.keys(A.sugestoesTxt()));
@@ -406,8 +410,8 @@
     };
     let grupo = '', html = '';
     const linha = x => `<tr class="${x.st.coleta ? '' : 'nao-coleta'}"><td class="mono">${x.n || '—'}</td><td class="mono">${x.v ? esc(x.v.maq) : '—'}</td>
-      <td><b>${esc(x.p.nome)}</b></td><td class="mono">${esc(x.p.nasc || '—')}</td><td class="cpf">${cpf(x.p.cpf)}</td><td class="mono">${esc(x.p.codigo || '—')}</td>
-      <td>${x.st.coleta ? exs(x.p) : '<span style="color:var(--faint)">não cadastrar</span>'}</td><td><small>${esc(x.st.coleta ? [x.p.origem === 'transito' ? 'trânsito (incluído)' : x.p.semPedido ? 'sem pedido no CSV da Hiperrim' : x.st.adm ? 'admissional' : x.p.origem === 'manual' ? 'cadastro manual' : '', x.v && x.v.riscado ? '⚠ riscado na escala — confirmar' : '', x.v && x.v.match && x.v.match.conf === 'media' ? 'conferir nome' : ''].filter(Boolean).join(' · ') : x.st.motivo)}</small></td></tr>`;
+      <td><b>${esc(x.p.nome)}</b>${A.convenioDe(x.p) ? ' ' + A.seloConvenio(A.convenioDe(x.p)) : ''}</td><td class="mono">${esc(x.p.nasc || '—')}</td><td class="cpf">${cpf(x.p.cpf)}</td><td class="mono">${esc(x.p.codigo || '—')}</td>
+      <td>${x.st.coleta ? exs(x.p) : '<span style="color:var(--faint)">não cadastrar</span>'}</td><td><small>${esc(x.st.coleta ? [x.p.origem === 'transito' ? 'trânsito (incluído)' : A.convenioDe(x.p) ? 'convênio ' + M.CONVENIOS[A.convenioDe(x.p)].rotulo + (x.p.semPedido ? ' · sem pedido no CSV' : '') : x.p.semPedido ? 'sem pedido no CSV da Hiperrim' : x.st.adm ? 'admissional' : x.p.origem === 'manual' ? 'cadastro manual' : '', x.v && x.v.riscado ? '⚠ riscado na escala — confirmar' : '', x.v && x.v.match && x.v.match.conf === 'media' ? 'conferir nome' : ''].filter(Boolean).join(' · ') : x.st.motivo)}</small></td></tr>`;
     for (const x of linhas) {
       const g = `${x.v.salao}|${x.v.grupo}|${x.v.turno}`;
       if (g !== grupo) { grupo = g; html += `<tr class="rel-grupo"><td colspan="8">Salão ${x.v.salao} · ${M.GRUPOS[x.v.grupo].rotulo} · ${A.rotTurno(x.v.turno)} <span>(${M.TURNOS[x.v.turno].csv}º turno)</span></td></tr>`; }
@@ -444,10 +448,10 @@
       if (r === 'imprimir') window.print();
       if (r === 'csv' || r === 'copiar') {
         const { linhas, semVaga } = linhasRelatorio();
-        const cab = ['Ordem', 'Salão', 'Dias', 'Turno', 'Máquina', 'Nome', 'Nascimento', 'CPF', 'Código Hiperrim', 'Bateria', 'Qtd exames', 'Exames', 'Coleta', 'Observação'];
+        const cab = ['Ordem', 'Salão', 'Dias', 'Turno', 'Máquina', 'Nome', 'Nascimento', 'CPF', 'Código Hiperrim', 'Bateria', 'Qtd exames', 'Exames', 'Coleta', 'Convênio', 'Observação'];
         const rows = [...linhas, ...semVaga].map(x => {
           const ex = x.st.coleta ? A.examesDo(x.p) : [];
-          return [x.n || '', x.v ? x.v.salao : '', x.v ? M.GRUPOS[x.v.grupo].rotulo : '', x.v ? A.rotTurno(x.v.turno) : '', x.v ? x.v.maq : '', x.p.nome, x.p.nasc, fmtCpf(x.p.cpf), x.p.codigo, M.BATERIAS[A.tipoDoPaciente(x.p)].rotulo, ex.length, ex.join(' '), x.st.coleta ? 'SIM' : 'NÃO', x.st.coleta ? (x.p.semPedido ? 'Sem pedido no CSV da Hiperrim' : x.st.adm ? x.st.motivo : '') : x.st.motivo];
+          return [x.n || '', x.v ? x.v.salao : '', x.v ? M.GRUPOS[x.v.grupo].rotulo : '', x.v ? A.rotTurno(x.v.turno) : '', x.v ? x.v.maq : '', x.p.nome, x.p.nasc, fmtCpf(x.p.cpf), x.p.codigo, M.BATERIAS[A.tipoDoPaciente(x.p)].rotulo, ex.length, ex.join(' '), x.st.coleta ? 'SIM' : 'NÃO', A.convenioDe(x.p) ? M.CONVENIOS[A.convenioDe(x.p)].rotulo : '', x.st.coleta ? (x.p.semPedido ? 'Sem pedido no CSV da Hiperrim' : x.st.adm ? x.st.motivo : '') : x.st.motivo];
         });
         if (r === 'csv') {
           const q = s => { s = String(s == null ? '' : s); return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };

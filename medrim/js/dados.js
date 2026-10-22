@@ -100,6 +100,11 @@
   };
   M.DIAS = { seg: 'Seg', qua: 'Qua', sex: 'Sex', ter: 'Ter', qui: 'Qui', sab: 'Sáb' };
 
+  // Convênios marcados por CPF (valem todos os meses). Logo pequena em img/.
+  M.CONVENIOS = {
+    unimed: { rotulo: 'Unimed', cor: '#019657', logo: 'img/unimed.png' },
+  };
+
   M.STATUS = {
     ativo:     { rotulo: 'Ativo',       cor: 'var(--ok)' },
     internado: { rotulo: 'Internado',   cor: 'var(--warn)' },

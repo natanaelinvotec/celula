@@ -17,7 +17,7 @@
     if (t.length <= 3) return t.join(' ');
     return [t[0], ...t.slice(1, -1).slice(0, 2).map(w => w[0] + '.'), t[t.length - 1]].join(' ');
   }
-  const hojeISO = () => new Date().toISOString().slice(0, 10);
+  const hojeISO = () => { const d = new Date(), z = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`; };   // data local (Brasil), não UTC
   const fmtData = iso => { if (!iso) return '—'; const [a, m, d] = iso.slice(0, 10).split('-'); return `${d}/${m}/${a}`; };
   const fmtDataHora = iso => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   function idade(nasc) {
@@ -42,16 +42,21 @@
   let nomesCurtos = false; try { nomesCurtos = localStorage.getItem('medrim:nomes') === 'curtos'; } catch (e) { /* sem storage */ }
   const ui = { revelarCpf: false, turno: {}, soDivergencias: false, relCpf: true, nomesCurtos };
   try { E = JSON.parse(localStorage.getItem(CHAVE)); } catch (e) { E = null; }
-  function salvar() { try { localStorage.setItem(CHAVE, JSON.stringify(E)); } catch (e) { toast('Não consegui salvar neste navegador (armazenamento bloqueado).', 'alert'); } }
+  function salvar() { guardarFixos(); try { localStorage.setItem(CHAVE, JSON.stringify(E)); } catch (e) { toast('Não consegui salvar neste navegador (armazenamento bloqueado).', 'alert'); } }
   function proximaRef() { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + 1); return { ano: d.getFullYear(), mes: d.getMonth() + 1 }; }
   function estadoVazio(anterior) {
     return {
       versao: 1, importadoEm: null, arquivos: {}, ref: (anterior && anterior.ref) || proximaRef(),
       regras: (anterior && anterior.regras) || clone(M.REGRAS_PADRAO),
       vagas: [], foraDaGrade: [], pacientes: {}, apelidos: (anterior && anterior.apelidos) || {},
-      eventos: (anterior && anterior.eventos) || [], outroLab: (anterior && anterior.outroLab) || {},
+      eventos: (anterior && anterior.eventos) || [], outroLab: {},
+      travas: (anterior && anterior.travas) || fixos().travas || {},
+      convenios: (anterior && anterior.convenios) || fixos().convenios || {},
     };
   }
+  /** Regras que valem todos os meses e sobrevivem ao "Começar do zero" (guardadas à parte). */
+  function fixos() { try { return JSON.parse(localStorage.getItem('medrim:fixos')) || {}; } catch (e) { return {}; } }
+  function guardarFixos() { try { if (E) localStorage.setItem('medrim:fixos', JSON.stringify({ travas: E.travas || {}, convenios: E.convenios || {} })); } catch (e) { /* sem storage */ } }
   function marcar(rotulo) { historico.push({ rotulo, json: JSON.stringify(E) }); if (historico.length > 20) historico.shift(); }
   function desfazer() {
     const h = historico.pop(); if (!h) return;
@@ -95,6 +100,8 @@
   /** Coleta ou não neste mês, e por quê. */
   function situacao(p) {
     if (!p) return { coleta: false, motivo: 'Sem pedido no CSV da Hiperrim' };
+    const tv = travaPorCpf(p.cpf);
+    if (tv) return { coleta: false, motivo: `Outro laboratório — travado desde ${fmtData(tv.desde)}`, cor: 'var(--muted)', ic: 'lock', travado: true };
     if (p.status === 'obito') return { coleta: false, motivo: `Óbito em ${fmtData(p.obitoEm)}`, cor: 'var(--muted)', ic: 'userx' };
     if (p.status === 'saiu') return { coleta: false, motivo: `Saiu da clínica em ${fmtData(p.saiuEm)}`, cor: 'var(--muted)', ic: 'userx' };
     if (p.status === 'internado') return { coleta: false, motivo: `Internado desde ${fmtData(p.internadoDesde)} — coleta só no retorno`, cor: 'var(--warn)', ic: 'bed' };
@@ -127,9 +134,67 @@
   const ordemRelatorio = (a, b) => (a.salao - b.salao) || (a.grupo === b.grupo ? 0 : a.grupo === 'SQS' ? -1 : 1) || ('MTN'.indexOf(a.turno) - 'MTN'.indexOf(b.turno)) || (a.pos - b.pos);
   function divergencias() {
     const d = M.resumoDivergencias(E.vagas, E.pacientes);
-    d.outroLab = d.semCsv.filter(v => E.outroLab[v.id]);
-    d.semCsv = d.semCsv.filter(v => !E.outroLab[v.id]);
+    const livre = v => !travaDe(v);
+    d.outroLab = E.vagas.filter(v => ocupada(v) && travaDe(v));
+    ['semCsv', 'revisar', 'foraDoBolsao', 'riscadosNoCsv', 'duplicadas'].forEach(k => { d[k] = d[k].filter(livre); });
+    d.csvSemVaga = d.csvSemVaga.filter(p => !travaPorCpf(p.cpf));
     return d;
+  }
+
+  // ================= travas (outro laboratório) e convênios =================
+  // A trava é da PESSOA, não da máquina: vale pelo CPF (quando conhecido) ou pelo nome da escala + dias + turno.
+  // Assim continua valendo no mês seguinte, mesmo que a Hiperrim mande o paciente de novo no CSV ou ele mude de máquina.
+  const chaveTrava = v => M.chaveApelido(v.nomeEscala || '', v.grupo, v.turno);
+  const travaPorCpf = cpf => cpf ? Object.values(E.travas || {}).find(t => t.cpf === cpf) || null : null;
+  function travaDe(v) {
+    if (!v || !ocupada(v)) return null;
+    const p = pacDe(v), cpf = p && p.cpf;
+    const porCpf = travaPorCpf(cpf); if (porCpf) return porCpf;
+    if (!v.nomeEscala) return null;
+    const ch = chaveTrava(v);
+    return Object.values(E.travas || {}).find(t => t.chave === ch && (!t.cpf || !cpf || t.cpf === cpf)) || null;
+  }
+  function travar(v, motivo) {
+    const ja = travaDe(v); if (ja) return ja;
+    const p = pacDe(v), id = uid();
+    const t = { id, chave: chaveTrava(v), nomeEscala: v.nomeEscala || '', grupo: v.grupo, turno: v.turno,
+      cpf: (p && p.cpf) || '', nome: p && p.origem !== 'escala' ? p.nome : '', desde: hojeISO(), motivo: motivo || 'outro laboratório' };
+    E.travas[id] = t;
+    evento('trava', p ? p.id : null, `Travado (outro laboratório): ${nomeExibicao(v)} (${local(v, true)})`);
+    return t;
+  }
+  function destravar(t) {
+    if (!t || !E.travas[t.id]) return;
+    delete E.travas[t.id];
+    evento('trava', null, `Destravado: ${t.nome ? titulo(t.nome) : t.nomeEscala} — volta para pendências/relatório`);
+  }
+  /** Normaliza o estado (backup antigo, migração) e ensina às travas o CPF de quem casou com o CSV. */
+  function normalizar() {
+    if (!E) return;
+    let mudou = false;
+    if (!E.travas) { E.travas = fixos().travas || {}; mudou = true; }
+    if (!E.convenios) { E.convenios = fixos().convenios || {}; mudou = true; }
+    if (E.outroLab && Object.keys(E.outroLab).length) {          // formato antigo: marcado por máquina
+      Object.keys(E.outroLab).forEach(id => { const v = vagaPor(id); if (v && ocupada(v) && !travaDe(v)) { const p = pacDe(v);
+        const t = { id: uid(), chave: chaveTrava(v), nomeEscala: v.nomeEscala || '', grupo: v.grupo, turno: v.turno, cpf: (p && p.cpf) || '', nome: '', desde: hojeISO(), motivo: 'outro laboratório' };
+        E.travas[t.id] = t; } });
+      E.outroLab = {}; mudou = true;
+    }
+    for (const v of E.vagas) {
+      if (!v.nomeEscala) continue;
+      const p = pacDe(v); if (!p || !p.cpf || p.origem === 'escala') continue;
+      const t = Object.values(E.travas).find(x => !x.cpf && x.chave === chaveTrava(v));
+      if (t) { t.cpf = p.cpf; t.nome = p.nome; mudou = true; }
+    }
+    if (mudou) salvar();
+  }
+  const convenioDe = p => (p && p.cpf && E.convenios && E.convenios[p.cpf]) || null;
+  function definirConvenio(cpf, conv) {
+    cpf = M.soDigitos(cpf || ''); if (!cpf) return false;
+    if (conv) E.convenios[cpf] = conv; else delete E.convenios[cpf];
+    const p = E.pacientes[cpf] || Object.values(E.pacientes).find(x => x.cpf === cpf);
+    evento('convenio', p ? p.id : null, `${p ? titulo(p.nome) : 'CPF ' + mascCpf(cpf)}: ${conv ? 'convênio ' + (M.CONVENIOS[conv] || {}).rotulo : 'sem convênio marcado'}`);
+    return true;
   }
 
   // ================= navegação =================
@@ -201,6 +266,7 @@
   }
 
   function render() {
+    normalizar();
     renderNav(); renderTopo();
     const { r, a } = rotaAtual();
     const V = M.app.views;
@@ -458,6 +524,7 @@
     ui, salvar, toast, iniciar, marcar, desfazer, evento, estadoVazio, render, ir, rotaAtual,
     tipoRef, bateriaRef, nomeRef, dataCadastro, examesDo, situacao, tipoDoPaciente, pacDe, vagaPor, ocupada, rotTurno, local, nomeExibicao, nomeFaixa,
     saloes, ordemRelatorio, divergencias, metricas, movHtml,
+    travaDe, travaPorCpf, travar, destravar, normalizar, convenioDe, definirConvenio,
   });
   Object.defineProperty(M.app, 'E', { get: () => E, set: v => { E = v; }, configurable: true });
   M.app.views = { vPainel };

@@ -86,12 +86,14 @@
     const cls = ['faixa'];
     const dup = v.match && v.match.duplicadaDe;
     let sub = '', badges = '';
-    const temDiv = occ && (!v.pacienteId || (v.match && (v.match.conf === 'media' || v.match.foraDoBolsao)) || v.riscado || (p && ['escala', 'resultado'].includes(p.origem)));
+    const tv = occ ? A.travaDe(v) : null, conv = A.convenioDe(p);
+    const temDiv = occ && !tv && (!v.pacienteId || (v.match && (v.match.conf === 'media' || v.match.foraDoBolsao)) || v.riscado || (p && ['escala', 'resultado'].includes(p.origem)));
     if (!occ) { cls.push('vaga'); sub = 'Vago — clique para alocar'; }
     else {
       if (v.riscado) cls.push('risc');
-      if (v.notaTransito && (!p || ['escala', 'resultado'].includes(p.origem))) { cls.push('transito'); sub = v.notaTransito.replace(/[()]/g, '').replace(/^trans/i, 'trânsito'); }
-      else if (!v.pacienteId || (p && ['escala', 'resultado'].includes(p.origem))) { cls.push('sem-csv'); sub = E().outroLab[v.id] ? 'outro laboratório' : p && p.origem === 'resultado' ? 'sem pedido no CSV · achado no TXT' : 'sem pedido no CSV'; }
+      if (tv) { cls.push('travado'); sub = 'outro laboratório · travado'; }
+      else if (v.notaTransito && (!p || ['escala', 'resultado'].includes(p.origem))) { cls.push('transito'); sub = v.notaTransito.replace(/[()]/g, '').replace(/^trans/i, 'trânsito'); }
+      else if (!v.pacienteId || (p && ['escala', 'resultado'].includes(p.origem))) { cls.push('sem-csv'); sub = p && p.origem === 'resultado' ? 'sem pedido no CSV · achado no TXT' : 'sem pedido no CSV'; }
       else if (v.match && v.match.conf === 'media') cls.push('revisar');
       if (p && p.status === 'internado') cls.push('internado');
       if (p && p.status === 'transito') cls.push('transito');
@@ -103,9 +105,11 @@
         else if (p) sub = `${idade(p.nasc) != null ? idade(p.nasc) + ' anos · ' : ''}${A.examesDo(p).length} exames`;
       }
       if (p && p.controles) badges += Object.entries(M.CONTROLES).filter(([k]) => p.controles[k]).map(([, c]) => `<span class="k" style="--cor:${c.cor}" title="${c.rotulo}">${c.sigla}</span>`).join('');
-      if (st.ic && p) badges += `<span class="st" style="--cor:${st.cor}" title="${esc(st.motivo)}">${ic(st.ic)}</span>`;
+      if (tv) badges += `<span class="st trava" style="--cor:var(--muted)" data-destravar="${v.id}" role="button" tabindex="0" title="Travado: outro laboratório desde ${fmtData(tv.desde)} — clique no cadeado para liberar" aria-label="Destravar">${ic('lock')}</span>`;
+      if (st.ic && p && !st.travado) badges += `<span class="st" style="--cor:${st.cor}" title="${esc(st.motivo)}">${ic(st.ic)}</span>`;
       else if (st.adm && p) badges += `<span class="st" style="--cor:var(--teal)" title="${esc(st.motivo)}">${ic('userplus')}</span>`;
-      if (p && p.semPedido) badges += `<span class="st" style="--cor:var(--blue)" title="Sem pedido no CSV da Hiperrim · bateria ${esc(M.BATERIAS[p.bateriaManual].rotulo)}">${ic('info')}</span>`;
+      if (conv) badges += seloConvenio(conv);
+      if (p && p.semPedido && !conv) badges += `<span class="st" style="--cor:var(--blue)" title="Sem pedido no CSV da Hiperrim · bateria ${esc(M.BATERIAS[p.bateriaManual].rotulo)}">${ic('info')}</span>`;
       if (v.riscado) badges += `<span class="st" style="--cor:var(--crit)" title="Riscado na escala">${ic('x')}</span>`;
     }
     const filtrar = A.ui.soDivergencias && !temDiv;
@@ -140,10 +144,15 @@
         abrirFerramenta(t, { salao: n, turno: A.ui.turno[n] });
         return;
       }
+      const tr = e.target.closest('[data-destravar]');
+      if (tr) { e.stopPropagation(); return pedirDestravar(tr.dataset.destravar); }
       const fx = e.target.closest('[data-vaga]');
       if (fx) clicarVaga(fx.dataset.vaga);
     };
-    conteudo.onkeydown = e => { const fx = e.target.closest('[data-vaga]'); if (fx && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); clicarVaga(fx.dataset.vaga); } };
+    conteudo.onkeydown = e => {
+      const tr = e.target.closest('[data-destravar]');
+      if (tr && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.stopPropagation(); return pedirDestravar(tr.dataset.destravar); }
+      const fx = e.target.closest('[data-vaga]'); if (fx && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); clicarVaga(fx.dataset.vaga); } };
     let origem = null;
     piso.addEventListener('dragstart', e => {
       const fx = e.target.closest('[data-vaga]'); if (!fx) return;
@@ -194,6 +203,7 @@
     const statusP = p ? M.STATUS[p.status] || M.STATUS.ativo : null;
     const exames = p ? A.examesDo(p) : [];
     const doCsv = p && p.origem === 'csv';
+    const tv = v ? A.travaDe(v) : null, conv = A.convenioDe(p);
     const evs = E().eventos.filter(e => p && e.pid === p.id).slice(0, 10);
 
     let vinculo = '';
@@ -213,9 +223,11 @@
             <option value="*">Buscar na lista completa…</option>
           </select>
           ${doCsv ? `<button class="btn sm ghost" data-f="desvincular">${ic('x')} Desvincular</button>` : ''}
-          ${!doCsv ? `<button class="btn sm" data-f="outrolab" aria-pressed="${!!E().outroLab[v.id]}">${ic('flask')} ${E().outroLab[v.id] ? 'Marcado: outro laboratório' : 'É de outro laboratório'}</button>` : ''}
+          ${tv ? `<button class="btn sm trava" data-f="destravar" title="Clique no cadeado para liberar">${ic('lock')} Travado: outro laboratório</button>`
+               : `<button class="btn sm" data-f="travar" title="Todo mês faz em outro laboratório: fica fora do relatório mesmo se vier no CSV">${ic('unlock')} Travar: outro laboratório</button>`}
         </div>
-        ${!p || ['escala', 'resultado'].includes(p.origem) ? `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)">
+        ${tv ? `<div class="alerta-box" style="margin-top:10px">${ic('lock')}<div><b>Travado desde ${fmtData(tv.desde)}.</b> Faz os exames em outro laboratório todo mês: não entra no relatório nem nas pendências, mesmo que a Hiperrim mande no CSV. Clique no cadeado para liberar.</div></div>` : ''}
+        ${!tv && (!p || ['escala', 'resultado'].includes(p.origem)) ? `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)">
           <button class="btn sm pri" data-f="cadsem">${ic('userplus')} Cadastrar com bateria</button>
           <button class="btn sm perigo" data-f="remover">${ic('x')} Remover da escala</button>
           <small class="faint" style="flex-basis:100%">Cadastrar: entra no relatório como “sem pedido no CSV da Hiperrim”, com a bateria que você escolher.</small></div>` : ''}
@@ -231,6 +243,8 @@
             <span class="chip b" style="--cor:${corConf}">${rotConf}</span>
             ${p && p.origem === 'transito' ? `<span class="chip b" style="--cor:var(--c5)">Trânsito</span>` : ''}
             ${st.adm ? `<span class="chip b" style="--cor:var(--teal)">Admissional</span>` : ''}
+            ${tv ? `<span class="chip b" style="--cor:var(--muted)">${ic('lock')} Outro laboratório</span>` : ''}
+            ${conv ? `<span class="chip b conv" style="--cor:${M.CONVENIOS[conv].cor}">${seloConvenio(conv)} ${esc(M.CONVENIOS[conv].rotulo)}</span>` : ''}
           </div></div>
         <button class="btn ghost sm" data-f="fechar" aria-label="Fechar">${ic('x')}</button>
       </header>
@@ -242,6 +256,7 @@
           <div class="campo"><small>Origem</small><b>${p.origem === 'csv' ? 'CSV · ' + esc((p.arquivo || '').replace(/\.csv$/i, '')) : p.origem === 'escala' ? 'Só na escala' : p.origem === 'resultado' ? 'TXT de resultados (sem pedido no CSV)' : p.origem === 'transito' ? 'Trânsito' : 'Cadastro manual'}</b></div>
           ${p.lab ? `<div class="campo"><small>Lab. cliente (CSV)</small><b>${esc(p.lab)}</b></div>` : ''}
           ${p.admissao ? `<div class="campo"><small>Admissão</small><b>${fmtData(p.admissao)}</b></div>` : ''}
+          ${p.cpf ? `<div class="campo"><small>Convênio</small><button class="toggle" data-f="unimed" aria-pressed="${conv === 'unimed'}" title="Marca pelo CPF — vale todos os meses">${seloConvenio('unimed')} Unimed</button></div>` : ''}
         </div>` : ''}
         ${v ? `<div class="bloco"><h4>${ic('room')} Posição</h4><b>${esc(A.local(v))}</b>
           <div style="color:var(--muted);font-weight:700;font-size:13px;margin-top:2px">Dialisa: ${(v.dias.length ? v.dias : M.GRUPOS[v.grupo].dias).map(d => M.DIAS[d]).join(' · ')}${v.notaTransito ? ' · ' + esc(v.notaTransito) : ''}</div></div>`
@@ -293,7 +308,13 @@
     if (f === 'desvincular') { trocarVinculo(v.id, ''); return reabrir(); }
     if (f === 'cadsem') return cadastrarSemPedido(v.id);
     if (f === 'remover') { fechar(); return removerDaEscala(v.id); }
-    if (f === 'outrolab') { A.marcar('outro laboratório'); E().outroLab[v.id] = !E().outroLab[v.id]; A.salvar(); A.render(); return reabrir(); }
+    if (f === 'travar') { travarVaga(v.id); return reabrir(); }
+    if (f === 'destravar') return pedirDestravar(v.id, reabrir);
+    if (f === 'unimed') {
+      A.marcar('convênio'); A.definirConvenio(p.cpf, A.convenioDe(p) === 'unimed' ? null : 'unimed'); A.salvar(); A.render();
+      A.toast(A.convenioDe(p) ? `${nomeCurto(p.nome)}: convênio Unimed` : `${nomeCurto(p.nome)}: sem convênio marcado`, 'tag', true);
+      return reabrir();
+    }
     if (f === 'trocar') { if (el.value === '*') return modalVincular(v.id); trocarVinculo(v.id, el.value); return reabrir(); }
     if (f === 'controle') {
       A.marcar('controle'); const k = el.dataset.k; p.controles = p.controles || {}; p.controles[k] = !p.controles[k];
@@ -549,7 +570,7 @@
       bateriaManual: d.bateria || padrao, status: 'ativo', controles: d.controles || { glic: false, cr: false, hbgl: false }, vagaId: v.id, grupo: v.grupo, turno: v.turno };
     E().pacientes[id] = p;
     v.pacienteId = id; v.match = { conf: 'manual', score: null }; v.riscado = false;
-    delete E().outroLab[v.id];
+    const tvAnt = A.travaDe(v); if (tvAnt) A.destravar(tvAnt);   // cadastrar = decidiu que coleta aqui
     E().apelidos[M.chaveApelido(v.nomeEscala, v.grupo, v.turno)] = id;
     A.evento('cadastro', id, `Cadastrado sem pedido no CSV: ${p.nome} (${A.local(v, true)}) — bateria ${M.BATERIAS[p.bateriaManual].rotulo}${d.origem ? ' · ' + d.origem : ''}`);
     return p;
@@ -560,9 +581,38 @@
     const p = A.pacDe(v), nome = A.nomeExibicao(v), onde = A.local(v, true);
     if (p && ['escala', 'resultado'].includes(p.origem)) delete E().pacientes[p.id]; else if (p) p.vagaId = null;
     Object.assign(v, JSON.parse(JSON.stringify(VAZIO)));
-    delete E().outroLab[v.id];
     A.evento('remocao', null, `Removido da escala: ${nome} (${onde}) — máquina livre`);
     return { nome, onde };
+  }
+
+  /** Selo pequeno do convênio (mesmo formato dos selos da máquina). */
+  function seloConvenio(conv) {
+    const c = M.CONVENIOS[conv]; if (!c) return '';
+    return `<span class="st conv" style="--cor:${c.cor}" title="Convênio ${esc(c.rotulo)}"><img src="${c.logo}" alt="${esc(c.rotulo)}" width="14" height="14"></span>`;
+  }
+
+  /** Trava a pessoa como "outro laboratório" (vale nos próximos meses). */
+  function travarVaga(vagaId) {
+    const v = A.vagaPor(vagaId); if (!v || !A.ocupada(v)) return;
+    A.marcar('travar ' + A.nomeExibicao(v));
+    A.travar(v); A.salvar(); A.render();
+    A.toast(`${A.nomeExibicao(v)} travado: outro laboratório`, 'lock', true);
+  }
+
+  /** Cadeado: confirma antes de liberar. */
+  function pedirDestravar(vagaId, depois) {
+    const v = A.vagaPor(vagaId), t = v && A.travaDe(v); if (!t) return;
+    abrirModal({
+      titulo: 'Destravar paciente', ic: 'unlock', cor: 'var(--warn)',
+      corpo: `<div><b>${esc(A.nomeExibicao(v))}</b> · ${esc(A.local(v, true))}</div>
+        <div class="alerta-box">${ic('lock')}<div>Travado como <b>outro laboratório</b> desde ${fmtData(t.desde)}.
+        Ao destravar, volta para as pendências e, se estiver no CSV da Hiperrim, entra no relatório de cadastro.</div></div>`,
+      botoes: [{ rot: 'Manter travado' }, { rot: 'Destravar', cls: 'pri', ic: 'unlock', acao: () => {
+        A.marcar('destravar ' + A.nomeExibicao(v)); A.destravar(t); fecharModal(); A.salvar(); A.render();
+        if (depois) depois();
+        A.toast(`${A.nomeExibicao(v)} destravado`, 'unlock', true);
+      } }],
+    });
   }
 
   /** Tira o nome da escala (libera a máquina). Usado para limpar quem não deveria estar lá. */
@@ -670,7 +720,7 @@
     setTimeout(() => ids.forEach(id => { const el = document.querySelector(`[data-vaga="${id}"]`); if (el) { el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); } }), 30);
   }
 
-  Object.assign(A, { abrirFicha, fechar, abrirModal, abrirFerramenta, confirmarVinculo, trocarVinculo, registrarSaida, transferir, modalVincular, garantirPaciente, moverOcupante: mover, cadastrarSemPedido, removerDaEscala, validarSemPedido, criarSemPedido, liberarVaga });
+  Object.assign(A, { abrirFicha, fechar, abrirModal, abrirFerramenta, confirmarVinculo, trocarVinculo, registrarSaida, transferir, modalVincular, garantirPaciente, moverOcupante: mover, cadastrarSemPedido, removerDaEscala, validarSemPedido, criarSemPedido, liberarVaga, travarVaga, pedirDestravar, seloConvenio });
   A.views.vSalao = vSalao;
   A.ligar.salao = ligarSalao;
 })(window.MED = window.MED || {});
