@@ -142,7 +142,7 @@
     ? `S${v.salao} · ${rotTurno(v.turno)} · ${v.grupo} · Máq ${v.maq}`
     : `Salão ${v.salao} · ${rotTurno(v.turno)} · ${M.GRUPOS[v.grupo].rotulo} · Máq ${v.maq}`;
   const nomeExibicao = v => { const p = pacDe(v); return p ? nomeCurto(p.nome) : (v.nomeEscala || ''); };
-  /** Nome para a faixa da máquina: 1º nome + inicial do 2º + último sobrenome ("Sabina F. Lima"). */
+  /** Nome para a faixa da máquina: 1º nome + inicial do 2º + último sobrenome ("Maria F. Souza"). */
   function nomeFaixa(v) {
     const p = pacDe(v); if (!p || p.origem === 'escala') return v.nomeEscala || '';
     const t = titulo(p.nome).split(/\s+/).filter(w => w && !MINUSC.has(w));

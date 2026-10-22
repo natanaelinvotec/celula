@@ -277,7 +277,9 @@
     return `<span class="seta" title="anterior: ${esc(fmtValor(cod, ant))}">${dif > 0 ? '↑' : '↓'}</span>`;
   }
   function refTxt(cod) {
-    const d = M.defRes(cod); if (!d.ref) return '—';
+    const d = M.defRes(cod);
+    if (d.quali) return d.quali === 'protecao' ? 'Reagente (protegido)' : 'Não reagente';
+    if (!d.ref) return '—';
     const f = x => x.toLocaleString('pt-BR');
     if (d.ref[0] != null && d.ref[1] != null) return `${f(d.ref[0])} – ${f(d.ref[1])}`;
     return d.ref[0] != null ? `≥ ${f(d.ref[0])}` : `≤ ${f(d.ref[1])}`;
@@ -424,7 +426,7 @@
   }
   function exportarMapa(comp) {
     const lote = R.lotes.find(l => l.competencia === comp) || R.lotes[0]; if (!lote) return;
-    const cods = [...Object.keys(M.RES).filter(c => !M.RES[c].oculto), ...Object.keys(M.RES_DERIVADOS)];
+    const cods = [...Object.keys(M.RES).filter(c => !M.RES[c].oculto && (!lote.codigos || lote.codigos[c])), ...Object.keys(M.RES_DERIVADOS)];
     const cab = ['Salão', 'Dias', 'Turno', 'Máquina', 'Nome', 'CPF', 'Coleta', ...cods.map(c => `${M.defRes(c).nome} (${M.defRes(c).un})`)];
     const rows = linhasLote(lote).map(l => [l.v ? l.v.salao : '', l.v ? M.GRUPOS[l.v.grupo].rotulo : '', l.v ? A.rotTurno(l.v.turno) : '', l.v ? l.v.maq : '', l.p.nome, fmtCpf(l.p.cpf), fmtData(l.p.data), ...cods.map(c => l.val[c] ? (l.val[c].t || String(l.val[c].n).replace('.', ',')) : '')]);
     const q = s => { s = String(s == null ? '' : s); return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
@@ -565,6 +567,8 @@
         <td><span class="chip b" style="--cor:${stCor[s.st]}">${stRot[s.st]}</span><br><small class="faint">${esc(s.txt)}</small></td></tr>`;
     }).join('');
     const div = cods.filter(c => M.statusInterface(c).st === 'diverge');
+    const aus = cods.filter(c => M.RES[c] && !M.RES[c].oculto && M.statusInterface(c).st === 'ausente');
+    const outroCod = aus.filter(c => M.RES[c].pdf), semPdf = aus.filter(c => !M.RES[c].pdf);
     return `<div class="grid g2" style="margin-bottom:16px">
         <div class="card"><h2>Layout do TXT de resultados</h2><p class="desc">Lido do arquivo exportado pelo laboratório (separador <code>|</code>, ISO-8859-1, CRLF).</p>
           <table class="tbl"><thead><tr><th>Registro</th><th>Campos</th></tr></thead><tbody>
@@ -576,8 +580,8 @@
           ${div.length ? `<div class="alerta-box" style="margin-bottom:10px">${ic('alert')}<div>${div.length} códigos do TXT significam <b>outro exame</b> na tabela do PDF do Nephrosys. Se o Nephrosys da Hiperrim usa essa tabela para importar, esses resultados podem estar entrando no exame errado. Vale conferir com eles.</div></div>` : ''}
           <ul style="margin:0;padding-left:18px;line-height:1.7;font-size:14px">
             ${div.map(c => `<li><b>${c}</b> — no TXT é <b>${esc(M.RES[c].nome)}</b>; no PDF ${c} é <b>${esc(M.NEPHRO_PDF[c])}</b>${M.RES[c].pdf ? ` (${esc(M.RES[c].nome)} = ${M.RES[c].pdf})` : ' — sem equivalente no PDF'}.</li>`).join('')}
-            <li><b>016 / 017 / 034</b> (Hb, Ht, PTH) não existem no PDF, que usa 010 / 011 / 042.</li>
-            <li>Albumina, globulina e o diferencial do hemograma (046–062) não aparecem no PDF.</li>
+            ${outroCod.length ? `<li>Não existem no PDF, que usa outro código: ${outroCod.map(c => `<b>${c}</b> ${esc(M.RES[c].curto)} → ${M.RES[c].pdf}`).join(' · ')}.</li>` : ''}
+            ${semPdf.length ? `<li>Sem equivalente no PDF (ficam só no MedRim): ${semPdf.map(c => esc(M.RES[c].curto)).join(', ')}.</li>` : ''}
           </ul>
           <div class="no-print" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
             ${lote ? `<button class="btn sm" data-int="remap">${ic('download')} Baixar TXT conforme o PDF (teste)</button>` : ''}
@@ -591,9 +595,14 @@
   function ligarInterface() {
     $('#conteudo').onclick = e => {
       const b = e.target.closest('[data-int]'); if (!b) return;
+      const cods = Object.keys(M.RES).sort();
+      const troca = cods.filter(c => M.RES[c].pdf && M.RES[c].pdf !== c), fica = cods.filter(c => M.RES[c].pdf === c), sai = cods.filter(c => !M.RES[c].pdf);
       A.abrirModal({
         titulo: 'TXT com os códigos do PDF', ic: 'alert', cor: 'var(--warn)',
-        corpo: `<p style="margin:0">Gera uma cópia do último TXT <b>só com códigos que existem no PDF com o mesmo exame</b>: troca <code>043</code>→<code>068</code> Sódio, <code>034</code>→<code>042</code> PTH, <code>067</code>→<code>089</code> Hb glicada, <code>015</code>→<code>009</code> Hemácias, <code>016/017</code>→<code>010/011</code> Hb/Ht, <code>056</code>→<code>015</code> Plaquetas; remove o que não tem equivalente (albumina, globulina, diferencial, índices — inclusive <code>061</code>/<code>062</code>, que no PDF são Colesterol e HDL) e renumera a sequência.</p>
+        corpo: `<p style="margin:0 0 8px">Gera uma cópia do último TXT <b>só com códigos que existem no PDF com o mesmo exame</b> e renumera a sequência.</p>
+          <p style="margin:0 0 6px;font-size:13px"><b>Troca (${troca.length}):</b> ${troca.map(c => `<code>${c}</code>→<code>${M.RES[c].pdf}</code> ${esc(M.RES[c].curto)}`).join(' · ')}</p>
+          <p style="margin:0 0 6px;font-size:13px"><b>Mantém (${fica.length}):</b> ${fica.map(c => `<code>${c}</code>`).join(' ')}</p>
+          <p style="margin:0;font-size:13px"><b>Remove, sem equivalente no PDF (${sai.length}):</b> ${sai.map(c => esc(M.RES[c].curto)).join(', ')} e qualquer código não interpretado.</p>
           <div class="alerta-box">${ic('alert')}<div>Serve para <b>teste com a Hiperrim</b>. Não envie para produção sem eles confirmarem qual tabela o Nephrosys usa na importação de resultados. O arquivo oficial continua sendo o original, na aba Arquivos TXT.</div></div>`,
         botoes: [{ rot: 'Cancelar' }, { rot: 'Baixar cópia de teste', cls: 'pri', ic: 'download', acao: () => { baixarArquivo(R.lotes[0].id, true); } }],
       });
