@@ -78,6 +78,9 @@ No mockup, os resultados ficam no IndexedDB do navegador (não vão para o GitHu
   (Editável na tela **Baterias & regras** ou em `M.REGRAS_PADRAO`, no `js/dados.js`.)
 - Admissional: 28 exames (anual sem ureia pós, sem controles extras); entra na lista do mês da admissão no lugar da bateria do mês; janeiro faz a anual completa. Se já foi coletado, marcar na admissão.
 - Sem pedido no CSV: cadastrar com a bateria escolhida (mensal/trimestral/semestral) — entra na sequência normal; “Excluir” tira o nome da escala.
+- Outro laboratório = **trava** (cadeado). Vale pela pessoa (CPF, ou nome da escala + dias + turno), atravessa os meses e o
+  "Começar do zero": mesmo que a Hiperrim mande o paciente no CSV, ele fica fora do relatório e das pendências. Clique no cadeado para liberar.
+- Convênio (Unimed): marcado pelo CPF na ficha do paciente; selo pequeno na máquina, no relatório e coluna Convênio no Excel.
 - Internado: fora até o retorno. Trânsito: fora por padrão. Óbito/saída: libera a máquina.
 - Ordem do relatório: Salão → Seg/Qua/Sex (manhã, tarde, noite) → Ter/Qui/Sáb (manhã, tarde, noite) → máquina.
 
