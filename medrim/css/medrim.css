@@ -568,6 +568,11 @@ body.bloqueado .app{visibility:hidden}
 .usuario .av{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;background:var(--blue);color:#fff;font-weight:900;font-size:13px;flex:none}
 .usuario .nm{display:flex;flex-direction:column;min-width:0}.usuario .nm b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .usuario .nm small{font-size:11px;font-weight:700;color:var(--muted)}
+.usuario-senha{margin-left:auto;flex:none;width:30px;height:30px;border-radius:9px;border:1px solid var(--line);background:transparent;color:var(--muted);display:grid;place-items:center;cursor:pointer}
+.usuario-senha:hover,.usuario-senha:focus-visible{color:var(--blue);border-color:var(--blue)}.usuario-senha .i{width:15px;height:15px}
+.senha-linha{display:flex;gap:6px;align-items:center}.senha-linha input{flex:1;min-width:0}
+.acoes-usuario{white-space:nowrap}.acoes-usuario .btn{margin:2px 0}
+.btn.perigo{color:var(--crit)}.btn.perigo:hover{border-color:var(--crit)}
 .nuvem-status{font-size:12px;font-weight:800;padding:4px 10px;border-radius:99px;background:var(--surface-3);color:var(--muted);white-space:nowrap}
 .nuvem-status[hidden]{display:none}
 .nuvem-status[data-s="salvo"]{background:color-mix(in srgb,var(--ok) 14%,transparent);color:var(--ok)}
