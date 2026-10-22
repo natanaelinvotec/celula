@@ -170,6 +170,9 @@ svg.i{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-widt
 .hero .anel svg{width:100%;height:100%;transform:rotate(-90deg)}
 .hero .anel .v{position:absolute;inset:0;display:grid;place-items:center;text-align:center;font-weight:900;font-size:30px;line-height:1}
 .hero .anel .v small{display:block;font-size:11.5px;font-weight:800;opacity:.75;margin-top:4px;letter-spacing:.04em}
+.hero .anel .v em{display:block;font-style:normal;font-size:10.5px;font-weight:700;line-height:1.35;opacity:.85;margin-top:6px}
+.hero .anel .v em b{font-weight:900}
+.hero .anel .v em b:first-child{color:#7ee2a3}
 @media (max-width:700px){.hero{grid-template-columns:1fr}.hero .anel{justify-self:start}}
 .kpis{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:12px;margin:16px 0}
 @media (max-width:1350px){.kpis{grid-template-columns:repeat(4,minmax(0,1fr))}}
