@@ -463,3 +463,80 @@ label.f{display:grid;gap:5px;font-size:12.5px;font-weight:800;color:var(--muted)
 .faixa.completo .nm small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .btn.perigo{color:var(--crit);border-color:color-mix(in srgb,var(--crit) 35%,var(--line))}
 .btn.perigo:hover{background:var(--crit-50)}
+
+/* ---------- etiquetas & mapa de coleta ---------- */
+.etq-topo{display:flex;gap:18px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap}
+.etq-kpis{display:flex;gap:10px;flex-wrap:wrap}
+.etq-kpis>div{min-width:104px;padding:10px 14px;border-radius:14px;background:var(--surface-2);text-align:center}
+.etq-kpis b{display:block;font-size:24px;font-weight:900;line-height:1.1}
+.etq-kpis small{font-size:11.5px;font-weight:800;color:var(--muted)}
+.etq-kpis .alerta b{color:var(--crit)}.etq-kpis .ok b{color:var(--ok)}
+.sec-t{display:flex;gap:12px;align-items:flex-start;margin-bottom:10px}
+.sec-t>.ic{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;background:color-mix(in srgb,var(--cor) 14%,transparent);color:var(--cor);flex:none}
+.sec-t .cnt{font-size:12px;font-weight:900;padding:1px 8px;border-radius:99px;background:color-mix(in srgb,var(--cor) 14%,transparent);color:var(--cor)}
+.tbl-wrap{overflow:auto}
+.mapa-ctl{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:14px}
+.mapa-ctl .i{width:17px;height:17px;vertical-align:-3px}
+.mapa-chk{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.mapa-chk label{display:inline-flex;align-items:center;gap:6px;font-weight:800;font-size:12.5px;padding:5px 10px;border-radius:10px;background:var(--surface-2);cursor:pointer;border:0}
+.mapa-chk input{accent-color:var(--blue)}
+.mapa-chk .sep{width:1px;height:20px;background:var(--line);margin:0 4px}
+.mapa-paginas{display:grid;gap:18px}
+.mapa-pg{border:1px solid var(--line);border-radius:16px;padding:14px;background:var(--surface)}
+.mapa-pg>header{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;border-bottom:2px solid var(--text);padding-bottom:8px;margin-bottom:10px}
+.mapa-pg>header b{font-size:20px;font-weight:900;display:block;line-height:1.1}
+.mapa-pg>header span{font-weight:800;color:var(--muted);font-size:13px}
+.mapa-meta{text-align:right;font-size:12px;font-weight:700;color:var(--muted);line-height:1.4}
+.mapa-meta b{color:var(--text)}.mapa-meta .alerta{color:var(--crit)}
+.mapa-grade{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.mq{border:1.5px solid var(--line-2);border-radius:10px;overflow:hidden;break-inside:avoid;display:flex;flex-direction:column;background:var(--surface)}
+.mq-h{background:var(--text);color:var(--surface);font-weight:900;font-size:13px;padding:3px 8px;letter-spacing:.05em}
+.mq-p{padding:6px 8px;display:flex;flex-direction:column;gap:2px;flex:1}
+.mq-p+.mq-p{border-top:1px dashed var(--line-2)}
+.mq-g{font-size:9px;font-weight:900;letter-spacing:.08em;color:var(--faint)}
+.mq-n{font-weight:800;font-size:12px;line-height:1.15;overflow-wrap:anywhere}
+.mq-c{font:900 16px/1.1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.02em;display:flex;align-items:center;justify-content:space-between;gap:4px;margin-top:2px}
+.mq-k{display:inline-flex;gap:2px;align-items:center}
+.mq-k .k{width:16px;height:16px;font-size:10px;border-radius:5px}
+.mq-k .st{width:16px;height:16px;border-radius:5px}.mq-k .st img{width:11px;height:11px}
+.mq-p.sem-etq{background:color-mix(in srgb,var(--crit) 8%,transparent)}
+.mq-p.sem-etq .mq-c{color:var(--crit);font-size:12px;font-family:inherit}
+.mq-p.nao .mq-n{color:var(--muted);font-weight:700}
+.mq-x{font-size:10.5px;font-weight:800;color:var(--muted);display:inline-flex;gap:4px;align-items:center}
+.mq-x .i{width:11px;height:11px}
+.mq-p.livre .mq-n{color:var(--faint);font-weight:700;font-style:italic}
+.mapa-pg.um .mq-n{font-size:13.5px}.mapa-pg.um .mq-c{font-size:19px}
+.mapa-pg>footer{margin-top:8px;font-size:10.5px;font-weight:700;color:var(--muted);display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+.mapa-pg>footer .k{width:15px;height:15px;font-size:9.5px;border-radius:4px}
+@media (max-width:1100px){.mapa-grade{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media (max-width:760px){.mapa-grade{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@page mapa{size:A4 landscape;margin:7mm}
+@media print{
+  body.imprimindo-mapa .conteudo .view>*:not(#mapa-coleta){display:none!important}
+  body.imprimindo-mapa #mapa-coleta{border:0;box-shadow:none;padding:0;margin:0!important;background:#fff}
+  body.imprimindo-mapa .mapa-paginas{display:block}
+  body.imprimindo-mapa .mapa-pg{page:mapa;break-after:page;border:0;border-radius:0;padding:0;background:#fff;color:#000}
+  body.imprimindo-mapa .mapa-pg:last-child{break-after:auto}
+  body.imprimindo-mapa .mapa-pg>header{border-bottom-color:#000}
+  body.imprimindo-mapa .mapa-grade{grid-template-columns:repeat(5,1fr);gap:2.4mm}
+  body.imprimindo-mapa .mq{border-color:#000;background:#fff}
+  body.imprimindo-mapa .mq-h{background:#000!important;color:#fff!important}
+  body.imprimindo-mapa .mq-n,body.imprimindo-mapa .mq-c{color:#000}
+  body.imprimindo-mapa .mq-p.sem-etq .mq-c{color:#b91c1c}
+  body.imprimindo-mapa .mq,body.imprimindo-mapa .mq-h,body.imprimindo-mapa .mq-p,body.imprimindo-mapa .k{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  /* letra grande para ler de pé, ao lado da máquina */
+  body.imprimindo-mapa .mapa-pg>header b{font-size:24px}
+  body.imprimindo-mapa .mapa-pg.um .mq-h{font-size:15px;padding:4px 9px}
+  body.imprimindo-mapa .mapa-pg.um .mq-p{padding:8px 9px;gap:3px}
+  body.imprimindo-mapa .mapa-pg.um .mq-g{font-size:10px}
+  body.imprimindo-mapa .mapa-pg.um .mq-n{font-size:14.5px}
+  body.imprimindo-mapa .mapa-pg.um .mq-c{font-size:25px}
+  body.imprimindo-mapa .mapa-pg.dois>header{padding-bottom:5px;margin-bottom:6px}
+  body.imprimindo-mapa .mapa-pg.dois .mapa-grade{gap:1.8mm}
+  body.imprimindo-mapa .mapa-pg.dois .mq-h{font-size:12px;padding:2px 7px}
+  body.imprimindo-mapa .mapa-pg.dois .mq-p{padding:3px 7px 4px;gap:1px}
+  body.imprimindo-mapa .mapa-pg.dois .mq-g{font-size:8px}
+  body.imprimindo-mapa .mapa-pg.dois .mq-n{font-size:11px;line-height:1.1}
+  body.imprimindo-mapa .mapa-pg.dois .mq-c{font-size:16px;margin-top:0}
+  body.imprimindo-mapa .mapa-pg.dois>footer{margin-top:4px}
+}
