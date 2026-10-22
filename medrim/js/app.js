@@ -283,7 +283,7 @@
     if (u) {
       const s = M.sessao;
       u.hidden = !(M.nuvem && s && s.perfil);
-      if (!u.hidden) u.innerHTML = `<span class="av">${esc(iniciais(s.perfil.nome || s.perfil.email))}</span><span class="nm"><b>${esc(s.perfil.nome || s.perfil.email)}</b><small>${esc(({ programador: 'Programador · acesso total', enfermaria: 'Enfermaria · edita pacientes', faturamento: 'Faturamento · visualização' })[s.papel] || s.papel)}</small></span>`;
+      if (!u.hidden) u.innerHTML = `<span class="av">${esc(iniciais(s.perfil.nome || s.perfil.email))}</span><span class="nm"><b>${esc(s.perfil.nome || s.perfil.email)}</b><small>${esc(({ programador: 'Programador · acesso total', enfermaria: 'Enfermaria · edita pacientes', faturamento: 'Faturamento · visualização' })[s.papel] || s.papel)}</small></span><button type="button" class="usuario-senha" data-acao="minha-senha" title="Trocar minha senha" aria-label="Trocar minha senha">${ic('lock')}</button>`;
     }
   }
 
@@ -547,6 +547,7 @@
       }
       if (ac === 'backup') M.app.exportarBackup();
       if (ac === 'sair' && M.nuvemApi) M.nuvemApi.sair();
+      if (ac === 'minha-senha' && M.nuvemApi) M.nuvemApi.minhaSenha();
     });
     $('#ref').addEventListener('change', e => {
       const [a, m] = e.target.value.split('-').map(Number); E.ref = { ano: a, mes: m };

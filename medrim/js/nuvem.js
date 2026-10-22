@@ -9,7 +9,7 @@
 import { initializeApp, getApps, getApp, deleteApp } from 'https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js';
 import {
   getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail, createUserWithEmailAndPassword,
-  setPersistence, browserLocalPersistence, browserSessionPersistence,
+  setPersistence, browserLocalPersistence, browserSessionPersistence, EmailAuthProvider, reauthenticateWithCredential, updatePassword,
 } from 'https://www.gstatic.com/firebasejs/12.3.0/firebase-auth.js';
 import {
   initializeFirestore, getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, where,
@@ -75,6 +75,7 @@ const msgErro = e => {
   if (/permission-denied/.test(c)) return 'Sem permissão para esta operação.';
   if (/email-already-in-use/.test(c)) return 'Este e-mail já tem conta.';
   if (/weak-password/.test(c)) return 'Senha fraca: use pelo menos 8 caracteres.';
+  if (/requires-recent-login/.test(c)) return 'Por segurança, saia e entre de novo antes de trocar a senha.';
   return (e && e.message) || String(e);
 };
 
@@ -155,11 +156,13 @@ onAuthStateChanged(auth, async user => {
       // primeiro acesso de quem administra o laboratório (config/app.admins): vira programador
       perfil = { uid: user.uid, email: user.email, nome: user.displayName || user.email.split('@')[0], papel: 'programador', ativo: true, criadoEm: serverTimestamp(), criadoPor: user.uid };
       await setDoc(ref, perfil);
+      deleteDoc(doc(db, C.pedidos, user.uid)).catch(() => {});
     }
     if (!perfil) {
       await setDoc(doc(db, C.pedidos, user.uid), { uid: user.uid, email: user.email, nome: user.displayName || user.email.split('@')[0], em: serverTimestamp() }, { merge: true }).catch(() => {});
       return telaAviso('Acesso aguardando liberação', `Seu login (<b>${esc(user.email)}</b>) foi reconhecido, mas ainda não tem permissão no MedRim. O laboratório já recebeu o pedido — avise o responsável.`);
     }
+    if (perfil.excluido) return telaAviso('Acesso removido', 'Seu acesso ao MedRim foi removido. Fale com o laboratório.');
     if (perfil.ativo === false || !PAPEIS[perfil.papel]) return telaAviso('Acesso desativado', 'Seu usuário está desativado no MedRim. Fale com o laboratório.');
     S.perfil = Object.assign({}, perfil, { uid: user.uid }); S.papel = perfil.papel;
     updateDoc(ref, { ultimoAcesso: serverTimestamp() }).catch(() => {});
@@ -609,36 +612,48 @@ async function contarPedidos() {
 function vUsuarios() {
   return `<div class="grid g2" style="align-items:start">
     <section class="card"><h3>${ic('userplus')} Novo usuário</h3>
-      <p class="desc">A pessoa entra com este e-mail e a senha inicial (pode trocar em “Esqueci a senha”).</p>
+      <p class="desc">A pessoa entra com este e-mail e a senha inicial. Depois ela troca em <b>Minha senha</b> (cadeado ao lado do nome, no menu).</p>
       <form id="f-novo" class="form-usuario" novalidate autocomplete="off">
         <label class="f">Nome<input name="nome" required maxlength="80" placeholder="Ex.: Enfermagem Salão 1"></label>
-        <label class="f">E-mail<input name="email" type="email" required autocomplete="off"></label>
-        <label class="f">Senha inicial (mín. 8)<input name="senha" type="password" minlength="8" required autocomplete="new-password"></label>
+        <label class="f">E-mail<input name="email" type="email" required autocomplete="off" placeholder="use um e-mail real (recebe o link de nova senha)"></label>
+        <label class="f">Senha inicial (mín. 8)<span class="senha-linha"><input name="senha" type="password" minlength="8" required autocomplete="new-password"><button type="button" class="btn sm ghost" data-u="gerar" title="Gerar uma senha forte e mostrar">${ic('sparkle')} Gerar</button><button type="button" class="btn sm ghost" data-u="ver" title="Mostrar/esconder" aria-label="Mostrar ou esconder a senha">${ic('eye')}</button></span></label>
         <label class="f">Papel<select name="papel">${Object.entries(PAPEIS).map(([k, p]) => `<option value="${k}" ${k === 'enfermaria' ? 'selected' : ''}>${esc(p.rotulo)}</option>`).join('')}</select></label>
         <button class="btn pri" type="submit">${ic('check')} Criar acesso</button>
         <div class="login-msg" id="nv-msg"></div>
       </form></section>
     <section class="card"><h3>${ic('shield')} Papéis</h3>
       ${Object.entries(PAPEIS).map(([k, p]) => `<div class="papel-linha"><span class="chip b papel-${k}">${esc(p.rotulo)}</span><small>${esc(p.desc)}</small></div>`).join('')}
-      <div class="alerta-box info" style="margin-top:10px">${ic('info')}<div>Pode ser uma conta por pessoa (melhor: o histórico mostra quem fez cada mudança) ou uma por setor. As permissões valem no servidor.</div></div></section>
+      <div class="alerta-box info" style="margin-top:10px">${ic('info')}<div>Pode ser uma conta por pessoa (melhor: o histórico mostra quem fez cada mudança) ou uma por setor. As permissões valem no servidor.</div></div>
+      <button class="btn" style="margin-top:12px" data-u="minha-senha">${ic('lock')} Trocar minha senha</button></section>
   </div>
   <section class="card" style="margin-top:14px" id="sec-pedidos" hidden><h3>${ic('bell')} Pedidos de acesso</h3><p class="desc">Entraram com login do Célula, mas ainda não têm papel no MedRim.</p><div id="lista-pedidos"></div></section>
-  <section class="card" style="margin-top:14px"><h3>${ic('userplus')} Usuários do MedRim</h3><div id="lista-usuarios"><div class="faint">Carregando…</div></div></section>`;
+  <section class="card" style="margin-top:14px"><h3>${ic('userplus')} Usuários do MedRim</h3><div id="lista-usuarios"><div class="faint">Carregando…</div></div>
+    <p class="desc" style="margin:10px 0 0">${ic('info')} <b>Trocar a senha de outra pessoa:</b> o Firebase só permite pelo link enviado ao e-mail dela (ninguém vê nem define a senha alheia).
+      <b>Excluir</b> tira o acesso ao MedRim na hora; o login em si continua no Firebase, sem acesso a nada — para apagá-lo de vez: <a href="https://console.firebase.google.com/project/celulams/authentication/users" target="_blank" rel="noopener">Firebase → Authentication</a>.</p></section>
+  <details class="card" style="margin-top:14px" id="sec-excluidos" hidden><summary><b>${ic('userx')} Excluídos <span id="n-excluidos"></span></b></summary><div id="lista-excluidos" style="margin-top:10px"></div></details>`;
 }
 async function ligarUsuarios() {
   const c = document.getElementById('conteudo');
+  let lista = [];
+  const quando = t => (t && t.toDate ? t.toDate().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
   const pintar = async () => {
     const [us, ps] = await Promise.all([getDocs(collection(db, C.usuarios)), getDocs(collection(db, C.pedidos))]);
-    const lista = []; us.forEach(d => lista.push(Object.assign({ uid: d.id }, d.data())));
+    lista = []; us.forEach(d => lista.push(Object.assign({ uid: d.id }, d.data())));
     lista.sort((a, b) => (a.ativo === false) - (b.ativo === false) || String(a.nome).localeCompare(String(b.nome)));
-    const quando = t => (t && t.toDate ? t.toDate().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
+    const ativos = lista.filter(u => !u.excluido), excl = lista.filter(u => u.excluido);
     document.getElementById('lista-usuarios').innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Último acesso</th><th></th></tr></thead><tbody>
-      ${lista.map(u => `<tr class="${u.ativo === false ? 'nao-coleta' : ''}"><td><b>${esc(u.nome || '—')}</b>${u.uid === S.user.uid ? ' <span class="chip">você</span>' : ''}</td><td>${esc(u.email || '')}</td>
-        <td><select class="sel-cand" data-u="papel" data-uid="${u.uid}" ${u.uid === S.user.uid ? 'disabled' : ''}>${Object.entries(PAPEIS).map(([k, p]) => `<option value="${k}" ${u.papel === k ? 'selected' : ''}>${esc(p.rotulo)}</option>`).join('')}</select></td>
+      ${ativos.map(u => { const eu = u.uid === S.user.uid; return `<tr class="${u.ativo === false ? 'nao-coleta' : ''}"><td><b>${esc(u.nome || '—')}</b>${eu ? ' <span class="chip">você</span>' : ''}${u.ativo === false ? ' <span class="chip">desativado</span>' : ''}</td><td>${esc(u.email || '')}</td>
+        <td><select class="sel-cand" data-u="papel" data-uid="${u.uid}" ${eu ? 'disabled' : ''}>${Object.entries(PAPEIS).map(([k, p]) => `<option value="${k}" ${u.papel === k ? 'selected' : ''}>${esc(p.rotulo)}</option>`).join('')}</select></td>
         <td class="mono">${quando(u.ultimoAcesso)}</td>
-        <td style="white-space:nowrap">${u.uid === S.user.uid ? '' : `<button class="btn sm ghost" data-u="ativo" data-uid="${u.uid}">${u.ativo === false ? ic('check') + ' Reativar' : ic('x') + ' Desativar'}</button>`}
-          <button class="btn sm ghost" data-u="senha" data-email="${esc(u.email || '')}">${ic('shield')} Link de nova senha</button></td></tr>`).join('')}
+        <td class="acoes-usuario">${eu ? `<button class="btn sm ghost" data-u="minha-senha">${ic('lock')} Minha senha</button>`
+          : `<button class="btn sm ghost" data-u="senha" data-email="${esc(u.email || '')}" title="Envia para o e-mail da pessoa um link para ela criar uma senha nova">${ic('lock')} Trocar senha</button>
+          <button class="btn sm ghost" data-u="ativo" data-uid="${u.uid}">${u.ativo === false ? ic('check') + ' Reativar' : ic('x') + ' Desativar'}</button>
+          <button class="btn sm ghost perigo" data-u="excluir" data-uid="${u.uid}">${ic('userx')} Excluir</button>`}</td></tr>`; }).join('')}
       </tbody></table></div>`;
+    const se = document.getElementById('sec-excluidos');
+    se.hidden = !excl.length; document.getElementById('n-excluidos').textContent = excl.length ? `(${excl.length})` : '';
+    document.getElementById('lista-excluidos').innerHTML = excl.map(u => `<div class="pedido"><div><b>${esc(u.nome || '—')}</b><br><small>${esc(u.email || '')} · ${esc(PAPEIS[u.papel] ? PAPEIS[u.papel].rotulo : u.papel)} · excluído em ${quando(u.excluidoEm)}</small></div>
+      <button class="btn sm" data-u="restaurar" data-uid="${u.uid}">${ic('undo')} Restaurar acesso</button></div>`).join('');
     const sec = document.getElementById('sec-pedidos'), lp = document.getElementById('lista-pedidos');
     sec.hidden = ps.empty;
     lp.innerHTML = ps.docs.map(d => { const p = d.data(); return `<div class="pedido"><div><b>${esc(p.nome || '')}</b><br><small>${esc(p.email || '')} · ${quando(p.em)}</small></div>
@@ -655,17 +670,20 @@ async function ligarUsuarios() {
     const nome = f.nome.value.trim(), email = f.email.value.trim().toLowerCase(), senha = f.senha.value, papel = f.papel.value;
     if (nome.length < 2 || !/^\S+@\S+\.\S+$/.test(email)) return m('Preencha nome e e-mail.');
     if (senha.length < 8) return m('A senha inicial precisa ter pelo menos 8 caracteres.');
+    const jaTem = lista.find(u => String(u.email).toLowerCase() === email);
+    if (jaTem) return m(jaTem.excluido ? 'Este e-mail está em “Excluídos” — use Restaurar acesso.' : jaTem.ativo === false ? 'Este e-mail já é usuário (desativado) — use Reativar.' : 'Este e-mail já é usuário do MedRim.');
     const b = f.querySelector('button[type=submit]'); b.disabled = true; m('Criando…');
     const sec = initializeApp(firebaseConfig, 'medrim-novo-' + Date.now());
     try {
       const cred = await createUserWithEmailAndPassword(getAuth(sec), email, senha);
       await setDoc(doc(db, C.usuarios, cred.user.uid), { uid: cred.user.uid, email, nome, papel, ativo: true, criadoEm: serverTimestamp(), criadoPor: S.user.uid });
       await signOut(getAuth(sec)).catch(() => {});
-      f.reset(); m(`Acesso criado: ${email} (${PAPEIS[papel].rotulo}). Envie a senha inicial por um canal seguro.`, true);
+      f.reset(); f.senha.type = 'password';
+      m(`Acesso criado: ${email} (${PAPEIS[papel].rotulo}). Envie a senha inicial por um canal seguro.`, true);
       await pintar();
     } catch (err) {
       m(err && err.code === 'auth/email-already-in-use'
-        ? 'Este e-mail já tem conta no Firebase do Célula. Peça para a pessoa entrar uma vez no MedRim com a senha dela: o pedido aparece aqui embaixo para você liberar.'
+        ? 'Este e-mail já tem login no Firebase do Célula. Peça para a pessoa entrar uma vez no MedRim com a senha dela: o pedido aparece aqui em “Pedidos de acesso” para você liberar.'
         : msgErro(err));
     } finally { b.disabled = false; deleteApp(sec).catch(() => {}); }
   };
@@ -678,14 +696,31 @@ async function ligarUsuarios() {
   };
   c.onclick = async e => {
     const b = e.target.closest('[data-u]'); if (!b || b.tagName === 'SELECT') return;
-    const uid = b.dataset.uid;
+    const uid = b.dataset.uid, u = lista.find(x => x.uid === uid);
+    if (b.dataset.u === 'gerar') { f.senha.value = gerarSenha(); f.senha.type = 'text'; f.senha.select(); return; }
+    if (b.dataset.u === 'ver') { f.senha.type = f.senha.type === 'password' ? 'text' : 'password'; return; }
+    if (b.dataset.u === 'minha-senha') return minhaSenha();
+    if (b.dataset.u === 'excluir') {
+      if (!u || uid === S.user.uid) return;
+      return A.abrirModal({ titulo: 'Excluir usuário', ic: 'userx', cor: 'var(--crit)',
+        corpo: `<p style="margin:0 0 8px">Tirar o acesso de <b>${esc(u.nome || u.email)}</b> (${esc(u.email || '')}) ao MedRim?</p>
+          <p class="faint" style="margin:0;font-size:13px">Vale na hora, inclusive se a pessoa estiver com o MedRim aberto. O histórico continua mostrando o que ela fez. Dá para desfazer em “Excluídos”.</p>`,
+        botoes: [{ rot: 'Cancelar' }, { rot: 'Excluir', cls: 'rim', ic: 'userx', acao: () => {
+          updateDoc(doc(db, C.usuarios, uid), { excluido: true, ativo: false, excluidoEm: serverTimestamp(), excluidoPor: S.user.uid })
+            .then(() => { A.toast(`${u.email} excluído do MedRim`, 'userx'); return pintar(); }).catch(err => A.toast(msgErro(err), 'alert'));
+        } }] });
+    }
     try {
       if (b.dataset.u === 'ativo') {
         const atual = (await getDoc(doc(db, C.usuarios, uid))).data();
         await updateDoc(doc(db, C.usuarios, uid), { ativo: atual.ativo === false, alteradoEm: serverTimestamp(), alteradoPor: S.user.uid });
         A.toast(atual.ativo === false ? 'Usuário reativado' : 'Usuário desativado (perde o acesso na hora)', 'shield');
       }
-      if (b.dataset.u === 'senha') { await sendPasswordResetEmail(auth, b.dataset.email); A.toast('Link de nova senha enviado para ' + b.dataset.email, 'shield'); }
+      if (b.dataset.u === 'restaurar') {
+        await updateDoc(doc(db, C.usuarios, uid), { excluido: deleteField(), excluidoEm: deleteField(), excluidoPor: deleteField(), ativo: true, alteradoEm: serverTimestamp(), alteradoPor: S.user.uid });
+        A.toast('Acesso restaurado', 'check');
+      }
+      if (b.dataset.u === 'senha') { await sendPasswordResetEmail(auth, b.dataset.email); A.toast('Link para criar nova senha enviado para ' + b.dataset.email, 'lock'); }
       if (b.dataset.u === 'liberar') {
         const p = (await getDoc(doc(db, C.pedidos, uid))).data();
         const papel = document.getElementById('pd-' + uid).value;
@@ -694,9 +729,51 @@ async function ligarUsuarios() {
         A.toast(`${p.email} liberado como ${PAPEIS[papel].rotulo}`, 'check');
       }
       if (b.dataset.u === 'recusar') { await deleteDoc(doc(db, C.pedidos, uid)); A.toast('Pedido recusado', 'x'); }
-      await pintar(); A.render();
+      if (['ativo', 'restaurar', 'liberar', 'recusar'].includes(b.dataset.u)) { await pintar(); A.render(); }
     } catch (err) { A.toast(msgErro(err), 'alert'); }
   };
+}
+
+/** Senha forte e legível (sem 0/O, 1/l/I) para a senha inicial. */
+function gerarSenha() {
+  const L = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz', N = '23456789', X = '@#%&*!?';
+  const r = new Uint32Array(14); crypto.getRandomValues(r);
+  const tudo = L + N + X, s = [L[r[0] % L.length], L[r[1] % L.length], N[r[2] % N.length], X[r[3] % X.length]];
+  for (let i = 4; i < 14; i++) s.push(tudo[r[i] % tudo.length]);
+  const o = new Uint32Array(s.length); crypto.getRandomValues(o);
+  return s.map((ch, i) => [o[i], ch]).sort((a, b) => a[0] - b[0]).map(x => x[1]).join('');
+}
+
+/** Qualquer papel: troca a própria senha (confirma a atual antes). */
+function minhaSenha() {
+  if (!auth.currentUser) return;
+  A.abrirModal({
+    titulo: 'Trocar minha senha', ic: 'lock', cor: 'var(--blue)',
+    corpo: `<p style="margin:0 0 10px">Conta <b>${esc(auth.currentUser.email)}</b></p>
+      <label class="f">Senha atual<input name="atual" type="password" autocomplete="current-password"></label>
+      <label class="f">Nova senha (mín. 8)<input name="nova" type="password" autocomplete="new-password"></label>
+      <label class="f">Repita a nova senha<input name="nova2" type="password" autocomplete="new-password"></label>
+      <div class="login-msg" data-ms></div>`,
+    botoes: [{ rot: 'Cancelar' }, { rot: 'Salvar nova senha', cls: 'pri', ic: 'check', acao: form => { salvarMinhaSenha(form); return false; } }],
+    aoAbrir: (m, form) => setTimeout(() => form.atual.focus(), 50),
+  });
+}
+async function salvarMinhaSenha(form) {
+  const m = t => { form.querySelector('[data-ms]').textContent = t; };
+  const atual = form.atual.value, nova = form.nova.value;
+  if (!atual) return m('Digite a senha atual.');
+  if (nova.length < 8) return m('A nova senha precisa ter pelo menos 8 caracteres.');
+  if (nova !== form.nova2.value) return m('As duas senhas novas não conferem.');
+  if (nova === atual) return m('A nova senha é igual à atual.');
+  const b = form.querySelector('button[type=submit]'); b.disabled = true; m('Salvando…');
+  try {
+    await reauthenticateWithCredential(auth.currentUser, EmailAuthProvider.credential(auth.currentUser.email, atual));
+    await updatePassword(auth.currentUser, nova);
+    A.fechar(); A.toast('Senha alterada', 'check', true);
+  } catch (err) {
+    b.disabled = false;
+    m(/invalid-credential|wrong-password/.test((err && err.code) || '') ? 'Senha atual incorreta.' : msgErro(err));
+  }
 }
 
 // =====================================================================
@@ -759,4 +836,4 @@ async function ligarIntegracao() {
 // =====================================================================
 Object.assign(A.views, { vUsuarios, vIntegracao, vMigrar });
 Object.assign(A.ligar, { usuarios: ligarUsuarios, integracao: ligarIntegracao, migrar: ligarMigrar });
-M.nuvemApi = { salvar, sair, recarregar, processarEntrada, estavel, foto, balde, docVaga };
+M.nuvemApi = { salvar, sair, recarregar, processarEntrada, estavel, foto, balde, docVaga, minhaSenha };
