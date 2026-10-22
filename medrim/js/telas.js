@@ -170,7 +170,8 @@
     if (!v) return res.vagaInexistente.push(`${ond}: Salão ${l.salao} · ${M.GRUPOS[l.grupo].curto} · ${A.rotTurno(l.turno)} · Máq ${l.maq}`);
     // a máquina precisa ter o mesmo nome da escala de quando a planilha foi gerada (protege contra escala reimportada/alterada)
     if (l.acao === 'excluir' && !v.nomeEscala && !v.pacienteId) return;   // já excluído numa importação anterior
-    if (M.norm(v.nomeEscala) !== M.norm(l.nomeEscala)) return recusa(`a máquina agora está com “${v.nomeEscala || 'vazia'}” — nada mudou`);
+    const chaveNome = s => M.norm(s).replace(/ /g, '');   // "DanielVicente" = "Daniel Vicente" (só espaçamento corrigido na planilha)
+    if (chaveNome(v.nomeEscala) !== chaveNome(l.nomeEscala)) return recusa(`a máquina agora está com “${v.nomeEscala || 'vazia'}” — nada mudou`);
     const atual = A.pacDe(v);
     if (atual && !['escala', 'resultado'].includes(atual.origem)) { if (l.acao !== 'excluir') return; }   // já resolvido (CSV ou cadastrado antes)
     const acao = l.acao || (l.nome ? 'cadastrar' : '');
