@@ -11,6 +11,10 @@
 
 - Primeiro acesso: quem está em `config/app.admins` (administração do app Célula) vira **programador** sozinho.
   Os demais acessos são criados em **Usuários e acessos**. Quem já tem login do Célula e entra no MedRim gera um pedido para liberar.
+- **Usuários e acessos** (programador): criar (com gerador de senha), trocar papel, desativar/reativar, **excluir** (some da lista,
+  perde o acesso na hora; dá para restaurar em “Excluídos”) e **trocar senha** de outra pessoa pelo link enviado ao e-mail dela.
+  Qualquer papel troca a **própria senha** no cadeado ao lado do nome, no menu. Apagar o login de vez e definir a senha de
+  outra pessoa sem e-mail exigem o Admin SDK (servidor) — pelo navegador o Firebase não permite.
 - Contas do MedRim **não** ganham perfil no app de atendimento (regra em `usuarios/{uid}`).
 - Gravação: só o que mudou (um campo por vaga/paciente/chave), com mesclagem em tempo real entre usuários e
   histórico com o nome de quem fez. Nada de paciente fica guardado no navegador.
