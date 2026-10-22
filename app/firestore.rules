@@ -56,7 +56,9 @@ service cloud.firestore {
       // primeiro acesso: o próprio usuário cria seu perfil (admin só se o e-mail estiver em config/app.admins)
       allow create: if (logado() && request.auth.uid == uid
                         && request.resource.data.papel == (emailAdmin() ? 'admin' : 'atendente')
-                        && request.resource.data.ativo == true) || admin();
+                        && request.resource.data.ativo == true
+                        // contas criadas só para o MedRim (enfermaria/faturamento da Hiperrim) não viram atendente aqui
+                        && (emailAdmin() || !exists(/databases/$(database)/documents/medrim_usuarios/$(request.auth.uid)))) || admin();
       // o próprio: nome, foto, último acesso · admin: tudo
       allow update: if (logado() && request.auth.uid == uid
                         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nome', 'fotoBase64', 'ultimoAcesso', 'atualizadoEm', 'status', 'statusEm', 'ultimoPing'])) || admin();
@@ -119,6 +121,54 @@ service cloud.firestore {
                       && (!('texto' in request.resource.data) || (request.resource.data.texto is string && request.resource.data.texto.size() <= 4096)));
         allow update, delete: if false;
       }
+    }
+
+    // ================= MedRim · baterias da hemodiálise (Hiperrim) =================
+    // Papéis em medrim_usuarios/{uid}: programador (tudo) · enfermaria (edita pacientes e escala) · faturamento (só lê).
+    function mrDoc() { return get(/databases/$(database)/documents/medrim_usuarios/$(request.auth.uid)); }
+    function mrAtivo() { return logado() && exists(/databases/$(database)/documents/medrim_usuarios/$(request.auth.uid)) && mrDoc().data.ativo == true; }
+    function mrPapel(ps) { return mrAtivo() && mrDoc().data.papel in ps; }
+    function mrProg() { return mrPapel(['programador']); }
+    function mrEdita() { return mrPapel(['programador', 'enfermaria']); }
+
+    match /medrim_usuarios/{uid} {
+      allow read: if (logado() && request.auth.uid == uid) || mrProg();
+      // primeiro acesso de quem administra o laboratório (config/app.admins) vira programador; o resto, só o programador cria
+      allow create: if (mrProg() && request.resource.data.papel in ['programador', 'enfermaria', 'faturamento'])
+                    || (logado() && request.auth.uid == uid && emailAdmin()
+                        && request.resource.data.papel == 'programador' && request.resource.data.ativo == true);
+      allow update: if (mrProg() && request.resource.data.papel in ['programador', 'enfermaria', 'faturamento'])
+                    || (logado() && request.auth.uid == uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ultimoAcesso']));
+      allow delete: if mrProg();
+    }
+    // pedido de acesso: quem tem login do Célula e ainda não tem papel no MedRim
+    match /medrim_pedidos/{uid} {
+      allow read, delete: if mrProg() || (logado() && request.auth.uid == uid);
+      allow create, update: if logado() && request.auth.uid == uid
+                    && request.resource.data.keys().hasOnly(['uid', 'email', 'nome', 'em'])
+                    && request.resource.data.uid == uid && request.resource.data.email == request.auth.token.email;
+    }
+    match /medrim_vagas/{id}     { allow read: if mrAtivo(); allow write: if mrEdita(); }
+    match /medrim_pacientes/{id} { allow read: if mrAtivo(); allow write: if mrEdita(); }
+    // estado do mês (referência, regras, importação) e etiquetas: programador · apelidos, travas, convênios, observações: quem edita
+    match /medrim_meta/{id} {
+      allow read: if mrAtivo();
+      allow write: if mrProg() || (mrEdita() && id in ['apelidos', 'travas', 'convenios', 'notas']);
+    }
+    // movimentações: só acrescenta
+    match /medrim_eventos/{mes} {
+      allow read: if mrAtivo();
+      allow create: if mrEdita() && request.resource.data.keys().hasOnly(['lista']) && request.resource.data.lista is list;
+      allow update: if mrEdita() && request.resource.data.keys().hasOnly(['lista']) && request.resource.data.lista.size() >= resource.data.lista.size();
+      allow delete: if false;
+    }
+    // resultados (TXT Nephrosys): o laboratório grava; todos os papéis leem e baixam
+    match /medrim_lotes/{id} { allow read: if mrAtivo(); allow write: if mrProg(); }
+    match /medrim_txt/{id}   { allow read: if mrAtivo(); allow write: if mrProg(); }
+    // entrada da integração (sistema do laboratório → MedRim)
+    match /medrim_entrada/{id} {
+      allow read, update, delete: if mrProg();
+      allow create: if mrProg() && request.resource.data.processado == false;
     }
 
     match /{document=**} { allow read, write: if false; }
