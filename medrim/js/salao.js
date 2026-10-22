@@ -514,38 +514,62 @@
         <div style="display:flex;flex-wrap:wrap;gap:8px">${Object.entries(M.CONTROLES).map(([k, c]) => `<label class="toggle" style="--cor:${c.cor}"><input type="checkbox" name="k_${k}" style="accent-color:${c.cor}"> ${c.rotulo}</label>`).join('')}</div>
         <div class="alerta-box info">${ic('info')}<div>Entra no <b>relatório de cadastro na posição desta máquina</b>, marcado como “sem pedido no CSV da Hiperrim”.${v.riscado ? ' O nome estava <b>riscado</b> no Word — cadastrar indica que o paciente continua.' : ''}</div></div>`,
       botoes: [{ rot: 'Cancelar' }, { rot: 'Cadastrar', cls: 'pri', ic: 'check', acao: f => {
-        const nome = f.nome.value.trim().replace(/\s+/g, ' ');
-        if (nome.split(' ').length < 2) return erroCampo(f, 'nome', 'Informe nome e sobrenome.');
-        const cpf = M.soDigitos(f.cpf.value);
-        if (cpf && !cpfValido(cpf)) return erroCampo(f, 'cpf', 'CPF inválido (confira os dígitos).');
-        const existe = cpf && E().pacientes[cpf];
-        if (existe && existe.origem === 'csv') return erroCampo(f, 'cpf', 'Este CPF já veio no CSV — use “Vincular”.');
-        if (existe && existe.vagaId && existe.vagaId !== v.id) return erroCampo(f, 'cpf', 'Este CPF já está em ' + A.local(A.vagaPor(existe.vagaId), true));
+        const dados = { nome: f.nome.value, cpf: f.cpf.value, nasc: f.nasc.value ? f.nasc.value.split('-').reverse().join('/') : '',
+          bateria: f.bat.value, controles: Object.fromEntries(Object.keys(M.CONTROLES).map(k => [k, f['k_' + k].checked])) };
+        const erro = validarSemPedido(v, dados);
+        if (erro) return erroCampo(f, erro.campo, erro.msg);
         A.marcar('cadastro sem pedido');
-        if (ant && ['escala', 'resultado'].includes(ant.origem)) delete E().pacientes[ant.id];
-        const id = cpf || uid();
-        const p = { id, cpf, nome: nome.toUpperCase(), nasc: f.nasc.value ? f.nasc.value.split('-').reverse().join('/') : '', codigo: '', origem: 'manual', semPedido: true,
-          bateriaManual: f.bat.value, status: 'ativo', controles: Object.fromEntries(Object.keys(M.CONTROLES).map(k => [k, f['k_' + k].checked])), vagaId: v.id, grupo: v.grupo, turno: v.turno };
-        E().pacientes[id] = p;
-        v.pacienteId = id; v.match = { conf: 'manual', score: null }; v.riscado = false;
-        delete E().outroLab[v.id];
-        E().apelidos[M.chaveApelido(v.nomeEscala, v.grupo, v.turno)] = id;
-        A.evento('cadastro', id, `Cadastrado sem pedido no CSV: ${p.nome} (${A.local(v, true)}) — bateria ${M.BATERIAS[p.bateriaManual].rotulo}`);
+        const p = criarSemPedido(v, dados);
         fechar(); A.salvar(); A.render(); flash([v.id]);
         A.toast(`${nomeCurto(p.nome)} entra no relatório · bateria ${M.BATERIAS[p.bateriaManual].rotulo}`, 'userplus', true);
       } }],
     });
   }
 
-  /** Tira o nome da escala (libera a máquina). Usado para limpar quem não deveria estar lá. */
-  function removerDaEscala(vagaId) {
-    const v = A.vagaPor(vagaId), p = A.pacDe(v);
-    const nome = A.nomeExibicao(v), onde = A.local(v, true);
-    A.marcar('remoção de ' + nome);
+  /** Confere os dados de um cadastro sem pedido. Devolve {campo, msg} ou null. Usado pelo modal e pela planilha de pendentes. */
+  function validarSemPedido(v, d) {
+    const nome = String(d.nome || '').trim().replace(/\s+/g, ' ');
+    if (nome.split(' ').length < 2) return { campo: 'nome', msg: 'Informe nome e sobrenome.' };
+    const cpf = M.soDigitos(d.cpf || '');
+    if (cpf && !cpfValido(cpf)) return { campo: 'cpf', msg: 'CPF inválido (confira os dígitos).' };
+    const existe = cpf && E().pacientes[cpf];
+    if (existe && existe.origem === 'csv') return { campo: 'cpf', msg: 'Este CPF já veio no CSV — use “Vincular”.' };
+    if (existe && existe.vagaId && existe.vagaId !== v.id) return { campo: 'cpf', msg: 'Este CPF já está em ' + A.local(A.vagaPor(existe.vagaId), true) };
+    if (d.bateria && !M.BATERIAS_MANUAIS.includes(d.bateria)) return { campo: 'bat', msg: 'Bateria inválida.' };
+    return null;
+  }
+
+  /** Grava o cadastro sem pedido na máquina v (sem desfazer/render: quem chama cuida disso). Dados já validados. */
+  function criarSemPedido(v, d) {
+    const ant = A.pacDe(v);
+    if (ant && ['escala', 'resultado'].includes(ant.origem)) delete E().pacientes[ant.id];
+    const cpf = M.soDigitos(d.cpf || ''), id = cpf || uid();
+    const padrao = M.BATERIAS_MANUAIS.includes(A.tipoRef()) ? A.tipoRef() : 'mensal';
+    const p = { id, cpf, nome: String(d.nome).trim().replace(/\s+/g, ' ').toUpperCase(), nasc: d.nasc || '', codigo: '', origem: 'manual', semPedido: true,
+      bateriaManual: d.bateria || padrao, status: 'ativo', controles: d.controles || { glic: false, cr: false, hbgl: false }, vagaId: v.id, grupo: v.grupo, turno: v.turno };
+    E().pacientes[id] = p;
+    v.pacienteId = id; v.match = { conf: 'manual', score: null }; v.riscado = false;
+    delete E().outroLab[v.id];
+    E().apelidos[M.chaveApelido(v.nomeEscala, v.grupo, v.turno)] = id;
+    A.evento('cadastro', id, `Cadastrado sem pedido no CSV: ${p.nome} (${A.local(v, true)}) — bateria ${M.BATERIAS[p.bateriaManual].rotulo}${d.origem ? ' · ' + d.origem : ''}`);
+    return p;
+  }
+
+  /** Esvazia a máquina (sem desfazer/render). */
+  function liberarVaga(v) {
+    const p = A.pacDe(v), nome = A.nomeExibicao(v), onde = A.local(v, true);
     if (p && ['escala', 'resultado'].includes(p.origem)) delete E().pacientes[p.id]; else if (p) p.vagaId = null;
     Object.assign(v, JSON.parse(JSON.stringify(VAZIO)));
     delete E().outroLab[v.id];
     A.evento('remocao', null, `Removido da escala: ${nome} (${onde}) — máquina livre`);
+    return { nome, onde };
+  }
+
+  /** Tira o nome da escala (libera a máquina). Usado para limpar quem não deveria estar lá. */
+  function removerDaEscala(vagaId) {
+    const v = A.vagaPor(vagaId);
+    A.marcar('remoção de ' + A.nomeExibicao(v));
+    const { nome, onde } = liberarVaga(v);
     A.salvar(); A.render();
     A.toast(`${nome} removido · ${onde} livre`, 'x', true);
   }
@@ -646,7 +670,7 @@
     setTimeout(() => ids.forEach(id => { const el = document.querySelector(`[data-vaga="${id}"]`); if (el) { el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); } }), 30);
   }
 
-  Object.assign(A, { abrirFicha, fechar, abrirModal, abrirFerramenta, confirmarVinculo, trocarVinculo, registrarSaida, transferir, modalVincular, garantirPaciente, moverOcupante: mover, cadastrarSemPedido, removerDaEscala });
+  Object.assign(A, { abrirFicha, fechar, abrirModal, abrirFerramenta, confirmarVinculo, trocarVinculo, registrarSaida, transferir, modalVincular, garantirPaciente, moverOcupante: mover, cadastrarSemPedido, removerDaEscala, validarSemPedido, criarSemPedido, liberarVaga });
   A.views.vSalao = vSalao;
   A.ligar.salao = ligarSalao;
 })(window.MED = window.MED || {});

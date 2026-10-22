@@ -90,8 +90,9 @@
         selecionados.clear();
         location.hash = '#/painel';
         if (r.lista) {
-          const l = r.lista, prob = l.naoEncontrados.length + l.vagaInexistente.length;
-          A.toast(`Lista conferida: ${l.confirmados} confirmados${l.movidos ? ` · ${l.movidos} mudaram de máquina` : ''}${prob ? ` · ${prob} linhas com problema (ver Movimentações)` : ''}`, 'check');
+          const l = r.lista, prob = l.problemas;
+          if (l.pendentes) { location.hash = '#/sync'; A.toast(`Pendentes: ${l.cadastrados} cadastrados · ${l.excluidos} excluídos · ${l.outroLab} outro lab · ${l.aguardando} sem preencher${prob ? ` · ${prob} recusadas (ver Movimentações)` : ''}`, 'check'); }
+          else A.toast(`Lista conferida: ${l.confirmados} confirmados${l.movidos ? ` · ${l.movidos} mudaram de máquina` : ''}${prob ? ` · ${prob} linhas com problema (ver Movimentações)` : ''}`, 'check');
         } else A.toast(`${r.alta} casados automaticamente · ${r.revisar.length + r.semCsv.length + r.foraDoBolsao.length + r.csvSemVaga.length} para conferir`, 'sync');
       } catch (err) {
         console.error(err); A.toast(err.message || 'Falha ao importar', 'alert'); btn.disabled = false; btn.innerHTML = `${ic('sync')} Importar e sincronizar`;
@@ -121,9 +122,11 @@
     const linhas = await M.lerPlanilhaXlsx(xlsx);
     const st = E();
     A.marcar('lista conferida');
-    const res = { confirmados: 0, movidos: 0, semPosicao: 0, naoEncontrados: [], vagaInexistente: [], repetidos: [] };
+    const res = { confirmados: 0, movidos: 0, semPosicao: 0, naoEncontrados: [], vagaInexistente: [], repetidos: [],
+      pendentes: 0, cadastrados: 0, excluidos: 0, outroLab: 0, aguardando: 0, recusados: [] };
     const usados = {};
     for (const l of linhas) {
+      if (l.pendente) { aplicarPendente(l, res, usados); continue; }
       const p = st.pacientes[l.cpf];
       if (!p) { res.naoEncontrados.push(`${l.nome || l.cpf} (linha ${l.linha})`); continue; }
       if (!l.salao || !l.grupo || !l.turno || !l.maq) { res.semPosicao++; continue; }
@@ -148,11 +151,41 @@
       if (alvo.nomeEscala) st.apelidos[M.chaveApelido(alvo.nomeEscala, alvo.grupo, alvo.turno)] = p.id;
       res.confirmados++;
     }
-    const prob = [...res.naoEncontrados.map(x => 'CPF não está nos CSVs: ' + x), ...res.vagaInexistente.map(x => 'Máquina não existe na escala: ' + x), ...res.repetidos.map(x => 'Repetido: ' + x)];
-    prob.slice(0, 30).forEach(t => A.evento('vinculo', null, t));
-    A.evento('vinculo', null, `Lista conferida aplicada (${xlsx.name}): ${res.confirmados} confirmados${res.movidos ? ` · ${res.movidos} mudaram de máquina` : ''}${res.semPosicao ? ` · ${res.semPosicao} sem posição na planilha` : ''}${prob.length ? ` · ${prob.length} problemas` : ''}`);
+    const prob = [...res.naoEncontrados.map(x => 'CPF não está nos CSVs: ' + x), ...res.vagaInexistente.map(x => 'Máquina não existe na escala: ' + x), ...res.repetidos.map(x => 'Repetido: ' + x), ...res.recusados];
+    res.problemas = prob.length;
+    prob.slice(0, 40).forEach(t => A.evento('vinculo', null, t));
+    if (res.pendentes) A.evento('vinculo', null, `Planilha de pendentes aplicada (${xlsx.name}): ${res.cadastrados} cadastrados · ${res.excluidos} excluídos · ${res.outroLab} outro lab · ${res.aguardando} continuam pendentes${prob.length ? ` · ${prob.length} linhas recusadas` : ''}`);
+    else A.evento('vinculo', null, `Lista conferida aplicada (${xlsx.name}): ${res.confirmados} confirmados${res.movidos ? ` · ${res.movidos} mudaram de máquina` : ''}${res.semPosicao ? ` · ${res.semPosicao} sem posição na planilha` : ''}${prob.length ? ` · ${prob.length} problemas` : ''}`);
     A.salvar();
     return res;
+  }
+
+  /** Uma linha da planilha de pendentes: a máquina é a chave; a coluna Ação decide (em branco + nome = cadastrar). */
+  function aplicarPendente(l, res, usados) {
+    res.pendentes++;
+    const st = E(), ond = `${l.nomeEscala} (linha ${l.linha})`;
+    const recusa = msg => res.recusados.push(`Linha ${l.linha} · ${l.nomeEscala}: ${msg}`);
+    if (!l.salao || !l.grupo || !l.turno || !l.maq) return recusa('sem Salão/Dias/Turno/Equipamento');
+    const v = st.vagas.find(x => x.salao === l.salao && x.grupo === l.grupo && x.turno === l.turno && x.maq === l.maq);
+    if (!v) return res.vagaInexistente.push(`${ond}: Salão ${l.salao} · ${M.GRUPOS[l.grupo].curto} · ${A.rotTurno(l.turno)} · Máq ${l.maq}`);
+    // a máquina precisa ter o mesmo nome da escala de quando a planilha foi gerada (protege contra escala reimportada/alterada)
+    if (l.acao === 'excluir' && !v.nomeEscala && !v.pacienteId) return;   // já excluído numa importação anterior
+    if (M.norm(v.nomeEscala) !== M.norm(l.nomeEscala)) return recusa(`a máquina agora está com “${v.nomeEscala || 'vazia'}” — nada mudou`);
+    const atual = A.pacDe(v);
+    if (atual && !['escala', 'resultado'].includes(atual.origem)) { if (l.acao !== 'excluir') return; }   // já resolvido (CSV ou cadastrado antes)
+    const acao = l.acao || (l.nome ? 'cadastrar' : '');
+    if (!acao) { res.aguardando++; return; }
+    if (acao === 'excluir') { A.liberarVaga(v); res.excluidos++; return; }
+    if (acao === 'outrolab') { st.outroLab[v.id] = true; res.outroLab++; return; }
+    if (l.cpf) {
+      if (usados['cpf:' + l.cpf]) return recusa(`CPF repetido (também na linha ${usados['cpf:' + l.cpf]})`);
+      usados['cpf:' + l.cpf] = l.linha;
+    }
+    const dados = { nome: l.nome, cpf: l.cpf, nasc: l.nasc, bateria: l.bateria, origem: 'planilha de pendentes' };
+    const erro = A.validarSemPedido(v, dados);
+    if (erro) return recusa(erro.msg);
+    A.criarSemPedido(v, dados);
+    res.cadastrados++;
   }
 
   async function importar(files) {

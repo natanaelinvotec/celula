@@ -13,7 +13,7 @@
 
   M.limparTags = t => (t || '').replace(TAGS, ' ').replace(/[()_]/g, ' ').replace(/\s+/g, ' ').trim();
 
-  /** "MªMadalenaP.Silva" → ["MARIA","MADALENA","P","SILVA"] (sem preposições) */
+  /** "MªJoséP.Souza" → ["MARIA","JOSE","P","SOUZA"] (sem preposições) */
   M.tokensAbrev = function (bruto) {
     let s = M.limparTags(bruto)
       .replace(/Apd?ª|Apda(?![a-zà-ÿ])/g, 'Aparecida ')
@@ -72,7 +72,7 @@
       let best = Math.max(go(i, j + 1), go(i + 1, j));
       const a = A[i];
       if (!PARADAS.has(F[j])) { const s = simToken(a, F[j]); if (s) best = Math.max(best, s + go(i + 1, j + 1)); }
-      if (a.length >= 5) {                                          // nomes colados: ALANKARDEC, OSVALDODA
+      if (a.length >= 5) {                                          // nomes colados: JOAOPEDRO, ANADA
         let cat = F[j];
         for (let t = j + 1; t < Math.min(F.length, j + 3); t++) {
           cat += F[t];

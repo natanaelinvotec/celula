@@ -161,6 +161,22 @@
   const SS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
   const colIdx = ref => { let n = 0; for (const ch of ref.replace(/\d+/g, '')) n = n * 26 + ch.charCodeAt(0) - 64; return n - 1; };
   /** Lê a planilha "Lista de pacientes" (Nome, CPF, Salão, Dias, Turno, Equipamento) → linhas para aplicar na escala. */
+  /** Data vinda da planilha → 'dd/mm/aaaa' ('' se vazia ou ilegível). O Excel grava datas como número serial (dias desde 30/12/1899). */
+  function dataPlanilha(v) {
+    const s = String(v == null ? '' : v).trim();
+    if (!s) return '';
+    let d = null;
+    if (/^\d+(\.\d+)?$/.test(s) && +s > 1000) d = new Date(Date.UTC(1899, 11, 30) + Math.floor(+s) * 864e5);
+    else {
+      const m = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})$/) || null, iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (m) { const a = +m[3] < 100 ? 1900 + +m[3] : +m[3]; d = new Date(Date.UTC(a, +m[2] - 1, +m[1])); if (d.getUTCDate() !== +m[1]) d = null; }
+      else if (iso) d = new Date(Date.UTC(+iso[1], +iso[2] - 1, +iso[3]));
+    }
+    if (!d || isNaN(d)) return '';
+    const p = n => String(n).padStart(2, '0');
+    return `${p(d.getUTCDate())}/${p(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}`;
+  }
+
   M.lerPlanilhaXlsx = async function (arquivo) {
     const ler = await abrirZip(await arquivo.arrayBuffer());
     const dp = x => new DOMParser().parseFromString(x, 'application/xml');
@@ -191,15 +207,30 @@
     if (iCab < 0) throw new Error(arquivo.name + ': não achei a coluna CPF.');
     const cab = linhas[iCab].map(x => M.norm(x || ''));
     const col = nome => cab.findIndex(h => h === nome || h.startsWith(nome));
-    const c = { nome: col('NOME'), cpf: col('CPF'), salao: col('SALAO'), dias: col('DIAS'), turno: col('TURNO'), maq: col('EQUIPAMENTO') >= 0 ? col('EQUIPAMENTO') : col('MAQ') };
+    const escala = col('NOME NA ESCALA');
+    const c = {
+      nome: col('NOME COMPLETO') >= 0 ? col('NOME COMPLETO') : cab.findIndex((h, i) => i !== escala && h.startsWith('NOME')),
+      escala, cpf: col('CPF'), salao: col('SALAO'), dias: col('DIAS'), turno: col('TURNO'),
+      maq: col('EQUIPAMENTO') >= 0 ? col('EQUIPAMENTO') : col('MAQ'),
+      nasc: col('DATA DE NASC') >= 0 ? col('DATA DE NASC') : col('NASC'), bat: col('BATERIA'), acao: col('ACAO'),
+    };
+    // planilha de pendentes (nomes da escala sem pedido no CSV): cada linha é uma máquina, não um CPF do CSV
+    const pendentes = c.escala >= 0 || c.acao >= 0;
     const res = [];
     linhas.slice(iCab + 1).forEach((l, k) => {
-      const cpf = M.soDigitos(l[c.cpf]).padStart(11, '0');
-      if (!l[c.cpf] || cpf === '00000000000') return;
+      const cpfBruto = M.soDigitos(String(l[c.cpf] == null ? '' : l[c.cpf]));
+      const cpf = cpfBruto ? cpfBruto.padStart(11, '0') : '';
+      const acaoT = M.norm(c.acao >= 0 ? l[c.acao] || '' : '');
+      const acao = /^CADAST/.test(acaoT) ? 'cadastrar' : /^OUTRO/.test(acaoT) ? 'outrolab' : /^EXCLU|^REMOV/.test(acaoT) ? 'excluir' : '';
+      const nomeEscala = c.escala >= 0 ? String(l[c.escala] || '').trim() : '';
+      if (pendentes ? !nomeEscala : (!cpf || cpf === '00000000000')) return;
       const dias = M.norm(l[c.dias] || ''), turno = M.norm(l[c.turno] || ''), maqT = String(l[c.maq] == null ? '' : l[c.maq]).trim();
       const hdf = maqT.toUpperCase().match(/HDF\s*(\d)/);
+      const batT = M.norm(c.bat >= 0 ? l[c.bat] || '' : '');
       res.push({
-        linha: iCab + k + 2, nome: (l[c.nome] || '').trim(), cpf,
+        linha: iCab + k + 2, nome: String(l[c.nome] || '').trim().replace(/\s+/g, ' '), cpf,
+        pendente: pendentes, nomeEscala, acao, nasc: dataPlanilha(c.nasc >= 0 ? l[c.nasc] : ''),
+        bateria: /^TRI/.test(batT) ? 'trimestral' : /^SEM/.test(batT) ? 'semestral' : /^MEN/.test(batT) ? 'mensal' : '',
         salao: parseInt(l[c.salao], 10) || null,
         grupo: /SEG/.test(dias) ? 'SQS' : /TER/.test(dias) ? 'TQS' : null,
         turno: /MANH|^1/.test(turno) ? 'M' : /TARD|^2/.test(turno) ? 'T' : /NOIT|^3/.test(turno) ? 'N' : null,
