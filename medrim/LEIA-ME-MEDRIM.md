@@ -41,7 +41,12 @@ Pasta para o repositório `celula`. Depois de enviada, a página fica em **`celu
 5. **Lista conferida (.xlsx)** → a planilha “Lista de pacientes” (Nome, CPF, Salão, Dias, Turno, Equipamento)
    pode ser solta junto com os arquivos, ou sozinha depois: o MedRim coloca cada CPF na máquina indicada,
    confirma o vínculo e lembra nos próximos meses. Linhas com máquina inexistente aparecem em Movimentações.
-6. **Backup (JSON)** → guarda o estado (contém dados pessoais: salve em local seguro, fora do GitHub).
+6. **Planilha de pendentes (.xlsx)** → os nomes da escala sem pedido no CSV, com colunas Nome na escala, Nome completo,
+   CPF, Data de nascimento, Bateria e Ação (Cadastrar / Outro lab / Excluir). Solte a planilha preenchida em
+   **Importar arquivos**: a máquina é a chave (Salão + Dias + Turno + Equipamento + Nome na escala). Ação em branco com
+   nome preenchido = cadastrar; sem nome = continua pendente. Linhas com CPF inválido/repetido ou máquina que mudou são
+   recusadas e aparecem em Movimentações. Reenviar a mesma planilha não duplica nada.
+7. **Backup (JSON)** → guarda o estado (contém dados pessoais: salve em local seguro, fora do GitHub).
    Para levar tudo para outro computador: **Importar arquivos → Restaurar backup**.
 
 ## Resultados (TXT padrão Nephrosys)
