@@ -47,15 +47,19 @@ export function exigirLogin({ papel } = {}) {
       if (!user) { location.replace('login.html?next=' + encodeURIComponent(location.pathname.split('/').pop())); return; }
       let perfil = (await getDoc(doc(db, 'usuarios', user.uid))).data();
       if (!perfil) {
-        // primeiro acesso: cria o perfil; admin se o e-mail estiver na lista config/app.admins
+        // Sem perfil = não foi cadastrado pela gestão (ex.: login criado em outro sistema do mesmo projeto, como o MedRim).
+        // Só o e-mail listado em config/app.admins ganha perfil sozinho (primeiro admin); os demais são barrados.
         const cfg = (await getDoc(doc(db, 'config', 'app'))).data() || {};
         const isAdmin = (cfg.admins || []).map(e => e.toLowerCase()).includes((user.email || '').toLowerCase());
-        perfil = { uid: user.uid, nome: user.displayName || user.email.split('@')[0], email: user.email, papel: isAdmin ? 'admin' : 'atendente', unidade: cfg.unidadePadrao || 'Coophavila', ativo: true, criadoEm: serverTimestamp() };
+        if (!isAdmin) { await signOut(auth); location.replace('login.html?semacesso=1'); return; }
+        perfil = { uid: user.uid, nome: user.displayName || user.email.split('@')[0], email: user.email, papel: 'admin', unidade: cfg.unidadePadrao || 'Coophavila', ativo: true, criadoEm: serverTimestamp() };
         await setDoc(doc(db, 'usuarios', user.uid), perfil);
       }
       if (perfil.ativo === false) { await signOut(auth); location.replace('login.html?inativo=1'); return; }
       if (papel === 'admin' && perfil.papel !== 'admin') { location.replace('orcamento.html'); return; }
       updateDoc(doc(db, 'usuarios', user.uid), { ultimoAcesso: serverTimestamp() }).catch(() => {});
+      // se o login mudar no meio do uso (outra aba saiu/entrou com outro usuário), recarrega em vez de seguir com o perfil antigo
+      onAuthStateChanged(auth, u => { if (!u || u.uid !== user.uid) location.replace('login.html?next=' + encodeURIComponent(location.pathname.split('/').pop())); });
       resolve({ user, perfil: { ...perfil, uid: user.uid } });
     });
   });
