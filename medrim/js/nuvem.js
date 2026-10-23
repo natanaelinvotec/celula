@@ -38,7 +38,8 @@ const PAPEIS = {
 };
 M.PAPEIS = PAPEIS;
 
-const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+// Sessão própria do MedRim (app com nome): o login daqui não troca nem derruba o login do sistema de orçamentos (/app), que usa o app padrão no mesmo domínio.
+const app = getApps().find(a => a.name === 'medrim') || initializeApp(firebaseConfig, 'medrim');
 const auth = getAuth(app);
 let db;
 try { db = initializeFirestore(app, { ignoreUndefinedProperties: true }); } catch (e) { db = getFirestore(app); }
