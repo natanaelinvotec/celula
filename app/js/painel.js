@@ -182,6 +182,9 @@ async function viewIA() {
 }
 
 // ===================== SOLICITAÇÕES =====================
+/** Cadastro do AutoLAC (data/autolac.json) por mnemônico — fonte da verdade para setor e prazo. Carrega uma vez; se falhar, o formulário segue sem sugestão. */
+let _al = null;
+const autolacMap = () => _al ||= fetch('data/autolac.json').then(r => r.json()).then(j => Object.fromEntries(j.exames.map(e => [e.m, e]))).catch(() => (_al = null, {}));
 async function viewSol() {
   const convs = await D.convenios();
   root.innerHTML = `<div class="sol"><div class="card"><div class="card-h"><h2>Fila de conferência</h2><span class="pill warn" id="solN"><i></i></span><div class="sp"></div><div class="tabs"><button class="pill on" data-tab="pendente">Pendentes</button><button class="pill" data-tab="aprovada">Aprovadas</button><button class="pill" data-tab="recusada">Recusadas</button></div></div><div class="card-b"><div class="solq" id="solq"></div></div></div>
@@ -206,6 +209,7 @@ async function viewSol() {
     }
     if (s.status !== 'pendente') { $('solForm').innerHTML = `<div class="note">Solicitação ${s.status}${s.mnemonico ? ' como <b>' + s.mnemonico + '</b>' : ''}${s.motivo ? ' — motivo: ' + escapeHtml(s.motivo) : ''}.</div>`; return; }
     const g = s.guiaDb; const at = s.sugestao || {}; // at = o que a atendente preencheu
+    const AL = await autolacMap();
     const sug = at.mnemonico || g?.mnemonico || (norm(at.nome || s.normalizadoIA || s.textoLido).split(' ').map(w => w.slice(0, 3)).join('').slice(0, 8) + '-DB');
     const conv = s.convenio; const nomeConv = D.nomeConv(convs.find(c => c.slug === conv)) || conv;
     const vConv = at.valor != null ? at.valor : ''; const vPart = conv === 'particular' && at.valor != null ? at.valor : '';
@@ -215,15 +219,19 @@ async function viewSol() {
       ${s.sugestao ? `<div class="full note" style="background:var(--warn-50);border:1px solid var(--warn);border-radius:8px;padding:8px 10px"><b>Preenchido pela atendente ${escapeHtml(primeiroNome(s.atendenteNome))}:</b> ${[at.nome && 'nome ' + escapeHtml(at.nome), at.mnemonico && 'mnemônico ' + escapeHtml(at.mnemonico), at.prazoDias != null && 'prazo ' + at.prazoDias + ' d.u.', at.valor != null && 'valor ' + brl(at.valor), at.obs && 'obs: ' + escapeHtml(at.obs)].filter(Boolean).join(' · ')} — confira e complete o que faltar.</div>` : ''}
       <label class="f full">Nome do exame *<input class="in" id="apNome" value="${escapeHtml(at.nome || g?.nome || s.normalizadoIA || s.textoLido)}"></label>
       <label class="f">Mnemônico AutoLAC *<input class="in" id="apM" value="${escapeHtml(sug)}" style="font-family:ui-monospace,monospace;text-transform:uppercase"></label>
-      <label class="f">Setor<select class="in" id="apSet">${SETOR_ORDEM.map(x => `<option ${x === (g?.setor || s.setorSugerido) ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
-      <label class="f">Prazo Célula (dias úteis) *<input class="in" type="number" min="0" id="apP" value="${at.prazoDias ?? g?.prazoDias ?? ''}"></label>
+      <label class="f">Setor<select class="in" id="apSet">${SETOR_ORDEM.map(x => `<option ${x === (AL[sug]?.setor || g?.setor || s.setorSugerido) ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
+      <label class="f">Prazo Célula (dias úteis) *<input class="in" type="number" min="0" id="apP" value="${AL[sug]?.prazoDias ?? at.prazoDias ?? g?.prazoDias ?? ''}"></label>
       <label class="f">Código TUSS<input class="in" id="apTuss" placeholder="opcional"></label>
+      <div class="full note" id="apAL"></div>
       <label class="f">Valor PARTICULAR (R$) *<input class="in" type="number" step="0.01" min="0" id="apV1" value="${vPart}"></label>
       <label class="f">Valor ${escapeHtml(nomeConv)} (R$)${conv === 'particular' ? '' : ' *'}<input class="in" type="number" step="0.01" min="0" id="apV2" value="${conv === 'particular' ? '' : vConv}" ${conv === 'particular' ? 'disabled placeholder="mesmo que o particular"' : ''}></label>
       <label class="f full">Outras grafias que a IA deve reconhecer (separe por vírgula)<input class="in" id="apAp" value="${escapeHtml(s.normalizadoIA && s.normalizadoIA !== s.textoLido ? s.normalizadoIA : '')}"></label>
       <div class="full" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn ok" id="apOk">✓ Aprovar e devolver ao orçamento</button><button class="btn ghost" id="apNo">Recusar</button><input class="in" id="apMotivo" placeholder="motivo da recusa (opcional)" style="flex:1;min-width:160px"></div>
       <div class="full note">A atendente vê a atualização em tempo real; o exame entra no catálogo e as grafias viram apelidos.</div></div>`;
     if ($('fotoSol')) $('fotoSol').querySelectorAll('img').forEach(im => { const w = document.createElement('div'); w.style.width = '200px'; im.replaceWith(w); w.appendChild(im); fotoZoom(w); });
+    // mostra o que o AutoLAC diz do mnemônico e preenche setor/prazo (evita aprovar exame da Célula como DB)
+    const alInfo = () => { const a = AL[$('apM').value.trim().toUpperCase()]; $('apAL').innerHTML = a ? `AutoLAC: <b>${escapeHtml(SETORES[a.setor]?.label || a.setor || '—')}</b> · prazo ${a.prazoDias ?? '—'} d.u.${a.bancada ? ' · ' + escapeHtml(a.bancada) : ''}` : 'Mnemônico não encontrado no AutoLAC — confira setor e prazo antes de aprovar.'; if (a?.setor && SETOR_ORDEM.includes(a.setor)) $('apSet').value = a.setor; if (a?.prazoDias != null) $('apP').value = a.prazoDias; };
+    alInfo(); $('apM').addEventListener('change', alInfo);
     $('apOk').onclick = async () => {
       const mnemonico = $('apM').value.trim().toUpperCase(), nome = $('apNome').value.trim().toUpperCase(), prazoDias = parseInt($('apP').value), v1 = parseFloat($('apV1').value), v2 = parseFloat($('apV2').value);
       if (!mnemonico || !nome || isNaN(prazoDias) || isNaN(v1) || (conv !== 'particular' && isNaN(v2))) { toast('Preencha mnemônico, nome, prazo e valores.'); return; }
