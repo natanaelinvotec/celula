@@ -3,7 +3,10 @@
      (em produção, funcionando). O MedRim usa exatamente esses códigos — não a tabela do manual do Nephrosys.
    - M.RES: como cada código do TXT é interpretado (nome, unidade, alvo, grupo) e de qual exame da bateria vem (ex).
      Conferido valor a valor: laudo completo de uma bateria anual (dez/2025) × TXT do mesmo paciente —
-     os 28 exames do laudo batem com 47 códigos do TXT. "inferido" = não dava para conferir no laudo (motivo).
+     os 28 exames do laudo batem com 47 códigos do TXT — e laudo de bateria mensal (out/2026): Hb e Ht avulsos
+     saem como 010/011 (no hemograma completo, 016/017). "inferido" = não dava para conferir no laudo (motivo).
+   - alias: código que é o mesmo parâmetro de outro (010 → 016, 011 → 017). Na leitura do TXT o valor entra no
+     código canônico, para o histórico do paciente ficar numa linha só; o arquivo TXT não é alterado.
    - quali: resultado em texto. 'positivo' → "Reagente" é crítico (HBsAg, anti-HCV, HIV: isolamento/conduta);
      'protecao' → "Não reagente" é baixo (anti-HBs sem proteção: vacinar).
    - Alvos: sugestão baseada em KDIGO/KDOQI para hemodiálise — VALIDAR com o nefrologista responsável. */
@@ -30,8 +33,10 @@
     '021': { nome: 'Fosfatase alcalina', curto: 'FAL', un: 'U/L', grupo: 'osso', ref: [40, 130], ex: ['FAL-DB'] },
     '068': { nome: 'Vitamina D (25-hidroxi)', curto: 'Vit D', un: 'ng/mL', grupo: 'osso', ref: [30, 100], ex: ['VITD25-DB'] },
     '041': { nome: 'Alumínio sérico', curto: 'Al', un: 'µg/L', grupo: 'osso', ref: [null, 20], crit: [null, 60], ex: ['AL-HP'] },
-    '016': { nome: 'Hemoglobina', curto: 'Hb', un: 'g/dL', grupo: 'anemia', ref: [10, 12], crit: [7, null], ex: ['HB', 'HEM'] },
-    '017': { nome: 'Hematócrito', curto: 'Ht', un: '%', grupo: 'anemia', ref: [30, 36], ex: ['HT', 'HEM'] },
+    '016': { nome: 'Hemoglobina', curto: 'Hb', un: 'g/dL', grupo: 'anemia', ref: [10, 12], crit: [7, null], ex: ['HEM'] },
+    '017': { nome: 'Hematócrito', curto: 'Ht', un: '%', grupo: 'anemia', ref: [30, 36], ex: ['HEM'] },
+    '010': { nome: 'Hemoglobina (exame avulso)', curto: 'Hb', un: 'g/dL', grupo: 'anemia', ref: [10, 12], crit: [7, null], ex: ['HB'], alias: '016' },
+    '011': { nome: 'Hematócrito (exame avulso)', curto: 'Ht', un: '%', grupo: 'anemia', ref: [30, 36], ex: ['HT'], alias: '017' },
     '022': { nome: 'Ferro sérico', curto: 'Fe', un: 'µg/dL', grupo: 'anemia', ref: [50, 170], ex: ['FE-DB', 'CAPAT-DB'] },
     '023': { nome: 'Cap. total de ligação do ferro', curto: 'CTLF', un: 'µg/dL', grupo: 'anemia', ref: [250, 450], ex: ['CAPAT-DB'] },
     '030': { nome: 'Saturação da transferrina (IST)', curto: 'IST', un: '%', grupo: 'anemia', ref: [20, 50], ex: ['CAPAT-DB'] },
@@ -133,11 +138,24 @@
     return 'ok';
   };
 
+  /** Códigos-alias → código canônico (mesmo parâmetro). Usado na leitura do TXT e ao carregar lotes antigos. */
+  M.canonico = cod => (M.RES[cod] && M.RES[cod].alias) || cod;
+  M.aliasarValores = function (v) {
+    if (!v) return v;
+    Object.keys(v).forEach(k => {
+      const d = M.canonico(k); if (d === k) return;
+      if (!v[d]) v[d] = Object.assign({}, v[k], { orig: k });
+      delete v[k];
+    });
+    return v;
+  };
+
   /** Situação do código do TXT na conferência laudo × TXT */
   M.conferencia = function (cod) {
     const r = M.RES[cod];
     if (!r) return { st: 'desconhecido', txt: 'Código não interpretado' };
     if (r.inferido) return { st: 'inferido', txt: r.motivo || 'Deduzido pelos valores do arquivo' };
+    if (r.alias) return { st: 'conferido', txt: `Laudo × TXT · no histórico entra junto com o ${r.alias}` };
     return { st: 'conferido', txt: 'Laudo × TXT' };
   };
 })(window.MED = window.MED || {});

@@ -45,7 +45,11 @@
   const arm = () => A.armazem || A.armazemLocal;
   const ordenar = () => R.lotes.sort((a, b) => b.competencia.localeCompare(a.competencia) || b.importadoEm.localeCompare(a.importadoEm));
   A.carregarResultados = async function () {
-    try { R.lotes = (await arm().carregar()) || []; ordenar(); }
+    try {
+      R.lotes = (await arm().carregar()) || [];
+      R.lotes.forEach(l => Object.values(l.pacientes || {}).forEach(p => { M.aliasarValores(p.valores); (p.coletas || []).forEach(co => M.aliasarValores(co.valores)); }));
+      ordenar();
+    }
     catch (e) { R.ok = false; console.warn('Armazenamento de resultados indisponível', e); }
   };
 
@@ -81,7 +85,8 @@
       } else if (c[0] === '02') {
         if (!atual) return av('orfao', `Linha ${i + 1}: resultado antes de qualquer paciente`);
         const cod = (c[2] || '').trim(), v = M.numBr(c[3]);
-        atual.valores[cod] = { t: (c[3] || '').trim(), n: v.n, op: v.op, abs: (c[4] || '').trim() || null };
+        const dest = M.canonico(cod);
+        atual.valores[dest] = Object.assign({ t: (c[3] || '').trim(), n: v.n, op: v.op, abs: (c[4] || '').trim() || null }, dest !== cod ? { orig: cod } : {});
         codigos[cod] = (codigos[cod] || 0) + 1; nRes++;
         if (v.op) av('texto', `${pAtual.nome}: ${M.defRes(cod).nome} = “${c[3].trim()}”`, pAtual.chave);
       } else av('tipo', `Linha ${i + 1}: registro “${c[0]}” desconhecido`);
@@ -165,13 +170,13 @@
     inp.onchange = () => inp.files[0] && cb(inp.files[0]);
     inp.click();
   }
-  async function previaImportacao(arquivo) {
+  async function previaImportacao(arquivo, compForcada) {
     const buf = await arquivo.arrayBuffer();
     let r;
     try { r = M.lerTxtResultados(buf); } catch (e) { return A.toast('Não consegui ler este TXT: ' + e.message, 'alert'); }
     const nPac = Object.keys(r.pacientes).length;
     if (!nPac) return A.toast('Nenhum registro 01 (paciente) encontrado — é o TXT de resultados?', 'alert');
-    const comp = adivinharCompetencia(arquivo.name, r.datas);
+    const palpite = adivinharCompetencia(arquivo.name, r.datas), comp = compForcada || palpite;
     const P = E() ? E().pacientes : {};
     const naEscala = Object.values(r.pacientes).filter(p => (p.cpf && P[p.cpf]) || Object.values(P).some(x => M.norm(x.nome) === M.norm(p.nome))).length;
     const porTipo = {}; r.avisos.forEach(a => { porTipo[a.tipo] = (porTipo[a.tipo] || 0) + 1; });
@@ -190,6 +195,7 @@
         </div>
         <div style="font-size:13px;color:var(--muted);font-weight:700">Coletas: ${Object.entries(r.datas).sort().map(([d, n]) => `${fmtData(d)} (${n})`).join(' · ')}</div>
         <label class="f">Competência (bateria a que estes resultados pertencem)<select name="comp">${opts.sort().reverse().map(c => `<option value="${c}" ${c === comp ? 'selected' : ''}>${rotComp(c)} · ${tipoComp(c).rotulo}</option>`).join('')}</select></label>
+        ${compForcada && palpite !== compForcada ? `<div class="alerta-box">${ic('alert')}<div>Você escolheu ${rotComp(compForcada)} na régua, mas pelo ${/[A-Z]{3}[^0-9]*\d{4}/i.test(arquivo.name) ? 'nome do arquivo' : 'dia da coleta'} ele parece ser de <b>${rotComp(palpite)}</b>. Confira a competência acima.</div></div>` : ''}
         ${R.lotes.some(l => l.competencia === comp) ? `<div class="alerta-box">${ic('alert')}<div>Já existe um lote de ${rotComp(comp)}. Importar de novo <b>substitui</b> esse lote (o histórico dos outros meses fica).</div></div>` : ''}
         ${r.avisos.length ? `<div class="alerta-box">${ic('alert')}<div><b>Checagem do arquivo:</b> ${Object.entries(porTipo).map(([t, n]) => `${n} ${rotAv[t] || t}`).join(' · ')}. Os detalhes ficam na aba Arquivos TXT.</div></div>` : `<div class="alerta-box ok">${ic('check')}<div>Arquivo consistente.</div></div>`}
         ${R.ok ? '' : `<div class="alerta-box">${ic('alert')}<div>Este navegador bloqueou o armazenamento local (IndexedDB): os resultados ficam só até fechar a página.</div></div>`}`,
@@ -315,6 +321,148 @@
     return { lote, n: ls.length, crit: ls.filter(l => l.crit.length || l.aviso).length, urrMed: urr.length ? Math.round(urr.reduce((a, b) => a + b, 0) / urr.length * 10) / 10 : null, hb: pctNaMeta(ls, '016') };
   };
 
+  // ================= RÉGUA DO HISTÓRICO (onda senoidal) =================
+  // Cada mês é um ponto que "surfa" uma onda y = A·sen(2πx/λ − 2πt/T). Cheio = TXT carregado; vazio = falta.
+  // Os números abaixo precisam bater com o CSS (.regua .onda e @keyframes regua-sen).
+  const RG = { slot: 66, pad: 40, y0: 44, amp: 9, lambda: 264, periodo: 7 };
+  const compDe = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const somaMes = (c, k) => { const [a, m] = c.split('-').map(Number); return compDe(new Date(a, m - 1 + k, 1)); };
+  const MES_CURTO = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+  function fimRegua() {
+    const comps = R.lotes.map(l => l.competencia).sort();
+    const ref = E() && E().ref ? `${E().ref.ano}-${String(E().ref.mes).padStart(2, '0')}` : compDe(new Date());
+    return [compDe(new Date()), ref, comps[comps.length - 1] || ''].sort().pop();
+  }
+  function mesesRegua() {
+    const fim = fimRegua(), comps = R.lotes.map(l => l.competencia).sort();
+    let ini = somaMes(fim, -23);
+    if (comps.length && comps[0] < ini) ini = comps[0];
+    const out = []; for (let c = ini; c <= fim; c = somaMes(c, 1)) out.push(c);
+    return out;
+  }
+  function caminhoOnda(w, fase) {
+    const p = []; for (let x = -RG.lambda; x <= w + RG.lambda; x += 6) p.push(`${x},${(RG.y0 + RG.amp * Math.sin(2 * Math.PI * x / RG.lambda + fase)).toFixed(1)}`);
+    return 'M' + p.join(' L');
+  }
+  function htmlRegua(compAtual) {
+    const meses = mesesRegua(), prog = A.ehProgramador();
+    const w = RG.pad * 2 + RG.slot * (meses.length - 1);
+    const porComp = Object.fromEntries(R.lotes.map(l => [l.competencia, l]));
+    const atraso = x => { const fr = ((x / RG.lambda) % 1 + 1) % 1; return -((RG.periodo * (1 - fr)) % RG.periodo); };
+    const pontos = meses.map((c, i) => {
+      const x = RG.pad + i * RG.slot, l = porComp[c], t = tipoComp(c), [a, m] = c.split('-').map(Number);
+      const tit = l ? `${rotComp(c)} · bateria ${t.rotulo} · ${Object.keys(l.pacientes).length} pacientes · ${l.arquivo}` : `${rotComp(c)} · bateria ${t.rotulo} · sem TXT${prog ? ' — clique para subir' : ''}`;
+      return `<button type="button" class="rg-mes ${l ? 'rg-cheio' : 'rg-vazio'}${c === compAtual ? ' atual' : ''}" style="left:${x}px;--cor:${t.cor}" data-rg="${l ? 'ver' : 'subir'}" data-comp="${c}" title="${esc(tit)}" aria-label="${esc(tit)}" ${!l && !prog ? 'disabled' : ''}>
+        <span class="pt" style="animation-delay:${atraso(x).toFixed(3)}s">${l ? '' : '<i>+</i>'}</span><span class="rot">${MES_CURTO[m - 1]}</span>${m === 1 || i === 0 ? `<span class="ano">${a}</span>` : ''}</button>`;
+    }).join('');
+    const anos = meses.map((c, i) => (c.endsWith('-01') && i ? `<line x1="${RG.pad + i * RG.slot - RG.slot / 2}" x2="${RG.pad + i * RG.slot - RG.slot / 2}" y1="8" y2="96" class="rg-ano"/>` : '')).join('');
+    const marcas = meses.map((c, i) => `<line x1="${RG.pad + i * RG.slot}" x2="${RG.pad + i * RG.slot}" y1="${RG.y0 + RG.amp + 9}" y2="${RG.y0 + RG.amp + 14}" class="rg-marca"/>`).join('');
+    const cheios = meses.filter(c => porComp[c]).length;
+    return `<section class="card regua-card no-print" id="regua">
+      <div class="regua-cab">
+        <div><h2>${ic('chart')} Régua do histórico</h2>
+          <p class="desc" style="margin:2px 0 0">${cheios} de ${meses.length} meses com resultados. Ponto cheio = TXT carregado (clique para ver); ponto vazio = falta${prog ? ' — clique para subir o TXT daquele mês, ou <b>arraste vários TXT</b> para a régua de uma vez.' : '.'}</p></div>
+        ${prog ? `<button class="btn sm pri" data-rg="varios">${ic('upload')} Subir TXT anteriores</button>` : ''}
+      </div>
+      <div class="regua-scroll"><div class="rh-trilho" style="width:${w}px">
+        <svg width="${w}" height="104" viewBox="0 0 ${w} 104" aria-hidden="true">${anos}${marcas}
+          <g class="onda"><path class="o2" d="${caminhoOnda(w, Math.PI / 2)}"/><path class="o1" d="${caminhoOnda(w, 0)}"/></g></svg>
+        ${pontos}
+      </div></div>
+      <div class="legenda" style="margin:6px 0 0">${['mensal', 'trimestral', 'semestral', 'anual'].map(k => `<span><i class="dot" style="--cor:${M.BATERIAS[k].cor}"></i>${M.BATERIAS[k].rotulo}</span>`).join('')}<span><i class="dot sem-txt"></i>sem TXT</span></div>
+    </section>`;
+  }
+  function ligarRegua() {
+    const el = document.getElementById('regua'); if (!el) return;
+    const sc = el.querySelector('.regua-scroll'), at = el.querySelector('.rg-mes.atual') || [...el.querySelectorAll('.rg-mes.rg-cheio')].pop();
+    if (sc) sc.scrollLeft = at ? Math.max(0, at.offsetLeft - sc.clientWidth + 120) : sc.scrollWidth;
+    // onda e pontos começam juntos (senão os pontos saem de cima da onda)
+    try {
+      const anims = el.getAnimations({ subtree: true });
+      Promise.all(anims.map(a => a.ready)).then(() => { const t0 = anims[0] && anims[0].startTime; if (t0 != null) anims.forEach(a => { a.startTime = t0; }); }).catch(() => {});
+    } catch (e) { /* navegador sem Web Animations: segue sem sincronizar */ }
+    el.onclick = e => {
+      const b = e.target.closest('[data-rg]'); if (!b) return;
+      e.stopPropagation();
+      if (b.dataset.rg === 'ver') { location.hash = '#/resultados/' + b.dataset.comp; return; }
+      if (!A.ehProgramador()) return A.toast('Só o laboratório sobe resultados.', 'shield');
+      if (b.dataset.rg === 'subir') { const comp = b.dataset.comp; return escolherTxt(f => previaImportacao(f, comp)); }
+      if (b.dataset.rg === 'varios') escolherVarios();
+    };
+    if (A.ehProgramador()) {
+      ['dragenter', 'dragover'].forEach(t => el.addEventListener(t, e => { e.preventDefault(); el.classList.add('soltando'); }));
+      ['dragleave', 'drop'].forEach(t => el.addEventListener(t, e => { e.preventDefault(); if (t === 'drop' || !el.contains(e.relatedTarget)) el.classList.remove('soltando'); }));
+      el.addEventListener('drop', e => importarVarios(e.dataTransfer.files));
+    }
+  }
+  function escolherVarios() {
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = '.txt,text/plain'; inp.multiple = true;
+    inp.onchange = () => inp.files.length && importarVarios(inp.files);
+    inp.click();
+  }
+  async function importarVarios(files) {
+    if (!A.ehProgramador()) return A.toast('Só o laboratório sobe resultados.', 'shield');
+    const txts = [...files].filter(f => /\.txt$/i.test(f.name) || f.type === 'text/plain');
+    if (!txts.length) return A.toast('Solte arquivos .txt de resultados.', 'alert');
+    const itens = [];
+    for (const f of txts) {
+      const buf = await f.arrayBuffer(); let r = null, erro = null;
+      try { r = M.lerTxtResultados(buf); if (!Object.keys(r.pacientes).length) erro = 'sem registro 01 (paciente)'; } catch (e) { erro = e.message || String(e); }
+      itens.push({ f, buf, r, erro, comp: r && !erro ? adivinharCompetencia(f.name, r.datas) : '' });
+    }
+    itens.sort((a, b) => String(a.comp).localeCompare(String(b.comp)));
+    itens.forEach(it => { it.marcado = !it.erro && !R.lotes.some(l => l.competencia === it.comp); });
+    const fim = somaMes(fimRegua(), 1), opts = [];
+    for (let k = 0; k < 48; k++) opts.push(somaMes(fim, -k));
+    itens.forEach(it => { if (it.comp && !opts.includes(it.comp)) opts.push(it.comp); });
+    opts.sort().reverse();
+    const situacao = () => {
+      const marc = itens.filter(it => it.marcado), conta = {}; marc.forEach(it => { conta[it.comp] = (conta[it.comp] || 0) + 1; });
+      return itens.map(it => it.erro ? ['erro', 'Não é um TXT de resultados: ' + it.erro]
+        : !it.marcado ? ['fora', R.lotes.some(l => l.competencia === it.comp) ? `${rotComp(it.comp)} já tem TXT — marque para substituir` : 'Não será importado']
+          : conta[it.comp] > 1 ? ['dup', `Dois arquivos para ${rotComp(it.comp)} — troque a competência de um deles`]
+            : R.lotes.some(l => l.competencia === it.comp) ? ['subst', `Substitui o TXT de ${rotComp(it.comp)}`] : ['novo', 'Novo mês no histórico']);
+    };
+    const corSit = { erro: 'var(--crit)', fora: 'var(--muted)', dup: 'var(--crit)', subst: 'var(--warn)', novo: 'var(--ok)' };
+    const linhas = () => { const st = situacao(); return itens.map((it, i) => `<tr>
+        <td><input type="checkbox" data-lt="marca" data-i="${i}" ${it.marcado ? 'checked' : ''} ${it.erro ? 'disabled' : ''} aria-label="Importar ${esc(it.f.name)}"></td>
+        <td><b>${esc(it.f.name)}</b><br><small class="faint">${it.r ? `${Object.keys(it.r.pacientes).length} pacientes · coleta ${Object.keys(it.r.datas).sort().map(fmtData).join(', ')}` : ''}</small></td>
+        <td>${it.erro ? '—' : `<select class="sel-cand" data-lt="comp" data-i="${i}">${opts.map(c => `<option value="${c}" ${c === it.comp ? 'selected' : ''}>${rotComp(c)} · ${tipoComp(c).rotulo}</option>`).join('')}</select>`}</td>
+        <td><span class="chip b" style="--cor:${corSit[st[i][0]]}">${st[i][0] === 'novo' ? 'novo' : st[i][0] === 'subst' ? 'substitui' : st[i][0] === 'dup' ? 'repetido' : st[i][0] === 'erro' ? 'erro' : 'não importa'}</span><br><small class="faint">${esc(st[i][1])}</small></td></tr>`).join(''); };
+    A.abrirModal({
+      titulo: `Subir ${itens.length} TXT de resultados`, ic: 'upload', cor: 'var(--blue)',
+      corpo: `<p style="margin:0 0 8px">Cada arquivo vai para o mês indicado (pelo nome do arquivo ou pela data da coleta + 1 mês). Confira e ajuste antes de importar.</p>
+        <div class="tbl-wrap" style="max-height:52vh;overflow:auto"><table class="tbl lote-txt"><thead><tr><th></th><th>Arquivo</th><th>Competência</th><th>Situação</th></tr></thead><tbody data-lt="corpo">${linhas()}</tbody></table></div>
+        <div class="login-msg" data-lt="msg"></div>`,
+      botoes: [{ rot: 'Cancelar' }, { rot: 'Importar marcados', cls: 'pri', ic: 'check', acao: form => { importarMarcados(form); return false; } }],
+      aoAbrir: (m, form) => {
+        const repintar = () => { form.querySelector('[data-lt=corpo]').innerHTML = linhas(); };
+        form.addEventListener('change', e => {
+          const t = e.target, it = itens[+t.dataset.i]; if (!it) return;
+          if (t.dataset.lt === 'marca') it.marcado = t.checked;
+          if (t.dataset.lt === 'comp') it.comp = t.value;
+          repintar();
+        });
+      },
+    });
+    async function importarMarcados(form) {
+      const msg = t => { form.querySelector('[data-lt=msg]').textContent = t; };
+      const st = situacao(), vai = itens.filter((it, i) => it.marcado && ['novo', 'subst'].includes(st[i][0]));
+      if (st.some(s => s[0] === 'dup')) return msg('Há dois arquivos marcados para o mesmo mês. Troque a competência de um deles.');
+      if (!vai.length) return msg('Nenhum arquivo marcado para importar.');
+      const b = form.querySelector('button[type=submit]'); b.disabled = true;
+      let ok = 0;
+      for (const it of vai) {
+        msg(`Importando ${rotComp(it.comp)} (${ok + 1}/${vai.length})…`);
+        try { await salvarLote(it.f, it.buf, it.r, it.comp, true); ok++; }
+        catch (e) { b.disabled = false; return msg(`Parou em ${it.f.name}: ${e.message || e}. Os ${ok} anteriores ficaram salvos.`); }
+      }
+      A.fechar(); A.render();
+      A.toast(`${ok} ${ok === 1 ? 'mês importado' : 'meses importados'} para o histórico`, 'check');
+    }
+  }
+
   // ================= TELA: RESULTADOS (visão do médico) =================
   const filtroR = { salao: '', turno: '', grupo: '', busca: '', alterados: false };
   function vazioResultados() {
@@ -322,11 +470,11 @@
       <div style="width:72px;height:72px;border-radius:22px;display:grid;place-items:center;margin:0 auto 12px;background:var(--blue-50);color:var(--blue)">${ic('drop')}</div>
       <h2 style="font-size:22px">Suba o TXT de resultados</h2>
       <p class="desc" style="max-width:560px;margin:6px auto 18px">O mesmo arquivo que o sistema do laboratório exporta para o Nephrosys da Hiperrim (registros <code>01</code> paciente e <code>02</code> resultado). Cada mês importado vira histórico do paciente.</p>
-      <button class="btn pri" data-res="importar">${ic('upload')} Escolher arquivo .txt</button>
+      <button class="btn pri so-prog" data-res="importar">${ic('upload')} Escolher arquivo .txt</button>
     </div>`;
   }
   function vResultados(compParam) {
-    if (!R.lotes.length) return vazioResultados();
+    if (!R.lotes.length) return htmlRegua(null) + vazioResultados();
     const lote = R.lotes.find(l => l.competencia === compParam) || R.lotes[0];
     const todas = linhasLote(lote);
     const anterior = R.lotes.find(l => l.competencia < lote.competencia);
@@ -350,7 +498,7 @@
         ${M.RES_MAPA.map(c => { const cl = M.classificar(c, l.val[c]); return `<td class="num rv ${CLS[cl] || ''}">${fmtValor(c, l.val[c])}${seta(c, l.val[c], l.ant && l.ant[c])}</td>`; }).join('')}</tr>`;
     }
     const opSal = A.saloes ? (E() && E().vagas.length ? A.saloes() : []) : [];
-    return `
+    return htmlRegua(lote.competencia) + `
       <div class="rel-cab no-print">
         <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
           <select class="btn" data-rf="comp" aria-label="Competência">${R.lotes.map(x => `<option value="${x.competencia}" ${x === lote ? 'selected' : ''}>${rotComp(x.competencia)} · ${tipoComp(x.competencia).rotulo}</option>`).join('')}</select>
@@ -358,7 +506,7 @@
           ${anterior ? `<span class="chip b">comparando com ${rotComp(anterior.competencia)}</span>` : `<span class="chip">1º mês no histórico — as setas ↑↓ aparecem a partir do 2º</span>`}
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:8px">
-          <button class="btn sm" data-res="importar">${ic('upload')} Subir TXT</button>
+          <button class="btn sm so-prog" data-res="importar">${ic('upload')} Subir TXT</button>
           <button class="btn sm" data-res="csv">${ic('sheet')} Exportar mapa</button>
           <button class="btn sm pri" data-res="imprimir">${ic('printer')} Imprimir mapa</button>
         </div>
@@ -403,6 +551,7 @@
       const lp = e.target.closest('[data-pac]'); if (lp) location.hash = '#/paciente/' + encodeURIComponent(lp.dataset.pac);
     };
     c.onkeydown = e => { const lp = e.target.closest('tr[data-pac]'); if (lp && e.key === 'Enter') location.hash = '#/paciente/' + encodeURIComponent(lp.dataset.pac); };
+    ligarRegua();
     c.onchange = e => {
       const f = e.target.dataset.rf; if (!f) return;
       if (f === 'comp') { location.hash = '#/resultados/' + e.target.value; return; }
@@ -528,7 +677,8 @@
         </div></div>`;
     }).join('');
     return `<div class="alerta-box info" style="margin-bottom:14px">${ic('download')}<div><b>Arquivos para a Hiperrim.</b> Cada TXT fica guardado exatamente como o sistema do laboratório exportou (mesmos bytes, ISO-8859-1, quebra de linha CRLF), pronto para importar no Nephrosys. Na versão com login, a equipe da Hiperrim entra e baixa por aqui.</div></div>
-      <div class="no-print" style="margin-bottom:14px"><button class="btn pri" data-arq="importar">${ic('upload')} Subir TXT de resultados</button></div>
+      ${htmlRegua(null)}
+      <div class="no-print so-prog" style="margin-bottom:14px"><button class="btn pri" data-arq="importar">${ic('upload')} Subir TXT de resultados</button></div>
       ${cards || vazioResultados()}`;
   }
   function ligarArquivos() {
@@ -539,6 +689,7 @@
       if (a === 'baixar') baixarArquivo(b.dataset.id);
       if (a === 'excluir') excluirLote(b.dataset.id);
     };
+    ligarRegua();
   }
 
   // ================= TELA: INTERFACE NEPHROSYS =================
