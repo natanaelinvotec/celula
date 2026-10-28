@@ -344,43 +344,85 @@
     const p = []; for (let x = -RG.lambda; x <= w + RG.lambda; x += 6) p.push(`${x},${(RG.y0 + RG.amp * Math.sin(2 * Math.PI * x / RG.lambda + fase)).toFixed(1)}`);
     return 'M' + p.join(' L');
   }
-  function htmlRegua(compAtual) {
-    const meses = mesesRegua(), prog = A.ehProgramador();
+  const atrasoOnda = x => { const fr = ((x / RG.lambda) % 1 + 1) % 1; return -((RG.periodo * (1 - fr)) % RG.periodo); };
+  const rotMes = (c, i) => { const [a, m] = c.split('-').map(Number); return `<span class="rot">${MES_CURTO[m - 1]}</span>${m === 1 || i === 0 ? `<span class="ano">${a}</span>` : ''}`; };
+  /** trilho com a onda e um elemento por mês: ponto(c, i, x, atraso) devolve o HTML do mês */
+  function trilhoOnda(meses, ponto) {
     const w = RG.pad * 2 + RG.slot * (meses.length - 1);
-    const porComp = Object.fromEntries(R.lotes.map(l => [l.competencia, l]));
-    const atraso = x => { const fr = ((x / RG.lambda) % 1 + 1) % 1; return -((RG.periodo * (1 - fr)) % RG.periodo); };
-    const pontos = meses.map((c, i) => {
-      const x = RG.pad + i * RG.slot, l = porComp[c], t = tipoComp(c), [a, m] = c.split('-').map(Number);
-      const tit = l ? `${rotComp(c)} · bateria ${t.rotulo} · ${Object.keys(l.pacientes).length} pacientes · ${l.arquivo}` : `${rotComp(c)} · bateria ${t.rotulo} · sem TXT${prog ? ' — clique para subir' : ''}`;
-      return `<button type="button" class="rg-mes ${l ? 'rg-cheio' : 'rg-vazio'}${c === compAtual ? ' atual' : ''}" style="left:${x}px;--cor:${t.cor}" data-rg="${l ? 'ver' : 'subir'}" data-comp="${c}" title="${esc(tit)}" aria-label="${esc(tit)}" ${!l && !prog ? 'disabled' : ''}>
-        <span class="pt" style="animation-delay:${atraso(x).toFixed(3)}s">${l ? '' : '<i>+</i>'}</span><span class="rot">${MES_CURTO[m - 1]}</span>${m === 1 || i === 0 ? `<span class="ano">${a}</span>` : ''}</button>`;
-    }).join('');
     const anos = meses.map((c, i) => (c.endsWith('-01') && i ? `<line x1="${RG.pad + i * RG.slot - RG.slot / 2}" x2="${RG.pad + i * RG.slot - RG.slot / 2}" y1="8" y2="96" class="rg-ano"/>` : '')).join('');
     const marcas = meses.map((c, i) => `<line x1="${RG.pad + i * RG.slot}" x2="${RG.pad + i * RG.slot}" y1="${RG.y0 + RG.amp + 9}" y2="${RG.y0 + RG.amp + 14}" class="rg-marca"/>`).join('');
+    return `<div class="regua-scroll"><div class="rh-trilho" style="width:${w}px">
+        <svg width="${w}" height="104" viewBox="0 0 ${w} 104" aria-hidden="true">${anos}${marcas}
+          <g class="onda"><path class="o2" d="${caminhoOnda(w, Math.PI / 2)}"/><path class="o1" d="${caminhoOnda(w, 0)}"/></g></svg>
+        ${meses.map((c, i) => { const x = RG.pad + i * RG.slot; return ponto(c, i, x, atrasoOnda(x).toFixed(3)); }).join('')}
+      </div></div>`;
+  }
+  /** onda e pontos começam juntos (senão os pontos saem de cima da onda) e a régua abre no mês certo */
+  function prepararOnda(el, foco) {
+    const sc = el.querySelector('.regua-scroll');
+    if (sc) sc.scrollLeft = foco ? Math.max(0, foco.offsetLeft - sc.clientWidth + 120) : sc.scrollWidth;
+    try {
+      const anims = el.getAnimations({ subtree: true });
+      Promise.all(anims.map(a => a.ready)).then(() => { const t0 = anims[0] && anims[0].startTime; if (t0 != null) anims.forEach(a => { a.startTime = t0; }); }).catch(() => {});
+    } catch (e) { /* navegador sem Web Animations: segue sem sincronizar */ }
+  }
+  function htmlRegua(compAtual) {
+    const meses = mesesRegua(), prog = A.ehProgramador();
+    const porComp = Object.fromEntries(R.lotes.map(l => [l.competencia, l]));
     const cheios = meses.filter(c => porComp[c]).length;
+    const trilho = trilhoOnda(meses, (c, i, x, atraso) => {
+      const l = porComp[c], t = tipoComp(c);
+      const tit = l ? `${rotComp(c)} · bateria ${t.rotulo} · ${Object.keys(l.pacientes).length} pacientes · ${l.arquivo}` : `${rotComp(c)} · bateria ${t.rotulo} · sem TXT${prog ? ' — clique para subir' : ''}`;
+      return `<button type="button" class="rg-mes ${l ? 'rg-cheio' : 'rg-vazio'}${c === compAtual ? ' atual' : ''}" style="left:${x}px;--cor:${t.cor}" data-rg="${l ? 'ver' : 'subir'}" data-comp="${c}" title="${esc(tit)}" aria-label="${esc(tit)}" ${!l && !prog ? 'disabled' : ''}>
+        <span class="pt" style="animation-delay:${atraso}s">${l ? '' : '<i>+</i>'}</span>${rotMes(c, i)}</button>`;
+    });
     return `<section class="card regua-card no-print" id="regua">
       <div class="regua-cab">
         <div><h2>${ic('chart')} Régua do histórico</h2>
           <p class="desc" style="margin:2px 0 0">${cheios} de ${meses.length} meses com resultados. Ponto cheio = TXT carregado (clique para ver); ponto vazio = falta${prog ? ' — clique para subir o TXT daquele mês, ou <b>arraste vários TXT</b> para a régua de uma vez.' : '.'}</p></div>
         ${prog ? `<button class="btn sm pri" data-rg="varios">${ic('upload')} Subir TXT anteriores</button>` : ''}
       </div>
-      <div class="regua-scroll"><div class="rh-trilho" style="width:${w}px">
-        <svg width="${w}" height="104" viewBox="0 0 ${w} 104" aria-hidden="true">${anos}${marcas}
-          <g class="onda"><path class="o2" d="${caminhoOnda(w, Math.PI / 2)}"/><path class="o1" d="${caminhoOnda(w, 0)}"/></g></svg>
-        ${pontos}
-      </div></div>
+      ${trilho}
       <div class="legenda" style="margin:6px 0 0">${['mensal', 'trimestral', 'semestral', 'anual'].map(k => `<span><i class="dot" style="--cor:${M.BATERIAS[k].cor}"></i>${M.BATERIAS[k].rotulo}</span>`).join('')}<span><i class="dot sem-txt"></i>sem TXT</span></div>
+    </section>`;
+  }
+
+  // régua de um exame na ficha do paciente: valor de cada mês, colorido pelo alvo
+  const fichaAberta = { chave: null, cod: null };
+  const COR_CL = { ok: 'var(--ok)', baixo: 'var(--blue)', alto: 'var(--warn)', 'crit-baixo': 'var(--crit)', 'crit-alto': 'var(--crit)' };
+  const ROT_CL = { ok: 'no alvo', baixo: 'abaixo do alvo', alto: 'acima do alvo', 'crit-baixo': 'crítico (baixo)', 'crit-alto': 'crítico (alto)' };
+  function htmlReguaExame(hist, cod) {
+    const d = M.defRes(cod), porComp = Object.fromEntries(hist.map(h => [h.comp, h]));
+    const lotes = new Set(R.lotes.map(l => l.competencia));
+    const meses = mesesRegua(), comVal = hist.filter(h => h.val[cod] && h.val[cod].n != null);
+    const ult = comVal[comVal.length - 1], ns = comVal.map(h => h.val[cod].n);
+    const min = comVal.length ? comVal[ns.indexOf(Math.min(...ns))] : null, max = comVal.length ? comVal[ns.indexOf(Math.max(...ns))] : null;
+    const mesCurto = c => `${MES_CURTO[+c.slice(5) - 1]}/${c.slice(2, 4)}`;
+    const trilho = trilhoOnda(meses, (c, i, x, atraso) => {
+      const h = porComp[c], v = h && h.val[cod];
+      if (v) {
+        const cl = M.classificar(cod, v) || 'ok', tit = `${rotComp(c)}: ${fmtValor(cod, v)} ${d.un} — ${ROT_CL[cl]}${h.p && h.p.data ? ' · coleta ' + fmtData(h.p.data) : ''}`;
+        return `<span class="rg-mes rg-cheio rg-val${ult && c === ult.comp ? ' atual' : ''}" style="left:${x}px;--cor:${COR_CL[cl]}" title="${esc(tit)}"><span class="pt" style="animation-delay:${atraso}s"><b class="val">${fmtValor(cod, v)}</b></span>${rotMes(c, i)}</span>`;
+      }
+      const tit = lotes.has(c) ? `${rotComp(c)}: sem resultado de ${d.nome} neste mês` : `${rotComp(c)}: sem TXT importado`;
+      return `<span class="rg-mes ${lotes.has(c) ? 'rg-sem' : 'rg-vazio'}" style="left:${x}px" title="${esc(tit)}"><span class="pt" style="animation-delay:${atraso}s"></span>${rotMes(c, i)}</span>`;
+    });
+    const resumo = comVal.length
+      ? `${comVal.length} ${comVal.length === 1 ? 'mês' : 'meses'} com resultado · último <b>${fmtValor(cod, ult.val[cod])}</b> (${mesCurto(ult.comp)})${comVal.length > 1 ? ` · mín. ${fmtValor(cod, min.val[cod])} (${mesCurto(min.comp)}) · máx. ${fmtValor(cod, max.val[cod])} (${mesCurto(max.comp)})` : ''}`
+      : 'Sem resultado numérico nos TXT importados.';
+    return `<section class="card regua-card regua-exame no-print" id="regua-exame" role="region" aria-label="Régua do histórico de ${esc(d.nome)}">
+      <div class="regua-cab">
+        <div><h2>${ic('chart')} ${esc(d.nome)} <small class="faint" style="font-size:13px;font-weight:700">${esc(d.un)} · alvo ${esc(refTxt(cod))}</small></h2>
+          <p class="desc" style="margin:2px 0 0">${resumo}. ${A.ehProgramador() ? 'Para completar o histórico, suba os TXT dos meses vazios na régua de Resultados.' : ''}</p></div>
+        <button class="btn sm ghost" data-fp="fechar-hist" aria-label="Fechar a régua">${ic('x')}</button>
+      </div>
+      ${trilho}
+      <div class="legenda" style="margin:6px 0 0">${['ok', 'baixo', 'alto', 'crit-alto'].map(k => `<span><i class="dot" style="--cor:${COR_CL[k]}"></i>${k === 'crit-alto' ? 'crítico' : ROT_CL[k]}</span>`).join('')}<span><i class="dot sem-res"></i>sem resultado no mês</span><span><i class="dot sem-txt"></i>sem TXT</span></div>
     </section>`;
   }
   function ligarRegua() {
     const el = document.getElementById('regua'); if (!el) return;
-    const sc = el.querySelector('.regua-scroll'), at = el.querySelector('.rg-mes.atual') || [...el.querySelectorAll('.rg-mes.rg-cheio')].pop();
-    if (sc) sc.scrollLeft = at ? Math.max(0, at.offsetLeft - sc.clientWidth + 120) : sc.scrollWidth;
-    // onda e pontos começam juntos (senão os pontos saem de cima da onda)
-    try {
-      const anims = el.getAnimations({ subtree: true });
-      Promise.all(anims.map(a => a.ready)).then(() => { const t0 = anims[0] && anims[0].startTime; if (t0 != null) anims.forEach(a => { a.startTime = t0; }); }).catch(() => {});
-    } catch (e) { /* navegador sem Web Animations: segue sem sincronizar */ }
+    prepararOnda(el, el.querySelector('.rg-mes.atual') || [...el.querySelectorAll('.rg-mes.rg-cheio')].pop());
     el.onclick = e => {
       const b = e.target.closest('[data-rg]'); if (!b) return;
       e.stopPropagation();
@@ -582,11 +624,12 @@
     const ult = hist[hist.length - 1], ant = hist.length > 1 ? hist[hist.length - 2] : null;
     const v = localDe(chave, base.nome), pe = pacienteDaEscala(chave, base.nome);
     const serie = cod => hist.map(h => ({ comp: h.comp, v: h.val[cod] }));
-    const dest = ['urr', 'ktv', '016', '004', '006', 'cap', '034', '029', '030', '026'];
+    const dest = ['urr', 'ktv', '016', '017', '004', '006', 'cap', '034', '029', '030', '026'];
+    const aberto = fichaAberta.chave === chave && ult.val[fichaAberta.cod] ? fichaAberta.cod : null;
     const card = cod => {
       const d = M.defRes(cod), val = ult.val[cod]; if (!val) return '';
       const cl = M.classificar(cod, val);
-      return `<div class="dest ${CLS[cl] || ''}" title="${esc(d.nota || d.nome)}"><small>${esc(d.nome)}</small><div class="dv"><b class="mono">${fmtValor(cod, val)}</b> <span>${esc(d.un)}</span>${seta(cod, val, ant && ant.val[cod])}</div>${regua(cod, val)}<div class="dref">alvo ${esc(refTxt(cod))}</div>${sparkline(serie(cod), cod, 120, 28)}</div>`;
+      return `<div class="dest ${CLS[cl] || ''}${aberto === cod ? ' aberto' : ''}" role="button" tabindex="0" data-fp="hist" data-cod="${cod}" aria-expanded="${aberto === cod}" title="${esc(d.nota || d.nome)} — clique para ver a régua do histórico"><small>${esc(d.nome)}</small><div class="dv"><b class="mono">${fmtValor(cod, val)}</b> <span>${esc(d.un)}</span>${seta(cod, val, ant && ant.val[cod])}</div>${regua(cod, val)}<div class="dref">alvo ${esc(refTxt(cod))}</div>${sparkline(serie(cod), cod, 120, 28)}</div>`;
     };
     const grupos = {};
     Object.keys(Object.assign({}, ...hist.map(h => h.val))).forEach(c => { const d = M.defRes(c); if (d.oculto) return; (grupos[d.grupo] = grupos[d.grupo] || []).push(c); });
@@ -623,6 +666,7 @@
       </section>
       ${ult.val.urr && ult.val.urr.aviso ? `<div class="alerta-box" style="margin:12px 0">${ic('alert')}<div><b>${esc(ult.val.urr.aviso)}.</b> URR calculado: ${fmtValor('urr', ult.val.urr)}%.</div></div>` : ''}
       <div class="destaques">${dest.map(card).join('')}</div>
+      ${aberto ? htmlReguaExame(hist, aberto) : ''}
       <div class="grid g2" style="margin-top:16px;align-items:start">${tabelas}</div>
       <div style="margin-top:16px">${tabHist}</div>
       <div class="card no-print" style="margin-top:16px"><h3>Observações do médico</h3><p class="desc">Ficam no histórico do paciente${M.nuvem ? ', com o nome de quem registrou.' : ' (nesta versão, só neste navegador).'}</p>
@@ -634,8 +678,19 @@
   function ligarPaciente(chave) {
     chave = decodeURIComponent(chave || '');
     const c = $('#conteudo');
+    const reg = document.getElementById('regua-exame');
+    if (reg) prepararOnda(reg, reg.querySelector('.rg-mes.atual'));
+    const alternar = cod => {
+      const abrir = !(fichaAberta.chave === chave && fichaAberta.cod === cod);
+      Object.assign(fichaAberta, { chave, cod: abrir ? cod : null });
+      const y = window.scrollY; A.render(); window.scrollTo(0, y);
+      const card = abrir && document.querySelector(`.dest[data-cod="${cod}"]`); if (card) card.focus({ preventScroll: true });
+    };
+    c.onkeydown = e => { const d = e.target.closest('.dest[data-fp="hist"]'); if (d && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); alternar(d.dataset.cod); } };
     c.onclick = e => {
       const b = e.target.closest('[data-fp]'); if (!b || b.tagName === 'FORM') return;
+      if (b.dataset.fp === 'hist') return alternar(b.dataset.cod);
+      if (b.dataset.fp === 'fechar-hist') { Object.assign(fichaAberta, { cod: null }); const y = window.scrollY; A.render(); window.scrollTo(0, y); return; }
       if (b.dataset.fp === 'imprimir') window.print();
       if (b.dataset.fp === 'csv') {
         let base = null; for (const l of R.lotes) { if (l.pacientes[chave]) { base = l.pacientes[chave]; break; } }
