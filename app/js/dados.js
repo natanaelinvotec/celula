@@ -278,7 +278,8 @@ export async function gravarOrcamento(dados, id) {
   const u = auth.currentUser;
   const base = { ...dados, atendenteUid: u.uid, atendenteNome: dados.atendenteNome || u.displayName || u.email, atualizadoEm: serverTimestamp() };
   // ao editar, a dona do orçamento não muda (transferência é só por transferirOrcamento)
-  if (id) { const { atendenteUid, atendenteNome, ...resto } = base; await updateDoc(doc(db, 'orcamentos', id), resto); return id; }
+  // qualquer atendente pode editar o orçamento de outra: dona e unidade não mudam; fica registrado quem editou por último
+  if (id) { const { atendenteUid, atendenteNome, unidade, ...resto } = base; await updateDoc(doc(db, 'orcamentos', id), { ...resto, editadoPorUid: u.uid, editadoPorNome: dados.atendenteNome || u.displayName || u.email, editadoEm: serverTimestamp() }); return id; }
   const numero = await proximoNumero();
   const ref = await addDoc(collection(db, 'orcamentos'), { ...base, numero, status: dados.status || 'gravado', criadoEm: serverTimestamp(), preToken: novoToken() });
   return ref.id;
