@@ -597,3 +597,37 @@ pre.codigo{background:var(--surface-2);border:1px solid var(--line);border-radiu
 .tbl-cruz td{vertical-align:top}.tbl-cruz td:first-child{min-width:160px}
 code.cod{display:inline-block;margin:1px 0;padding:1px 6px;border-radius:6px;font-size:12px;background:var(--ok-50);border:1px solid color-mix(in srgb,var(--ok) 32%,transparent);cursor:default}
 code.cod.inf{background:transparent;border-style:dashed;border-color:var(--warn)}
+
+/* régua do histórico: onda senoidal y = A·sen(2πx/λ − 2πt/T) — A=9px, λ=264px, T=7s (iguais ao RG do resultados.js) */
+.regua-card{margin-bottom:14px;padding-bottom:12px}
+.regua-cab{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.regua-cab h2{display:flex;gap:8px;align-items:center}
+.regua-scroll{overflow-x:auto;overflow-y:hidden;margin:8px -8px 0;padding:0 8px;scrollbar-width:thin}
+.rh-trilho{position:relative;height:104px;border-radius:14px;transition:background .2s}
+.rh-trilho svg{position:absolute;left:0;top:0;overflow:hidden;pointer-events:none}
+.rh-trilho .onda{animation:regua-onda 7s linear infinite;will-change:transform}
+.rh-trilho .onda path{fill:none;stroke-linecap:round;stroke-linejoin:round}
+.rh-trilho .onda .o1{stroke:var(--blue);stroke-width:2.4;opacity:.6}
+.rh-trilho .onda .o2{stroke:var(--rim);stroke-width:1.5;opacity:.28}
+.rh-trilho .rg-marca{stroke:var(--line);stroke-width:2}
+.rh-trilho .rg-ano{stroke:var(--line);stroke-width:1;stroke-dasharray:3 4}
+@keyframes regua-onda{from{transform:translateX(0)}to{transform:translateX(264px)}}
+@keyframes regua-sen{0%{transform:translateY(0px)}6.25%{transform:translateY(-3.44px)}12.5%{transform:translateY(-6.36px)}18.75%{transform:translateY(-8.31px)}25%{transform:translateY(-9.00px)}31.25%{transform:translateY(-8.31px)}37.5%{transform:translateY(-6.36px)}43.75%{transform:translateY(-3.44px)}50%{transform:translateY(0px)}56.25%{transform:translateY(3.44px)}62.5%{transform:translateY(6.36px)}68.75%{transform:translateY(8.31px)}75%{transform:translateY(9.00px)}81.25%{transform:translateY(8.31px)}87.5%{transform:translateY(6.36px)}93.75%{transform:translateY(3.44px)}100%{transform:translateY(0px)}}
+.rg-mes{position:absolute;top:0;width:60px;margin-left:-30px;height:104px;background:none;border:0;padding:0;cursor:pointer;color:var(--muted);font:inherit;border-radius:12px}
+.rg-mes:disabled{cursor:default}
+.rg-mes:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
+.rg-mes .pt{position:absolute;left:50%;top:44px;width:16px;height:16px;margin:-8px 0 0 -8px;border-radius:50%;box-sizing:border-box;border:2px dashed color-mix(in srgb,var(--muted) 65%,transparent);background:var(--card);display:grid;place-items:center;animation:regua-sen 7s linear infinite;will-change:transform}
+.rg-mes .pt i{font-style:normal;font-size:12px;font-weight:900;line-height:1;color:var(--blue);opacity:0;transition:opacity .15s}
+.rg-mes.rg-vazio:not(:disabled):hover .pt,.rg-mes.rg-vazio:not(:disabled):focus-visible .pt{border-style:solid;border-color:var(--blue);background:var(--blue-50)}
+.rg-mes.rg-vazio:not(:disabled):hover .pt i,.rg-mes.rg-vazio:not(:disabled):focus-visible .pt i{opacity:1}
+.rg-mes.rg-cheio .pt{width:20px;height:20px;margin:-10px 0 0 -10px;border:3px solid var(--card);background:var(--cor);box-shadow:0 0 0 2px var(--cor),0 6px 14px color-mix(in srgb,var(--cor) 40%,transparent)}
+.rg-mes.rg-cheio:hover .pt,.rg-mes.rg-cheio:focus-visible .pt{box-shadow:0 0 0 3px var(--cor),0 8px 18px color-mix(in srgb,var(--cor) 55%,transparent)}
+.rg-mes.atual .pt{box-shadow:0 0 0 2px var(--cor),0 0 0 6px color-mix(in srgb,var(--cor) 28%,transparent),0 6px 14px color-mix(in srgb,var(--cor) 40%,transparent)}
+.rg-mes .rot{position:absolute;left:0;right:0;top:70px;font-size:11px;font-weight:800;text-transform:capitalize;text-align:center}
+.rg-mes.rg-cheio .rot{color:var(--text)}
+.rg-mes.atual .rot{color:var(--blue)}
+.rg-mes .ano{position:absolute;left:0;right:0;top:85px;font-size:10px;font-weight:900;color:var(--blue);text-align:center}
+.rh-trilho.soltando,#regua.soltando .rh-trilho{background:var(--blue-50);outline:2px dashed var(--blue);outline-offset:-2px}
+.legenda .dot.sem-txt{background:var(--card);border:2px dashed color-mix(in srgb,var(--muted) 65%,transparent);box-sizing:border-box}
+.lote-txt td{vertical-align:top}.lote-txt td:first-child{width:28px}
+@media (prefers-reduced-motion:reduce){.rh-trilho .onda,.rg-mes .pt{animation:none}}
