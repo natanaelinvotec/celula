@@ -325,8 +325,8 @@ function tabPerfil() { if (!st.duplo || !st.convSlug2) return ehPerfil(convs.fin
  * Regra de precificação com dois convênios (combinada com o Natanael, 25/09):
  *  - cada exame fica na tabela em que foi LANÇADO (tabLanc): antes da caixinha tudo é 1º; depois, o que entra vai para o 2º.
  *    Se a tabela de lançamento não tem o exame, cai para a outra.
- *  - PERFIL sobressai: se uma das tabelas é perfil e o exame faz parte dele, o perfil ganha no empate ou quando é mais barato
- *    (valor cheio da tabela); se a outra tabela for mais barata (ou custo zero) o exame fica onde está — nunca duplica.
+ *  - PERFIL predomina (Natanael, 28/10): se o exame faz parte de um perfil que está no 1º OU no 2º convênio, ele SEMPRE
+ *    fica no perfil com o valor do perfil — mesmo que a outra tabela seja mais barata. Nunca duplica.
  *  - troca manual pelo botão da coluna Tabela (tabFixo) vale acima de tudo.
  */
 async function precificar(it) {
@@ -340,10 +340,9 @@ async function precificar(it) {
       const t0 = it.tabLanc === 2 ? 2 : 1, t1 = t0 === 2 ? 1 : 2;
       it.tab = t0; p = await pr(t0);
       if (p.valor == null) { const p2 = await pr(t1); if (p2.valor != null) { it.tab = t1; p = p2; } }
-      const tp = tabPerfil();
-      if (tp && it.tab !== tp && st.perfis[tp === 2 ? st.convSlug2 : st.convSlug]?.includes(it.ex.mnemonico)) {
-        const pp = await pr(tp); if (pp.valor != null && (p.valorTabela == null || pp.valorTabela <= p.valorTabela)) { it.tab = tp; p = pp; }
-      }
+      // perfil predomina nas duas posições: se o exame não está no perfil da tabela atual e faz parte do perfil da outra, vai para ela
+      const noPerfil = t => { const sl = t === 2 ? st.convSlug2 : st.convSlug; return ehPerfil(convs.find(c => c.slug === sl)) && !!st.perfis[sl]?.includes(it.ex.mnemonico); };
+      if (!noPerfil(it.tab)) { const o = it.tab === 2 ? 1 : 2; if (noPerfil(o)) { const pp = await pr(o); if (pp.valor != null) { it.tab = o; p = pp; } } }
     }
   } else { it.tab = 1; p = await D.precoPrazo(it.ex, st.convSlug, st.manuais); }
   it.valor = p.valor; it.prazoDias = p.prazoDias; it.origem = p.origem; it.valorTabela = p.valorTabela ?? p.valor; it.repassePct = p.repassePct ?? 100;
