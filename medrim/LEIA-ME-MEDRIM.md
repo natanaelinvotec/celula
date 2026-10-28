@@ -89,7 +89,8 @@ Pasta para o repositório `celula`. Depois de enviada, a página fica em **`celu
    A competência vem do nome do arquivo (ou da data de coleta + 1 mês) e pode ser trocada antes de importar.
 2. A tela **Resultados** mostra o mapa por salão/dias/turno, com cores por alvo, valores críticos no topo
    e setas ↑↓ em relação ao mês anterior (a partir do 2º TXT importado).
-3. Clique no paciente para a **ficha**: destaques (URR, Kt/V estimado, Hb, K, P, Ca×P, PTH, ferritina, IST, albumina),
+3. Clique no paciente para a **ficha**: destaques (URR, Kt/V estimado, Hb, Ht, K, P, Ca×P, PTH, ferritina, IST, albumina) —
+   clicar num destaque abre a **régua do histórico daquele exame** (valor de cada mês na onda, colorido pelo alvo) —
    tabelas por grupo, hemograma completo, histórico de todos os meses e observações do médico.
 4. **Arquivos TXT**: cada TXT fica guardado exatamente como foi exportado (mesmos bytes) para a Hiperrim baixar.
 5. **Interface Nephrosys**: os códigos do TXT do laboratório **são** os da integração com o Nephrosys da Hiperrim
