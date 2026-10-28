@@ -630,4 +630,15 @@ code.cod.inf{background:transparent;border-style:dashed;border-color:var(--warn)
 .rh-trilho.soltando,#regua.soltando .rh-trilho{background:var(--blue-50);outline:2px dashed var(--blue);outline-offset:-2px}
 .legenda .dot.sem-txt{background:var(--card);border:2px dashed color-mix(in srgb,var(--muted) 65%,transparent);box-sizing:border-box}
 .lote-txt td{vertical-align:top}.lote-txt td:first-child{width:28px}
+/* ficha: boxes abrem a régua do exame */
+.dest[role=button]{cursor:pointer;transition:box-shadow .15s,border-color .15s}
+.dest[role=button]:hover{box-shadow:0 6px 18px rgba(15,23,42,.10);border-color:color-mix(in srgb,var(--blue) 35%,var(--line))}
+.dest[role=button]:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.dest.aberto{border-color:var(--blue);box-shadow:0 0 0 2px color-mix(in srgb,var(--blue) 30%,transparent),0 8px 20px rgba(15,23,42,.10)}
+.regua-exame{margin-top:12px}
+span.rg-mes{cursor:default}
+.rg-mes .pt .val{position:absolute;left:50%;bottom:calc(100% + 5px);transform:translateX(-50%);font-size:12px;font-weight:900;line-height:1.2;white-space:nowrap;color:var(--cor);background:var(--card);padding:1px 5px;border-radius:6px;box-shadow:0 1px 4px rgba(15,23,42,.10)}
+.rg-mes.rg-val .pt{width:16px;height:16px;margin:-8px 0 0 -8px}
+.rg-mes.rg-sem .pt{width:10px;height:10px;margin:-5px 0 0 -5px;border:0;background:color-mix(in srgb,var(--muted) 45%,transparent)}
+.legenda .dot.sem-res{background:color-mix(in srgb,var(--muted) 45%,transparent)}
 @media (prefers-reduced-motion:reduce){.rh-trilho .onda,.rg-mes .pt{animation:none}}
