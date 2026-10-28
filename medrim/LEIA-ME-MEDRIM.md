@@ -96,6 +96,12 @@ Pasta para o repositório `celula`. Depois de enviada, a página fica em **`celu
    (em produção, funcionando) — o MedRim usa esses códigos e não altera o arquivo. A tela mostra cada exame da bateria →
    código(s) no TXT, conferidos valor a valor contra um laudo completo de bateria anual (dez/2025). Ficam como “inferido”
    só 046/047/048/055 (zerados no laudo), 062 (soma do diferencial) e 067 (Hb glicada, confirmada pelo TXT mensal).
+   Hb e Ht **avulsos** (bateria mensal) saem como **010/011**; dentro do hemograma completo, como **016/017**. No histórico
+   do médico eles entram na mesma linha (010 → 016, 011 → 017); o TXT não é alterado.
+6. **Régua do histórico** (topo de Resultados e de Arquivos TXT): um ponto por mês, numa onda senoidal animada.
+   Ponto cheio = TXT carregado (clique para ver o mês); vazio = falta — o programador clica para subir o TXT daquele mês
+   ou arrasta **vários TXT de uma vez**: cada arquivo vai para o mês do nome (ex.: `Bateria_Out_2026`) ou da coleta + 1 mês,
+   com conferência antes de importar (mês que já tem TXT vem desmarcado). Respeita “reduzir movimento” do sistema.
 
 Layout lido do TXT (separador `|`, ISO-8859-1, CRLF):
 
