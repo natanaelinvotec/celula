@@ -50,12 +50,12 @@ export function montarHistorico(el, { perfil, admin, cfg = {} }) {
     <label class="f">Paciente<input class="in" id="hPac" placeholder="nome"></label>
     <label class="f">Nº orçamento<input class="in" id="hNum" placeholder="ex.: 120" inputmode="numeric"></label>
     <label class="f">Telefone<input class="in" id="hTel" placeholder="(67) 9…" inputmode="tel"></label>
-    ${admin ? '<label class="f">Atendente<select class="in" id="hAt"><option value="">Todas</option></select></label>' : ''}
+    <label class="f">Atendente<select class="in" id="hAt"><option value="">Todas</option></select></label>
     <label class="f">Status<select class="in" id="hSt"><option value="">Todos</option>${Object.entries(STATUS).map(([k, v]) => `<option value="${k}">${v[0]}</option>`).join('')}</select></label>
     <label class="f">Período<select class="in" id="hDias"><option value="1">Hoje</option><option value="7">7 dias</option><option value="30" selected>30 dias</option><option value="90">90 dias</option></select></label>
   </div></div></div>
-  <div class="card"><div class="card-h"><h2>${admin ? 'Histórico de orçamentos' : 'Meus orçamentos'}</h2><span class="cnt" id="hCnt"></span><div class="sp"></div><span class="note">Clique na linha para ver os mnemônicos, editar, gerar PDF ou marcar como convertido</span></div>
-    <div class="card-b"><div class="tbl-wrap" id="hWrap" style="max-height:640px;overflow:auto"><table class="tbl"><thead><tr><th>Nº</th><th>Data</th><th>Paciente</th><th>Telefone</th><th>Convênio</th>${admin ? '<th>Atendente</th>' : ''}<th>Exames</th><th class="num">Total</th><th>Status</th><th></th></tr></thead><tbody id="hBody"><tr><td colspan="9" class="note">Carregando…</td></tr></tbody></table></div><div id="hPag"></div></div></div>`;
+  <div class="card"><div class="card-h"><h2>${admin ? 'Histórico de orçamentos' : 'Orçamentos da equipe'}</h2><span class="cnt" id="hCnt"></span><div class="sp"></div><span class="note">Clique na linha para ver os mnemônicos, editar, gerar PDF ou marcar como convertido</span></div>
+    <div class="card-b"><div class="tbl-wrap" id="hWrap" style="max-height:640px;overflow:auto"><table class="tbl"><thead><tr><th>Nº</th><th>Data</th><th>Paciente</th><th>Telefone</th><th>Convênio</th><th>Atendente</th><th>Exames</th><th class="num">Total</th><th>Status</th><th></th></tr></thead><tbody id="hBody"><tr><td colspan="9" class="note">Carregando…</td></tr></tbody></table></div><div id="hPag"></div></div></div>`;
   const $ = id => el.querySelector('#' + id);
   if (!admin) montarLembretes($('hLem'), { perfil, cfg }); // no painel da gestão a fila fica só no CRM
   // pré-cadastros enviados pelos pacientes (página pública): badge na lista + dados ao abrir a linha
@@ -66,19 +66,19 @@ export function montarHistorico(el, { perfil, admin, cfg = {} }) {
     try {
       if (n) rows = [await D.buscarOrcamentoPorNumero(n)].filter(Boolean);
       else if (tel.length >= 8) rows = await D.buscarOrcamentosPorTelefone(tel);
-      else rows = await D.orcamentosRecentes({ dias, atendenteUid: admin ? null : perfil.uid });
-      if (!admin) rows = rows.filter(r => r.atendenteUid === perfil.uid);
-      if (admin) { const ids = new Map(rows.map(r => [r.atendenteUid, r.atendenteNome])); const sel = $('hAt'); const cur = sel.value; sel.innerHTML = '<option value="">Todas</option>' + [...ids].map(([u, nm]) => `<option value="${u}">${escapeHtml(nm)}</option>`).join(''); sel.value = cur; }
+      // todas as atendentes veem e editam os orçamentos da equipe (agiliza o atendimento); o filtro Atendente separa por dona
+      else rows = await D.orcamentosRecentes({ dias });
+      { const ids = new Map(rows.map(r => [r.atendenteUid, r.atendenteNome])); const sel = $('hAt'); const cur = sel.value; sel.innerHTML = '<option value="">Todas</option>' + [...ids].map(([u, nm]) => `<option value="${u}">${escapeHtml(nm)}</option>`).join(''); sel.value = cur; }
     } catch (e) { toast('Erro ao carregar: ' + e.message); rows = []; }
     pag = 0; render();
   }
   function render() {
-    const pac = norm($('hPac').value), st = $('hSt').value, at = admin ? $('hAt').value : '';
+    const pac = norm($('hPac').value), st = $('hSt').value, at = $('hAt').value;
     const list = rows.filter(r => (!pac || (r.pacienteBusca || norm(r.paciente)).includes(pac)) && (!st || r.status === st) && (!at || r.atendenteUid === at));
     $('hCnt').textContent = `${list.length} orçamento${list.length !== 1 ? 's' : ''}`;
     const paginas = Math.max(1, Math.ceil(list.length / POR)); pag = Math.min(pag, paginas - 1); // 20 por página
     $('hPag').innerHTML = paginador(pag, paginas, list.length, 'hpag');
-    $('hBody').innerHTML = list.slice(pag * POR, pag * POR + POR).map(o => { const s = STATUS[o.status] || [o.status, 'pill']; return `<tr data-id="${o.id}" style="cursor:pointer"><td><b>#${numOrc(o.numero)}</b></td><td>${fmtData(o.criadoEm)}</td><td><b>${escapeHtml(o.paciente || '—')}</b>${pre[o.id] ? ` <span class="pill ${pre[o.id].visto ? 'ok' : 'on'}" style="padding:1px 8px" title="Pré-cadastro enviado pelo paciente">${pre[o.id].visto ? '✓ pré-cadastro' : '● pré-cadastro novo'}</span>` : ''}</td><td>${escapeHtml(o.telefone || '—')}</td><td>${escapeHtml(o.convenioNome || o.convenio)}${o.duplo && o.convenio2 ? ` <span class="pill" style="padding:1px 7px" title="Dois convênios">+ ${escapeHtml(o.convenio2Nome || o.convenio2)}</span>` : ''}${o.renal ? ' <span class="pill red" style="padding:1px 7px">renal</span>' : ''}</td>${admin ? `<td><span class="av s" style="display:inline-grid;vertical-align:middle;margin-right:6px">${escapeHtml(iniciais(o.atendenteNome))}</span>${escapeHtml(o.atendenteNome || '')}</td>` : ''}<td>${o.qtd ?? o.itens?.length ?? 0}</td><td class="num">${brl(o.total)}</td><td><span class="${s[1]}">${s[0]}</span></td><td style="white-space:nowrap"><button class="ib" title="Editar orçamento" data-edit="${o.id}">${ICO.lapis}</button><button class="ib" title="Baixar PDF" data-pdf="${o.id}">${ICO.pdf}</button>${admin ? `<button class="ib red" title="Excluir orçamento" data-del="${o.id}">${ICO.lixo}</button>` : ''}</td></tr>` +
+    $('hBody').innerHTML = list.slice(pag * POR, pag * POR + POR).map(o => { const s = STATUS[o.status] || [o.status, 'pill']; return `<tr data-id="${o.id}" style="cursor:pointer"><td><b>#${numOrc(o.numero)}</b></td><td>${fmtData(o.criadoEm)}</td><td><b>${escapeHtml(o.paciente || '—')}</b>${pre[o.id] ? ` <span class="pill ${pre[o.id].visto ? 'ok' : 'on'}" style="padding:1px 8px" title="Pré-cadastro enviado pelo paciente">${pre[o.id].visto ? '✓ pré-cadastro' : '● pré-cadastro novo'}</span>` : ''}</td><td>${escapeHtml(o.telefone || '—')}</td><td>${escapeHtml(o.convenioNome || o.convenio)}${o.duplo && o.convenio2 ? ` <span class="pill" style="padding:1px 7px" title="Dois convênios">+ ${escapeHtml(o.convenio2Nome || o.convenio2)}</span>` : ''}${o.renal ? ' <span class="pill red" style="padding:1px 7px">renal</span>' : ''}</td><td><span class="av s" style="display:inline-grid;vertical-align:middle;margin-right:6px">${escapeHtml(iniciais(o.atendenteNome))}</span>${escapeHtml(o.atendenteNome || '')}</td><td>${o.qtd ?? o.itens?.length ?? 0}</td><td class="num">${brl(o.total)}</td><td><span class="${s[1]}">${s[0]}</span></td><td style="white-space:nowrap"><button class="ib" title="Editar orçamento" data-edit="${o.id}">${ICO.lapis}</button><button class="ib" title="Baixar PDF" data-pdf="${o.id}">${ICO.pdf}</button>${admin ? `<button class="ib red" title="Excluir orçamento" data-del="${o.id}">${ICO.lixo}</button>` : ''}</td></tr>` +
       (open === o.id ? `<tr><td colspan="10" style="padding:6px 12px 14px"><div class="expand"><div style="width:100%"><span class="note">Mnemônicos para digitar no AutoLAC (ordem do pedido):</span></div><code>${(o.mnemonicos || []).map(m => `<span class="mnwrap">${escapeHtml(m)}<button class="ib" title="Copiar ${escapeHtml(m)}" data-copy1="${escapeHtml(m)}">${ICO.copy}</button></span>`).join(' ') || '—'}</code>
         <button class="btn ghost sm" data-copy="${(o.mnemonicos || []).join(' ')}">Copiar lista</button>
         ${o.status !== 'convertido' ? `<button class="btn ok sm" data-conv="${o.id}">✓ Paciente veio coletar — marcar convertido</button>` : `<span class="pill ok">✓ convertido em ${fmtData(o.convertidoEm)} por ${escapeHtml(o.convertidoPorNome || '')}</span>`}
@@ -88,7 +88,7 @@ export function montarHistorico(el, { perfil, admin, cfg = {} }) {
         <div style="width:100%" class="note">${(o.itens || []).map(i => `${escapeHtml(i.nome)}${escapeHtml(rotuloQtd(i.nome, i.qtd))}${o.duplo && i.tabelaNome ? ' [' + escapeHtml(String(i.tabelaNome).replace(/^Tabela /i, '')) + ']' : ''}${i.prazoDias != null ? ' · ' + i.prazoDias + ' d.u.' : ''}${i.valor != null ? ' · ' + brl(i.valorTotal ?? i.valor) : ''}${i.status === 'recusado' ? ` · <b style="color:var(--red)">recusado na conferência${i.recusa ? ': ' + escapeHtml(i.recusa) : ''}</b>` : ''}`).join(' &nbsp;|&nbsp; ')}</div></div></td></tr>` : ''); }).join('') || '<tr><td colspan="10" class="note">Nenhum orçamento no filtro.</td></tr>';
   }
   const filtro = () => { pag = 0; render(); }; // filtro novo volta para a 1ª página
-  ['hPac', 'hSt'].forEach(id => $(id).addEventListener('input', filtro)); if (admin) $('hAt').addEventListener('input', filtro);
+  ['hPac', 'hSt'].forEach(id => $(id).addEventListener('input', filtro)); $('hAt').addEventListener('input', filtro);
   $('hPag').addEventListener('click', e => { const b = e.target.closest('[data-hpag]'); if (!b) return; pag = +b.dataset.hpag; open = null; render(); $('hWrap').scrollTop = 0; });
   ['hNum', 'hTel', 'hDias'].forEach(id => { let t; $(id).addEventListener('input', () => { clearTimeout(t); t = setTimeout(carregar, 400); }); });
   $('hBody').addEventListener('click', async e => {
