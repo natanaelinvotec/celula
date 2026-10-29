@@ -292,7 +292,8 @@ svg.i{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-widt
 .modal h3{margin:0;font-size:18px;font-weight:900}
 .modal .corpo{padding:10px 22px 4px;display:grid;gap:12px}
 .modal footer{padding:14px 22px 20px;display:flex;justify-content:flex-end;gap:8px}
-label.f{display:grid;gap:5px;font-size:12.5px;font-weight:800;color:var(--muted)}
+label.f{display:grid;grid-template-columns:minmax(0,1fr);gap:5px;font-size:12.5px;font-weight:800;color:var(--muted);min-width:0}
+.f select{min-width:0;max-width:100%;text-overflow:ellipsis}
 .f input,.f select,.f textarea{padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--text);outline:none;font-weight:700;font-size:14px}
 .f input:focus,.f select:focus,.f textarea:focus{border-color:var(--blue);box-shadow:0 0 0 4px var(--blue-50)}
 .f .erro{color:var(--crit);font-size:12px}
@@ -642,3 +643,13 @@ span.rg-mes{cursor:default}
 .rg-mes.rg-sem .pt{width:10px;height:10px;margin:-5px 0 0 -5px;border:0;background:color-mix(in srgb,var(--muted) 45%,transparent)}
 .legenda .dot.sem-res{background:color-mix(in srgb,var(--muted) 45%,transparent)}
 @media (prefers-reduced-motion:reduce){.rh-trilho .onda,.rg-mes .pt{animation:none}}
+/* importação: pacientes do TXT fora do sistema atual */
+.fora-sis{border:1px solid var(--line);border-radius:14px;padding:10px 12px;background:var(--surface)}
+.fora-sis summary{cursor:pointer;font-size:13px;line-height:1.4}
+.fora-acoes{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}
+.fora-acoes .faint{font-size:12px;font-weight:700}
+.fora-lista{max-height:220px;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:2px 12px}
+.fora-item{display:flex;gap:8px;align-items:flex-start;font-size:13px;padding:5px 2px;cursor:pointer;min-width:0}
+.fora-item b{font-weight:800}.fora-item small{display:block;color:var(--muted);font-size:11px;font-weight:700}
+.fora-item input{margin-top:3px;flex:none}
+
