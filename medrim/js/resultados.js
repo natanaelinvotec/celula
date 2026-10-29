@@ -163,6 +163,75 @@
     A.salvar(); A.render(); A.toast(`${n} vinculado(s) pelo TXT — continuam sem pedido no CSV`, 'link', true);
   };
 
+  // ================= pacientes do TXT que não estão no sistema atual =================
+  // Ao subir TXT antigos, só entra o histórico de quem está no MedRim hoje; os demais ficam agrupados para excluir.
+  function indiceSistema() {
+    const P = E() ? E().pacientes : {}, cpfs = new Set(), nomes = new Set();
+    Object.entries(P).forEach(([id, x]) => { if (x.cpf) cpfs.add(x.cpf); if (/^\d{11}$/.test(id)) cpfs.add(id); if (x.nome) nomes.add(M.norm(x.nome)); });
+    return { vazio: !Object.keys(P).length, tem: p => !!((p.cpf && cpfs.has(p.cpf)) || nomes.has(M.norm(p.nome))) };
+  }
+  function foraDoSistema(r, idx) {
+    if (!r || idx.vazio) return [];
+    return Object.values(r.pacientes).filter(p => !idx.tem(p)).map(p => ({ chave: p.chave, nome: p.nome, cpf: p.cpf }));
+  }
+  const refAtual = () => (E() && E().ref ? `${E().ref.ano}-${String(E().ref.mes).padStart(2, '0')}` : compDe(new Date()));
+  /** Tira do TXT os pacientes (registro 01 + seus 02) e renumera a sequência; o resto dos bytes fica igual (ISO-8859-1, CRLF). */
+  function filtrarTxt(buf, tirar) {
+    const b = new Uint8Array(buf), dec = new TextDecoder('windows-1252'), enc = new TextEncoder();
+    const linhas = []; let ini = 0;
+    for (let i = 0; i < b.length; i++) if (b[i] === 10) { linhas.push(b.subarray(ini, i + 1)); ini = i + 1; }
+    if (ini < b.length) linhas.push(b.subarray(ini));
+    const partes = []; let pular = false, seq = 0;
+    for (const l of linhas) {
+      let fim = l.length; while (fim && (l[fim - 1] === 10 || l[fim - 1] === 13)) fim--;
+      const corpo = l.subarray(0, fim), eol = l.subarray(fim);
+      if (!corpo.length) { if (!pular) partes.push(l); continue; }
+      const c = dec.decode(corpo).split('|');
+      if (c[0] === '01') { const cpf = M.soDigitos(c[5]); pular = tirar.has(cpf || 'N:' + M.norm((c[2] || '').trim())); }
+      if (pular) continue;
+      const p1 = corpo.indexOf(124), p2 = p1 < 0 ? -1 : corpo.indexOf(124, p1 + 1);
+      if (p2 < 0) { partes.push(l); continue; }
+      partes.push(corpo.subarray(0, p1 + 1), enc.encode(String(++seq)), corpo.subarray(p2), eol);
+    }
+    const out = new Uint8Array(partes.reduce((s, x) => s + x.length, 0)); let o = 0;
+    partes.forEach(x => { out.set(x, o); o += x.length; });
+    return out.buffer;
+  }
+  /** grava o lote sem os pacientes marcados para excluir */
+  function gravarSemExcluidos(arquivo, buf, r, comp, excluir, silencioso) {
+    const tirar = Object.keys(r.pacientes).filter(ch => excluir.has(ch));
+    if (!tirar.length) return salvarLote(arquivo, buf, r, comp, silencioso);
+    const novo = filtrarTxt(buf, new Set(tirar)), r2 = M.lerTxtResultados(novo);
+    return salvarLote({ name: arquivo.name, type: 'text/plain' }, novo, r2, comp, silencioso, { filtrado: { removidos: tirar.length, tamanhoOriginal: buf.byteLength } });
+  }
+  /** bloco agrupado (com marcar/desmarcar) — lista: [{ chave, nome, cpf, meses? }] */
+  function htmlForaSistema(lista, excluir) {
+    if (!lista.length) return '';
+    const mc = c => `${MES_CURTO[+c.slice(5) - 1]}/${c.slice(2, 4)}`;
+    return `<details class="fora-sis" open><summary><b>${lista.length} ${lista.length === 1 ? 'paciente' : 'pacientes'} fora do sistema atual</b> <span class="faint">— não estão no MedRim hoje (saíram antes ou não são da escala)</span></summary>
+      <div class="fora-acoes"><button type="button" class="btn sm ghost" data-fs="todos">${ic('check')} Excluir todos</button><button type="button" class="btn sm ghost" data-fs="nenhum">${ic('undo')} Manter todos</button><span class="faint" data-fs="conta"></span></div>
+      <div class="fora-lista">${lista.map((x, i) => `<label class="fora-item"><input type="checkbox" data-fs-i="${i}" ${excluir.has(x.chave) ? 'checked' : ''}><span><b>${esc(titulo(x.nome))}</b><small>${x.cpf ? esc(mascCpf(x.cpf)) : 'sem CPF'}${x.meses && x.meses.length ? ' · ' + x.meses.map(mc).join(', ') : ''}</small></span></label>`).join('')}</div>
+      <p class="desc" style="margin:8px 0 0">Marcado = <b>excluir</b>: não entra no histórico e sai também do TXT guardado no MedRim (a cópia fica filtrada e renumerada). Para meses antigos, que a Hiperrim já recebeu, é o recomendado.</p></details>`;
+  }
+  /** liga o bloco: atualiza o conjunto `excluir` e o contador */
+  function ligarForaSistema(raiz, lista, excluir, aoMudar) {
+    const conta = () => { const el = raiz.querySelector('[data-fs="conta"]'); if (el) el.textContent = `${lista.filter(x => excluir.has(x.chave)).length} de ${lista.length} serão excluídos`; };
+    raiz.addEventListener('change', e => {
+      const i = e.target.dataset && e.target.dataset.fsI; if (i == null) return;
+      e.stopPropagation();
+      if (e.target.checked) excluir.add(lista[+i].chave); else excluir.delete(lista[+i].chave);
+      conta(); if (aoMudar) aoMudar();
+    });
+    raiz.addEventListener('click', e => {
+      const b = e.target.closest('[data-fs="todos"],[data-fs="nenhum"]'); if (!b) return;
+      const marcar = b.dataset.fs === 'todos';
+      lista.forEach(x => (marcar ? excluir.add(x.chave) : excluir.delete(x.chave)));
+      raiz.querySelectorAll('[data-fs-i]').forEach(ch => { ch.checked = marcar; });
+      conta(); if (aoMudar) aoMudar();
+    });
+    conta();
+  }
+
   // ================= importação =================
   function escolherTxt(cb) {
     const inp = document.createElement('input');
@@ -177,8 +246,9 @@
     const nPac = Object.keys(r.pacientes).length;
     if (!nPac) return A.toast('Nenhum registro 01 (paciente) encontrado — é o TXT de resultados?', 'alert');
     const palpite = adivinharCompetencia(arquivo.name, r.datas), comp = compForcada || palpite;
-    const P = E() ? E().pacientes : {};
-    const naEscala = Object.values(r.pacientes).filter(p => (p.cpf && P[p.cpf]) || Object.values(P).some(x => M.norm(x.nome) === M.norm(p.nome))).length;
+    const idx = indiceSistema(), fora = foraDoSistema(r, idx);
+    const naEscala = Object.keys(r.pacientes).length - (idx.vazio ? Object.keys(r.pacientes).length : fora.length);
+    const excluir = new Set(comp < refAtual() ? fora.map(x => x.chave) : []);
     const porTipo = {}; r.avisos.forEach(a => { porTipo[a.tipo] = (porTipo[a.tipo] || 0) + 1; });
     const rotAv = { semcpf: 'sem CPF', cpf: 'CPF inválido', recoleta: 'recoletas', urr: 'ureia pós ≥ pré', texto: 'valores “superior a”', codigo: 'códigos não interpretados', seq: 'sequência', campo: 'campos extras', tipo: 'registro desconhecido', orfao: 'linha órfã' };
     const opts = [];
@@ -191,31 +261,34 @@
         <div class="kpis" style="grid-template-columns:repeat(3,1fr);margin:0">
           <div class="kpi" style="--cor:var(--blue)"><span class="v mono">${nPac}</span><span class="l">pacientes</span></div>
           <div class="kpi" style="--cor:var(--teal)"><span class="v mono">${r.nResultados.toLocaleString('pt-BR')}</span><span class="l">resultados</span></div>
-          <div class="kpi" style="--cor:var(--ok)"><span class="v mono">${naEscala}</span><span class="l">já conhecidos</span></div>
+          <div class="kpi" style="--cor:var(--ok)"><span class="v mono">${naEscala}</span><span class="l">no sistema</span></div>
         </div>
         <div style="font-size:13px;color:var(--muted);font-weight:700">Coletas: ${Object.entries(r.datas).sort().map(([d, n]) => `${fmtData(d)} (${n})`).join(' · ')}</div>
         <label class="f">Competência (bateria a que estes resultados pertencem)<select name="comp">${opts.sort().reverse().map(c => `<option value="${c}" ${c === comp ? 'selected' : ''}>${rotComp(c)} · ${tipoComp(c).rotulo}</option>`).join('')}</select></label>
         ${compForcada && palpite !== compForcada ? `<div class="alerta-box">${ic('alert')}<div>Você escolheu ${rotComp(compForcada)} na régua, mas pelo ${/[A-Z]{3}[^0-9]*\d{4}/i.test(arquivo.name) ? 'nome do arquivo' : 'dia da coleta'} ele parece ser de <b>${rotComp(palpite)}</b>. Confira a competência acima.</div></div>` : ''}
         ${R.lotes.some(l => l.competencia === comp) ? `<div class="alerta-box">${ic('alert')}<div>Já existe um lote de ${rotComp(comp)}. Importar de novo <b>substitui</b> esse lote (o histórico dos outros meses fica).</div></div>` : ''}
         ${r.avisos.length ? `<div class="alerta-box">${ic('alert')}<div><b>Checagem do arquivo:</b> ${Object.entries(porTipo).map(([t, n]) => `${n} ${rotAv[t] || t}`).join(' · ')}. Os detalhes ficam na aba Arquivos TXT.</div></div>` : `<div class="alerta-box ok">${ic('check')}<div>Arquivo consistente.</div></div>`}
+        ${htmlForaSistema(fora, excluir)}
         ${R.ok ? '' : `<div class="alerta-box">${ic('alert')}<div>Este navegador bloqueou o armazenamento local (IndexedDB): os resultados ficam só até fechar a página.</div></div>`}`,
-      botoes: [{ rot: 'Cancelar' }, { rot: 'Importar', cls: 'pri', ic: 'check', acao: f => { salvarLote(arquivo, buf, r, f.comp.value); } }],
+      botoes: [{ rot: 'Cancelar' }, { rot: 'Importar', cls: 'pri', ic: 'check', acao: f => { gravarSemExcluidos(arquivo, buf, r, f.comp.value, excluir); } }],
+      aoAbrir: (m, form) => { const bl = form.querySelector('.fora-sis'); if (bl) ligarForaSistema(bl, fora, excluir); },
     });
   }
-  async function salvarLote(arquivo, buf, r, comp, silencioso) {
+  async function salvarLote(arquivo, buf, r, comp, silencioso, extra) {
     const antigo = R.lotes.find(l => l.competencia === comp);
     const id = comp;
     const lote = {
       id, competencia: comp, arquivo: arquivo.name, tamanho: buf.byteLength, importadoEm: new Date().toISOString(),
       datas: r.datas, nResultados: r.nResultados, codigos: r.codigos, avisos: r.avisos, pacientes: r.pacientes,
     };
+    Object.assign(lote, extra || {});
     try { await arm().salvar(lote, { id, nome: arquivo.name, bytes: buf, tipo: arquivo.type || 'text/plain' }); }
     catch (e) {
       if (A.armazem) { A.toast('Não consegui gravar os resultados na nuvem: ' + (e.message || e), 'alert'); throw e; }
       R.ok = false; lote._bytes = buf;
     }
     R.lotes = R.lotes.filter(l => l.competencia !== comp); R.lotes.push(lote); ordenar();
-    if (E()) { A.evento('importacao', null, `Resultados ${rotComp(comp)}: ${arquivo.name} · ${Object.keys(r.pacientes).length} pacientes · ${r.nResultados} resultados${antigo ? ' (substituiu o lote anterior)' : ''}`); A.salvar(); }
+    if (E()) { A.evento('importacao', null, `Resultados ${rotComp(comp)}: ${arquivo.name} · ${Object.keys(r.pacientes).length} pacientes · ${r.nResultados} resultados${lote.filtrado ? ` · ${lote.filtrado.removidos} fora do sistema não entraram` : ''}${antigo ? ' (substituiu o lote anterior)' : ''}`); A.salvar(); }
     if (silencioso) return lote;
     location.hash = '#/resultados/' + comp; A.render();
     const sug = Object.keys(A.sugestoesTxt()).length;
@@ -455,6 +528,10 @@
     }
     itens.sort((a, b) => String(a.comp).localeCompare(String(b.comp)));
     itens.forEach(it => { it.marcado = !it.erro && !R.lotes.some(l => l.competencia === it.comp); });
+    const idx = indiceSistema(), porChave = {};
+    itens.forEach(it => { it.fora = foraDoSistema(it.r, idx); it.fora.forEach(x => { (porChave[x.chave] = porChave[x.chave] || Object.assign({ meses: [] }, x)).meses.push(it.comp); }); });
+    const fora = Object.values(porChave).sort((a, b) => a.nome.localeCompare(b.nome));
+    const excluir = new Set(fora.map(x => x.chave));
     const fim = somaMes(fimRegua(), 1), opts = [];
     for (let k = 0; k < 48; k++) opts.push(somaMes(fim, -k));
     itens.forEach(it => { if (it.comp && !opts.includes(it.comp)) opts.push(it.comp); });
@@ -469,17 +546,19 @@
     const corSit = { erro: 'var(--crit)', fora: 'var(--muted)', dup: 'var(--crit)', subst: 'var(--warn)', novo: 'var(--ok)' };
     const linhas = () => { const st = situacao(); return itens.map((it, i) => `<tr>
         <td><input type="checkbox" data-lt="marca" data-i="${i}" ${it.marcado ? 'checked' : ''} ${it.erro ? 'disabled' : ''} aria-label="Importar ${esc(it.f.name)}"></td>
-        <td><b>${esc(it.f.name)}</b><br><small class="faint">${it.r ? `${Object.keys(it.r.pacientes).length} pacientes · coleta ${Object.keys(it.r.datas).sort().map(fmtData).join(', ')}` : ''}</small></td>
+        <td><b>${esc(it.f.name)}</b><br><small class="faint">${it.r ? `${Object.keys(it.r.pacientes).length} pacientes${it.fora && it.fora.length ? (n => (n ? ` · ${n} fora do sistema excluídos` : ` · ${it.fora.length} fora do sistema vão entrar`))(it.fora.filter(x => excluir.has(x.chave)).length) : ''} · coleta ${Object.keys(it.r.datas).sort().map(fmtData).join(', ')}` : ''}</small></td>
         <td>${it.erro ? '—' : `<select class="sel-cand" data-lt="comp" data-i="${i}">${opts.map(c => `<option value="${c}" ${c === it.comp ? 'selected' : ''}>${rotComp(c)} · ${tipoComp(c).rotulo}</option>`).join('')}</select>`}</td>
         <td><span class="chip b" style="--cor:${corSit[st[i][0]]}">${st[i][0] === 'novo' ? 'novo' : st[i][0] === 'subst' ? 'substitui' : st[i][0] === 'dup' ? 'repetido' : st[i][0] === 'erro' ? 'erro' : 'não importa'}</span><br><small class="faint">${esc(st[i][1])}</small></td></tr>`).join(''); };
     A.abrirModal({
       titulo: `Subir ${itens.length} TXT de resultados`, ic: 'upload', cor: 'var(--blue)',
       corpo: `<p style="margin:0 0 8px">Cada arquivo vai para o mês indicado (pelo nome do arquivo ou pela data da coleta + 1 mês). Confira e ajuste antes de importar.</p>
         <div class="tbl-wrap" style="max-height:52vh;overflow:auto"><table class="tbl lote-txt"><thead><tr><th></th><th>Arquivo</th><th>Competência</th><th>Situação</th></tr></thead><tbody data-lt="corpo">${linhas()}</tbody></table></div>
+        ${htmlForaSistema(fora, excluir)}
         <div class="login-msg" data-lt="msg"></div>`,
       botoes: [{ rot: 'Cancelar' }, { rot: 'Importar marcados', cls: 'pri', ic: 'check', acao: form => { importarMarcados(form); return false; } }],
       aoAbrir: (m, form) => {
         const repintar = () => { form.querySelector('[data-lt=corpo]').innerHTML = linhas(); };
+        const bl = form.querySelector('.fora-sis'); if (bl) ligarForaSistema(bl, fora, excluir, repintar);
         form.addEventListener('change', e => {
           const t = e.target, it = itens[+t.dataset.i]; if (!it) return;
           if (t.dataset.lt === 'marca') it.marcado = t.checked;
@@ -497,11 +576,12 @@
       let ok = 0;
       for (const it of vai) {
         msg(`Importando ${rotComp(it.comp)} (${ok + 1}/${vai.length})…`);
-        try { await salvarLote(it.f, it.buf, it.r, it.comp, true); ok++; }
+        try { await gravarSemExcluidos(it.f, it.buf, it.r, it.comp, excluir, true); ok++; }
         catch (e) { b.disabled = false; return msg(`Parou em ${it.f.name}: ${e.message || e}. Os ${ok} anteriores ficaram salvos.`); }
       }
       A.fechar(); A.render();
-      A.toast(`${ok} ${ok === 1 ? 'mês importado' : 'meses importados'} para o histórico`, 'check');
+      const nEx = fora.filter(x => excluir.has(x.chave)).length;
+      A.toast(`${ok} ${ok === 1 ? 'mês importado' : 'meses importados'} para o histórico${nEx ? ` · ${nEx} pacientes fora do sistema não entraram` : ''}`, 'check');
     }
   }
 
@@ -723,6 +803,7 @@
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><h2 style="margin:0">${rotComp(l.competencia)}</h2><span class="chip b" style="--cor:${t.cor}">Bateria ${t.rotulo}</span></div>
           <div class="desc" style="margin:4px 0 0"><b>${esc(l.arquivo)}</b> · ${(l.tamanho / 1024).toFixed(0)} KB · ${nPac} pacientes · ${l.nResultados.toLocaleString('pt-BR')} resultados · coleta ${Object.keys(l.datas).sort().map(fmtData).join(', ')}</div>
           <div class="desc" style="margin:2px 0 0">Enviado em ${new Date(l.importadoEm).toLocaleString('pt-BR')}</div>
+          ${l.filtrado ? `<div style="margin-top:6px"><span class="chip b" style="--cor:var(--warn)" title="Cópia filtrada e renumerada: não é o arquivo original do laboratório">${ic('alert')} Cópia filtrada: ${l.filtrado.removidos} ${l.filtrado.removidos === 1 ? 'paciente fora do sistema removido' : 'pacientes fora do sistema removidos'}</span></div>` : ''}
           ${(l.avisos || []).length ? `<details style="margin-top:8px"><summary class="chip b" style="--cor:var(--warn);cursor:pointer">${ic('alert')} Checagem: ${Object.entries(porTipo).map(([k, n]) => `${n} ${k}`).join(' · ')}</summary><ul class="avisos">${l.avisos.slice(0, 60).map(a => `<li>${esc(a.texto)}</li>`).join('')}${l.avisos.length > 60 ? `<li>… e mais ${l.avisos.length - 60}</li>` : ''}</ul></details>` : ''}
         </div>
         <div style="display:flex;flex-direction:column;gap:6px">

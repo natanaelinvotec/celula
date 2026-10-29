@@ -397,7 +397,7 @@
   function linhasRelatorio() {
     const vs = E().vagas.filter(v => v.pacienteId && !(v.match && v.match.duplicadaDe)).sort(A.ordemRelatorio);
     const linhas = vs.map(v => ({ v, p: A.pacDe(v) })).filter(x => x.p && x.p.origem !== 'escala').map(x => Object.assign(x, { st: A.situacao(x.p) }));
-    const semVaga = Object.values(E().pacientes).filter(p => p.origem === 'csv' && !p.vagaId && p.status !== 'obito' && p.status !== 'saiu').map(p => ({ v: null, p, st: A.situacao(p) }));
+    const semVaga = Object.values(E().pacientes).filter(p => p.origem === 'csv' && !p.vagaId && !M.saiuDaClinica(p)).map(p => ({ v: null, p, st: A.situacao(p) }));
     let n = 0;
     [...linhas, ...semVaga].forEach(x => { x.n = x.st.coleta ? ++n : null; });
     return { linhas, semVaga, total: n };

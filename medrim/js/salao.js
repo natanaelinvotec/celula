@@ -262,7 +262,7 @@
         </div>` : ''}
         ${v ? `<div class="bloco"><h4>${ic('room')} Posição</h4><b>${esc(A.local(v))}</b>
           <div style="color:var(--muted);font-weight:700;font-size:13px;margin-top:2px">Dialisa: ${(v.dias.length ? v.dias : M.GRUPOS[v.grupo].dias).map(d => M.DIAS[d]).join(' · ')}${v.notaTransito ? ' · ' + esc(v.notaTransito) : ''}</div></div>`
-        : `<div class="alerta-box">${ic('alert')}<div>${p && p.status === 'obito' ? 'Óbito registrado' + (p.ultimaVaga ? ' — última posição: ' + esc(p.ultimaVaga) : '') : 'Paciente sem máquina na escala.'}</div></div>`}
+        : `<div class="alerta-box">${ic('alert')}<div>${M.saiuDaClinica(p) ? esc(A.situacao(p).motivo) + (p.ultimaVaga ? ' — última posição: ' + esc(p.ultimaVaga) : '') : 'Paciente sem máquina na escala.'}</div></div>`}
         ${vinculo}
         ${p ? `<div class="bloco"><h4>${ic('flask')} Controles</h4><div style="display:flex;flex-wrap:wrap;gap:8px">
           ${Object.entries(M.CONTROLES).map(([k, c]) => `<button class="toggle" style="--cor:${c.cor}" data-f="controle" data-k="${k}" aria-pressed="${!!(p.controles && p.controles[k])}"><span class="k" style="--cor:${c.cor}">${c.sigla}</span>${c.rotulo}</button>`).join('')}
@@ -441,7 +441,7 @@
       abrirModal({
         titulo: 'Óbito ou saída da clínica', ic: 'userx', cor: 'var(--muted)',
         corpo: `${campoPac('pac')}
-          <div class="linha-f"><label class="f">Tipo<select name="tipo"><option value="obito">Óbito</option><option value="saiu">Saiu da clínica (alta / transferência externa)</option></select></label>
+          <div class="linha-f"><label class="f">Tipo<select name="tipo">${Object.entries(M.SAIDAS).map(([k, s]) => `<option value="${k}">${esc(s.opcao)}</option>`).join('')}</select></label>
           <label class="f">Data<input type="date" name="data" value="${hojeISO()}"></label></div>
           <div class="alerta-box">${ic('alert')}<div>A máquina fica <b>livre</b> e o paciente sai das baterias. O registro fica no histórico. Dá para desfazer logo em seguida.</div></div>`,
         botoes: [{ rot: 'Cancelar' }, { rot: 'Registrar', cls: 'rim', ic: 'check', acao: f => {
@@ -659,13 +659,17 @@
 
   function registrarSaida(vagaId, tipo, data) {
     const v = A.vagaPor(vagaId);
-    A.marcar(tipo === 'obito' ? 'óbito' : 'saída');
+    A.marcar(tipo === 'obito' ? 'óbito' : M.STATUS[tipo] ? M.STATUS[tipo].rotulo.toLowerCase() : 'saída');
     const p = garantirPaciente(v);
     const nome = nomeCurto(p.nome), onde = A.local(v, true);
     p.status = tipo; if (tipo === 'obito') p.obitoEm = data; else p.saiuEm = data;
     p.ultimaVaga = onde; p.vagaId = null;
     E().vagas.filter(x => x.pacienteId === p.id).forEach(x => Object.assign(x, JSON.parse(JSON.stringify(VAZIO))));
-    A.evento(tipo === 'obito' ? 'obito' : 'retorno', p.id, tipo === 'obito' ? `Óbito: ${nome} em ${fmtData(data)} — ${onde} liberada` : `${nome} saiu da clínica em ${fmtData(data)} — ${onde} liberada`);
+    const txtSaida = {
+      obito: `Óbito: ${nome} em ${fmtData(data)}`, saiu: `${nome} saiu da clínica em ${fmtData(data)}`,
+      abandono: `${nome} abandonou o tratamento em ${fmtData(data)}`, transplante: `${nome} foi transplantado(a) em ${fmtData(data)} — não faz mais diálise`,
+    }[tipo] || `${nome}: saída em ${fmtData(data)}`;
+    A.evento(tipo === 'saiu' ? 'retorno' : tipo, p.id, `${txtSaida} — ${onde} liberada`);
     A.salvar(); A.render(); flash([v.id]);
     A.toast(`${onde} liberada`, 'userx', true);
   }

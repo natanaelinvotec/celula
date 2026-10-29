@@ -259,7 +259,7 @@
   try { Object.assign(filtro, JSON.parse(localStorage.getItem('medrim:mapa') || '{}')); } catch (e) { /* ok */ }
   const guardarFiltro = () => { try { localStorage.setItem('medrim:mapa', JSON.stringify(filtro)); } catch (e) { /* ok */ } };
 
-  const MOTIVO_CURTO = st => st.travado ? 'outro laboratório' : /Internado/.test(st.motivo) ? 'internado' : /trânsito/i.test(st.motivo) ? 'trânsito' : /Óbito/.test(st.motivo) ? 'óbito' : /Saiu/.test(st.motivo) ? 'saiu' : /Admiss/.test(st.motivo) ? 'admissional — mês seguinte' : 'não coleta';
+  const MOTIVO_CURTO = st => st.travado ? 'outro laboratório' : /Internado/.test(st.motivo) ? 'internado' : /trânsito/i.test(st.motivo) ? 'trânsito' : /Óbito/.test(st.motivo) ? 'óbito' : /Saiu/.test(st.motivo) ? 'saiu' : /Abandonou/.test(st.motivo) ? 'abandono' : /Transplantado/.test(st.motivo) ? 'transplantado' : /Admiss/.test(st.motivo) ? 'admissional — mês seguinte' : 'não coleta';
 
   function blocoPaciente(v, idx) {
     const g = M.GRUPOS[v.grupo].dias.map(d => M.DIAS[d].toUpperCase()).join(' ');

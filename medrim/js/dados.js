@@ -111,5 +111,17 @@
     transito:  { rotulo: 'Em trânsito', cor: 'var(--c5)' },
     obito:     { rotulo: 'Óbito',       cor: 'var(--muted)' },
     saiu:      { rotulo: 'Saiu da clínica', cor: 'var(--muted)' },
+    abandono:  { rotulo: 'Abandonou o tratamento', cor: 'var(--muted)' },
+    transplante: { rotulo: 'Transplantado', cor: 'var(--muted)' },
   };
+
+  // Saídas da clínica: liberam a máquina e tiram o paciente das baterias. Data em obitoEm (óbito) ou saiuEm (demais).
+  M.SAIDAS = {
+    obito:       { opcao: 'Óbito',                                   motivo: 'Óbito em' },
+    saiu:        { opcao: 'Saiu da clínica (alta / transferência externa)', motivo: 'Saiu da clínica em' },
+    abandono:    { opcao: 'Abandonou o tratamento',                  motivo: 'Abandonou o tratamento em' },
+    transplante: { opcao: 'Transplantado — não faz mais diálise',    motivo: 'Transplantado em', resto: ' — não faz mais diálise' },
+  };
+  M.saiuDaClinica = p => !!(p && M.SAIDAS[p.status]);
+  M.dataSaida = p => (p ? (p.status === 'obito' ? p.obitoEm : p.saiuEm) : null);
 })(window.MED = window.MED || {});

@@ -214,7 +214,7 @@
       foraDoBolsao: ocupadas.filter(v => doCsv(v) && m(v).foraDoBolsao && m(v).conf !== 'confirmado'),
       riscadosNoCsv: ocupadas.filter(v => v.riscado && doCsv(v) && !m(v).riscoResolvido),
       duplicadas: ocupadas.filter(v => m(v).duplicadaDe),
-      csvSemVaga: Object.values(pacientes).filter(p => p.origem === 'csv' && !p.vagaId && p.status !== 'obito'),
+      csvSemVaga: Object.values(pacientes).filter(p => p.origem === 'csv' && !p.vagaId && p.status !== 'obito' && p.status !== 'abandono' && p.status !== 'transplante'),
     };
   };
 })(window.MED = window.MED || {});

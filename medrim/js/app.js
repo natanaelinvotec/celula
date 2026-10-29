@@ -120,8 +120,7 @@
     if (!p) return { coleta: false, motivo: 'Sem pedido no CSV da Hiperrim' };
     const tv = travaPorCpf(p.cpf);
     if (tv) return { coleta: false, motivo: `Outro laboratório — travado desde ${fmtData(tv.desde)}`, cor: 'var(--muted)', ic: 'lock', travado: true };
-    if (p.status === 'obito') return { coleta: false, motivo: `Óbito em ${fmtData(p.obitoEm)}`, cor: 'var(--muted)', ic: 'userx' };
-    if (p.status === 'saiu') return { coleta: false, motivo: `Saiu da clínica em ${fmtData(p.saiuEm)}`, cor: 'var(--muted)', ic: 'userx' };
+    if (M.saiuDaClinica(p)) { const sd = M.SAIDAS[p.status]; return { coleta: false, motivo: `${sd.motivo} ${fmtData(M.dataSaida(p))}${sd.resto || ''}`, cor: 'var(--muted)', ic: 'userx', saida: p.status }; }
     if (p.status === 'internado') return { coleta: false, motivo: `Internado desde ${fmtData(p.internadoDesde)} — coleta só no retorno`, cor: 'var(--warn)', ic: 'bed' };
     if (p.status === 'transito' && !(p.transito && p.transito.incluir)) return { coleta: false, motivo: `Em trânsito${p.transito && p.transito.origem ? ' (' + p.transito.origem + ')' : ''} — fora da bateria`, cor: 'var(--c5)', ic: 'route' };
     const ja = janelaAdm(p);
@@ -470,7 +469,7 @@
 
   const EVT = {
     transferencia: ['swap', 'var(--blue)'], internacao: ['bed', 'var(--warn)'], retorno: ['check', 'var(--ok)'],
-    obito: ['userx', 'var(--muted)'], admissao: ['userplus', 'var(--teal)'], transito: ['route', 'var(--c5)'],
+    obito: ['userx', 'var(--muted)'], abandono: ['userx', 'var(--warn)'], transplante: ['check', 'var(--ok)'], admissao: ['userplus', 'var(--teal)'], transito: ['route', 'var(--c5)'],
     vinculo: ['link', 'var(--blue)'], importacao: ['upload', 'var(--rim)'], controle: ['flask', 'var(--k-glic)'], remocao: ['x', 'var(--crit)'], cadastro: ['userplus', 'var(--blue)'],
   };
   const movHtml = e => { const [icn, cor] = EVT[e.tipo] || ['info', 'var(--muted)']; return `<div class="mov" style="--cor:${cor}"><span class="ic">${ic(icn)}</span><div>${esc(e.texto)}<br><small>${fmtDataHora(e.ts)}</small></div></div>`; };
@@ -502,7 +501,7 @@
       res.innerHTML = achados.length ? achados.map((x, i) => `<button type="button" role="option" class="${i === sel ? 'sel' : ''}" data-i="${i}">
         <span class="avatar" style="width:30px;height:30px;border-radius:10px;font-size:12px">${esc(iniciais(x.p ? x.p.nome : x.v.nomeEscala))}</span>
         <span><b>${esc(x.p ? nomeCurto(x.p.nome) : x.v.nomeEscala)}</b>${x.p && x.v && x.v.nomeEscala ? `<br><small style="color:var(--muted)">escala: ${esc(x.v.nomeEscala)}</small>` : ''}</span>
-        <span class="loc">${x.v ? esc(local(x.v, true)) : (x.p && x.p.status === 'obito' ? 'óbito' : 'sem máquina')}</span></button>`).join('')
+        <span class="loc">${x.v ? esc(local(x.v, true)) : (M.saiuDaClinica(x.p) ? M.STATUS[x.p.status].rotulo.toLowerCase() : 'sem máquina')}</span></button>`).join('')
         : `<div class="vazio" style="padding:14px">Nada encontrado.</div>`;
       res.classList.add('on');
     };
