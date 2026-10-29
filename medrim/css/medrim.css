@@ -322,6 +322,7 @@ label.f{display:grid;grid-template-columns:minmax(0,1fr);gap:5px;font-size:12.5p
 .secao-sync .tbl{margin-top:12px}
 .conf{display:inline-flex;align-items:center;gap:7px;font-weight:800;font-size:12px}
 .conf .barra{width:54px}
+.vinc-nome{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .escala-nome{font-family:'Segoe Print','Comic Sans MS',cursive;font-size:13px;background:#fff8e6;color:#3b2a08;padding:2px 8px;border-radius:7px;border:1px solid #f0d58f;white-space:nowrap}
 :root[data-theme="dark"] .escala-nome{background:#3a2f12;color:#ffe7a8;border-color:#5d4a17}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .escala-nome{background:#3a2f12;color:#ffe7a8;border-color:#5d4a17}}
