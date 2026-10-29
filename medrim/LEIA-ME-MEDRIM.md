@@ -103,6 +103,9 @@ Pasta para o repositório `celula`. Depois de enviada, a página fica em **`celu
    Ponto cheio = TXT carregado (clique para ver o mês); vazio = falta — o programador clica para subir o TXT daquele mês
    ou arrasta **vários TXT de uma vez**: cada arquivo vai para o mês do nome (ex.: `Bateria_Out_2026`) ou da coleta + 1 mês,
    com conferência antes de importar (mês que já tem TXT vem desmarcado). Respeita “reduzir movimento” do sistema.
+   Pacientes do TXT que **não estão no MedRim hoje** aparecem agrupados (“fora do sistema”), com excluir/manter por paciente.
+   Em meses anteriores vêm marcados para **excluir**: não entram no histórico e o TXT guardado vira uma cópia filtrada e
+   renumerada (avisada em Arquivos TXT). No mês atual o padrão é manter, porque esse TXT vai para a Hiperrim.
 
 Layout lido do TXT (separador `|`, ISO-8859-1, CRLF):
 
@@ -124,7 +127,8 @@ No mockup, os resultados ficam no IndexedDB do navegador (não vão para o GitHu
 - Outro laboratório = **trava** (cadeado). Vale pela pessoa (CPF, ou nome da escala + dias + turno), atravessa os meses e o
   "Começar do zero": mesmo que a Hiperrim mande o paciente no CSV, ele fica fora do relatório e das pendências. Clique no cadeado para liberar.
 - Convênio (Unimed): marcado pelo CPF na ficha do paciente; selo pequeno na máquina, no relatório e coluna Convênio no Excel.
-- Internado: fora até o retorno. Trânsito: fora por padrão. Óbito/saída: libera a máquina.
+- Internado: fora até o retorno. Trânsito: fora por padrão. Saída da clínica (óbito, saiu — alta/transferência externa,
+  **abandonou o tratamento**, **transplantado** — não faz mais diálise): libera a máquina e tira das baterias; fica no histórico.
 - Ordem do relatório: Salão → Seg/Qua/Sex (manhã, tarde, noite) → Ter/Qui/Sáb (manhã, tarde, noite) → máquina.
 
 ## Versão final (próxima fase)
