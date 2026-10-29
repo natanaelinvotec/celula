@@ -837,4 +837,15 @@ async function ligarIntegracao() {
 // =====================================================================
 Object.assign(A.views, { vUsuarios, vIntegracao, vMigrar });
 Object.assign(A.ligar, { usuarios: ligarUsuarios, integracao: ligarIntegracao, migrar: ligarMigrar });
-M.nuvemApi = { salvar, sair, recarregar, processarEntrada, estavel, foto, balde, docVaga, minhaSenha };
+/** Movimentações de um período (AAAA-MM-DD a AAAA-MM-DD): lê um documento por mês (no máximo 36) + o que ainda não subiu. */
+async function eventosPeriodo(de, ate) {
+  const meses = []; const d = new Date(de.slice(0, 7) + '-01T12:00:00'), fim = ate.slice(0, 7);
+  while (meses.length < 36) { const m = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; if (m > fim) break; meses.push(m); d.setMonth(d.getMonth() + 1); }
+  const docs = await Promise.all(meses.map(m => getDoc(doc(db, C.eventos, m))));
+  const vistos = new Set(), out = [];
+  const add = ev => { const k = chaveEv(ev); if (!vistos.has(k)) { vistos.add(k); out.push(ev); } };
+  docs.forEach(sn => (sn.exists() ? sn.data().lista || [] : []).forEach(add));
+  ((A.E && A.E.eventos) || []).forEach(add);
+  return out.sort((a, b) => b.ts.localeCompare(a.ts));
+}
+M.nuvemApi = { salvar, sair, recarregar, processarEntrada, estavel, foto, balde, docVaga, minhaSenha, eventosPeriodo };

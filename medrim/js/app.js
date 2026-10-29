@@ -77,8 +77,8 @@
   const podeEditar = () => ['programador', 'enfermaria'].includes(papel());
   const ehProgramador = () => papel() === 'programador';
   const ROTAS_PAPEL = {
-    enfermaria: ['painel', 'salao', 'sync', 'relatorio', 'etiquetas', 'baterias', 'resultados', 'paciente', 'arquivos', 'interface'],
-    faturamento: ['painel', 'salao', 'relatorio', 'etiquetas', 'baterias', 'resultados', 'paciente', 'arquivos', 'interface'],
+    enfermaria: ['painel', 'gerencial', 'salao', 'sync', 'relatorio', 'etiquetas', 'baterias', 'resultados', 'paciente', 'arquivos', 'interface'],
+    faturamento: ['painel', 'gerencial', 'salao', 'relatorio', 'etiquetas', 'baterias', 'resultados', 'paciente', 'arquivos', 'interface'],
   };
   const rotaPermitida = r => ehProgramador() || (ROTAS_PAPEL[papel()] || []).includes(r);
 
@@ -217,6 +217,7 @@
   // ================= navegação =================
   const rotas = {
     painel: { t: 'Painel gerencial', ic: 'grid' },
+    gerencial: { t: 'Relatório do período', ic: 'chart' },
     salao: { t: 'Salão', ic: 'room' },
     sync: { t: 'Sincronização escala × CSV', ic: 'sync' },
     relatorio: { t: 'Relatório de cadastro', ic: 'report' },
@@ -252,7 +253,7 @@
     const item = (h, rot, icn, extra = '', ativo = false) => `<a class="nav" href="${h}" ${ativo ? 'aria-current="page"' : ''}>${ic(icn)}<span>${rot}</span>${extra}</a>`;
     let html = '';
     if (d) {
-      html += `<div class="nav-t">Gestão</div>` + item('#/painel', 'Painel gerencial', 'grid', '', r === 'painel');
+      html += `<div class="nav-t">Gestão</div>` + item('#/painel', 'Painel gerencial', 'grid', '', r === 'painel') + item('#/gerencial', 'Relatório do período', 'chart', '', r === 'gerencial');
       html += `<div class="nav-t">Salões</div>`;
       for (const s of saloes()) {
         const vs = E.vagas.filter(v => v.salao === s), oc = vs.filter(ocupada).length;
@@ -309,7 +310,7 @@
     renderNav(); renderTopo();
     const { r, a } = rotaAtual();
     const V = M.app.views;
-    const views = { usuarios: V.vUsuarios, integracao: V.vIntegracao, migrar: V.vMigrar, painel: V.vPainel, salao: () => V.vSalao(+a || 1, M.app.rotaAtual().b), sync: V.vSync, relatorio: V.vRelatorio, etiquetas: V.vEtiquetas, baterias: V.vBaterias, proposta: V.vProposta, importar: V.vImportar,
+    const views = { usuarios: V.vUsuarios, integracao: V.vIntegracao, migrar: V.vMigrar, painel: V.vPainel, gerencial: V.vGerencial, salao: () => V.vSalao(+a || 1, M.app.rotaAtual().b), sync: V.vSync, relatorio: V.vRelatorio, etiquetas: V.vEtiquetas, baterias: V.vBaterias, proposta: V.vProposta, importar: V.vImportar,
       resultados: () => V.vResultados(a), paciente: () => V.vPaciente(a), arquivos: V.vArquivos, interface: V.vInterface };
     const alvo = $('#conteudo');
     alvo.onclick = alvo.onchange = alvo.onkeydown = null;
@@ -427,7 +428,8 @@
           <span>${ic('flask')} <b class="mono" data-n="${m.coletam.length}">${m.coletam.length}</b>&nbsp;pacientes · <b class="mono" data-n="${m.exames}">${m.exames}</b>&nbsp;exames</span>
         </div>
         <div class="acoes">
-          <a class="btn pri" href="#/relatorio">${ic('report')} Gerar relatório de cadastro</a>
+          <a class="btn pri" href="#/gerencial">${ic('chart')} Relatório do período</a>
+          <a class="btn" href="#/relatorio">${ic('report')} Gerar relatório de cadastro</a>
           <a class="btn" href="#/sync">${ic('sync')} Resolver ${m.nDiv} divergências</a>
         </div>
       </div>
@@ -469,7 +471,7 @@
 
   const EVT = {
     transferencia: ['swap', 'var(--blue)'], internacao: ['bed', 'var(--warn)'], retorno: ['check', 'var(--ok)'],
-    obito: ['userx', 'var(--muted)'], abandono: ['userx', 'var(--warn)'], transplante: ['check', 'var(--ok)'], admissao: ['userplus', 'var(--teal)'], transito: ['route', 'var(--c5)'],
+    obito: ['userx', 'var(--muted)'], saida: ['userx', 'var(--c5)'], abandono: ['userx', 'var(--warn)'], transplante: ['check', 'var(--ok)'], admissao: ['userplus', 'var(--teal)'], transito: ['route', 'var(--c5)'],
     vinculo: ['link', 'var(--blue)'], importacao: ['upload', 'var(--rim)'], controle: ['flask', 'var(--k-glic)'], remocao: ['x', 'var(--crit)'], cadastro: ['userplus', 'var(--blue)'],
   };
   const movHtml = e => { const [icn, cor] = EVT[e.tipo] || ['info', 'var(--muted)']; return `<div class="mov" style="--cor:${cor}"><span class="ic">${ic(icn)}</span><div>${esc(e.texto)}<br><small>${fmtDataHora(e.ts)}</small></div></div>`; };

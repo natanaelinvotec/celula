@@ -317,7 +317,7 @@
       A.marcar('tipo de saída');
       p.status = novo;
       if (novo === 'obito') { p.obitoEm = data; delete p.saiuEm; } else { p.saiuEm = data; delete p.obitoEm; }
-      A.evento(novo === 'saiu' ? 'retorno' : novo, p.id, `${nomeCurto(p.nome)}: saída corrigida de “${M.STATUS[antes].rotulo}” para “${M.STATUS[novo].rotulo}” (${fmtData(data)})`);
+      A.evento(novo === 'saiu' ? 'saida' : novo, p.id, `${nomeCurto(p.nome)}: saída corrigida de “${M.STATUS[antes].rotulo}” para “${M.STATUS[novo].rotulo}” (${fmtData(data)})`);
       A.salvar(); A.render(); A.toast(`Saída de ${nomeCurto(p.nome)}: ${M.STATUS[novo].rotulo}`, 'userx', true);
       return reabrir();
     }
@@ -684,7 +684,7 @@
       obito: `Óbito: ${nome} em ${fmtData(data)}`, saiu: `${nome} saiu da clínica em ${fmtData(data)}`,
       abandono: `${nome} abandonou o tratamento em ${fmtData(data)}`, transplante: `${nome} foi transplantado(a) em ${fmtData(data)} — não faz mais diálise`,
     }[tipo] || `${nome}: saída em ${fmtData(data)}`;
-    A.evento(tipo === 'saiu' ? 'retorno' : tipo, p.id, `${txtSaida} — ${onde} liberada`);
+    A.evento(tipo === 'saiu' ? 'saida' : tipo, p.id, `${txtSaida} — ${onde} liberada`);
     A.salvar(); A.render(); flash([v.id]);
     A.toast(`${onde} liberada`, 'userx', true);
   }
