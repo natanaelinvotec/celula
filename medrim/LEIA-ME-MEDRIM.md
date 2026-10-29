@@ -50,6 +50,7 @@ Pasta para o repositório `celula`. Depois de enviada, a página fica em **`celu
 | `js/nephrosys.js` | **Configuração da interface de resultados**: tabela de códigos do PDF Nephrosys, como cada código do TXT é interpretado, alvos e valores críticos. |
 | `js/etiquetas.js` | Lê os PDFs de etiquetas do Autolac (sem biblioteca externa), liga protocolo → paciente e monta o mapa de coleta. |
 | `js/resultados.js` | Importa o TXT de resultados, guarda o histórico, visão do médico, ficha do paciente, arquivos para download e tela da interface. |
+| `js/relatorio.js` | **Relatório do período**: números atuais dos equipamentos e movimentações (transferências, óbitos, abandonos, transplantes, altas, internações…) entre duas datas. |
 | `img/` | Logos (Célula e Hiperrim) e ícone da aba. |
 
 ## Como subir no GitHub
@@ -80,7 +81,15 @@ Pasta para o repositório `celula`. Depois de enviada, a página fica em **`celu
    O MedRim liga cada protocolo (13-XXXXXX) ao paciente, aponta quem coleta sem etiqueta, protocolo sem paciente e perfil
    diferente do MedRim, e imprime o **mapa de coleta**: uma folha A4 deitada por salão e turno, máquinas na ordem do salão,
    nome + protocolo em letra grande (filtro Seg/Qua/Sex, Ter/Qui/Sáb ou ambos). Os PDFs são lidos no navegador.
-8. **Backup (JSON)** → guarda o estado (contém dados pessoais: salve em local seguro, fora do GitHub).
+8. **Relatório do período** (botão azul no Painel, ou no menu) → escolha Hoje, 7 dias, 30 dias, Este mês,
+   Mês anterior, 90 dias, Este ano ou Personalizado (De/Até). Mostra a ocupação agora (máquinas, vagas, ocupadas,
+   vazias, por salão e por dias/turno) e tudo o que aconteceu no período: transferências, óbitos, abandonos,
+   transplantes, altas/transferências externas, internações, retornos, admissões, trânsito, travas e remoções,
+   com gráfico por dia/semana/mês e as listas nominais. **Excel** baixa resumo + detalhe; **Imprimir / PDF** sai em A4.
+   Óbitos, abandonos, transplantes e altas contam pela situação atual do paciente e pela data da saída — se a saída
+   for corrigida na ficha, o relatório acompanha sem contar duas vezes. Online, o relatório busca os eventos de todos
+   os meses do período na nuvem (enfermaria e faturamento também veem, só leitura).
+9. **Backup (JSON)** → guarda o estado (contém dados pessoais: salve em local seguro, fora do GitHub).
    Para levar tudo para outro computador: **Importar arquivos → Restaurar backup**.
 
 ## Resultados (TXT padrão Nephrosys)
