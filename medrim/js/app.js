@@ -502,7 +502,7 @@
     const pintar = () => {
       res.innerHTML = achados.length ? achados.map((x, i) => `<button type="button" role="option" class="${i === sel ? 'sel' : ''}" data-i="${i}">
         <span class="avatar" style="width:30px;height:30px;border-radius:10px;font-size:12px">${esc(iniciais(x.p ? x.p.nome : x.v.nomeEscala))}</span>
-        <span><b>${esc(x.p ? nomeCurto(x.p.nome) : x.v.nomeEscala)}</b>${x.p && x.v && x.v.nomeEscala ? `<br><small style="color:var(--muted)">escala: ${esc(x.v.nomeEscala)}</small>` : ''}</span>
+        <span><b>${esc(x.p ? titulo(x.p.nome) : x.v.nomeEscala)}</b></span>
         <span class="loc">${x.v ? esc(local(x.v, true)) : (M.saiuDaClinica(x.p) ? M.STATUS[x.p.status].rotulo.toLowerCase() : 'sem máquina')}</span></button>`).join('')
         : `<div class="vazio" style="padding:14px">Nada encontrado.</div>`;
       res.classList.add('on');

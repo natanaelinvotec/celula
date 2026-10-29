@@ -118,7 +118,7 @@
     if (completo) cls.push('completo');
     const nome = occ ? (completo ? titulo(p.nome) : A.nomeFaixa(v)) : 'Livre';
     return `<div class="${cls.join(' ')}" role="button" tabindex="0" data-vaga="${v.id}" ${occ && A.podeEditar() ? 'draggable="true"' : ''} style="${filtrar ? 'opacity:.28' : ''}"
-      title="${esc(occ ? (p ? titulo(p.nome) : v.nomeEscala) + (v.nomeEscala ? ' · escala: ' + v.nomeEscala : '') : 'Vaga livre')}">
+      title="${esc(occ ? (p ? titulo(p.nome) : v.nomeEscala) : 'Vaga livre')}">
       <span class="g">${g}</span>
       <span class="nm"><span>${esc(nome)}</span><small>${esc(sub)}</small></span>
       <span class="badges">${badges}</span></div>`;
@@ -210,9 +210,13 @@
     let vinculo = '';
     if (v && v.nomeEscala) {
       const alts = (v.alternativas || []).filter(a => E().pacientes[a.cpf]);
-      vinculo = `<div class="bloco"><h4>${ic('link')} Escala × CSV</h4>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center"><span class="escala-nome">${esc(v.variantes.join('  /  ') || v.nomeEscala)}</span><svg class="i" style="transform:rotate(-90deg);color:var(--faint)" aria-hidden="true"><use href="#i-chev"/></svg>
-        <b>${p && p.origem === 'csv' ? esc(p.nome) : p && p.semPedido ? `${esc(p.nome)} <span class="chip b" style="--cor:var(--blue)">sem pedido no CSV · ${esc(M.BATERIAS[p.bateriaManual].rotulo)}</span>` : '<span style="color:var(--crit)">sem correspondente no CSV</span>'}</b></div>
+      // só o nome completo (o nome abreviado do Word fica apenas na tela Sincronização)
+      const origemChip = !p ? '' : p.semPedido ? `<span class="chip b" style="--cor:var(--blue)">sem pedido no CSV · ${esc(M.BATERIAS[p.bateriaManual].rotulo)}</span>`
+        : p.origem === 'resultado' ? '<span class="chip b" style="--cor:var(--c5)">achado no TXT · sem pedido no CSV</span>'
+        : p.origem === 'manual' ? '<span class="chip b" style="--cor:var(--teal)">cadastro manual</span>'
+        : p.origem === 'transito' ? '<span class="chip b" style="--cor:var(--c5)">trânsito</span>' : '';
+      vinculo = `<div class="bloco"><h4>${ic('link')} Vínculo com o CSV</h4>
+        <div class="vinc-nome">${p && p.origem !== 'escala' ? `<b>${esc(p.nome)}</b> ${origemChip}` : '<b style="color:var(--crit)">Sem correspondente no CSV</b>'}</div>
         ${conf && conf.score != null && conf.conf !== 'manual' ? `<div class="conf" style="margin-top:8px">Semelhança <span class="barra" style="--cor:${corConf}"><i style="width:${Math.round(conf.score * 100)}%"></i></span> ${Math.round(conf.score * 100)}%</div>` : ''}
         ${conf && conf.foraDoBolsao ? `<div class="alerta-box" style="margin-top:10px">${ic('alert')}<div>No CSV este paciente está em <b>${M.GRUPOS[conf.foraDoBolsao.grupo].rotulo} · ${A.rotTurno(conf.foraDoBolsao.turno)}</b>; na escala, em ${M.GRUPOS[v.grupo].rotulo} · ${A.rotTurno(v.turno)}.</div></div>` : ''}
         ${v.riscado ? `<div class="alerta-box" style="margin-top:10px">${ic('x')}<div>Nome <b>riscado</b> na escala do Word. Confirme se saiu (óbito, alta, transferência) ou se continua.</div></div>` : ''}
