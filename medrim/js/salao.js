@@ -262,7 +262,8 @@
         </div>` : ''}
         ${v ? `<div class="bloco"><h4>${ic('room')} Posição</h4><b>${esc(A.local(v))}</b>
           <div style="color:var(--muted);font-weight:700;font-size:13px;margin-top:2px">Dialisa: ${(v.dias.length ? v.dias : M.GRUPOS[v.grupo].dias).map(d => M.DIAS[d]).join(' · ')}${v.notaTransito ? ' · ' + esc(v.notaTransito) : ''}</div></div>`
-        : `<div class="alerta-box">${ic('alert')}<div>${M.saiuDaClinica(p) ? esc(A.situacao(p).motivo) + (p.ultimaVaga ? ' — última posição: ' + esc(p.ultimaVaga) : '') : 'Paciente sem máquina na escala.'}</div></div>`}
+        : `<div class="alerta-box">${ic('alert')}<div>${M.saiuDaClinica(p) ? esc(A.situacao(p).motivo) + (p.ultimaVaga ? ' — última posição: ' + esc(p.ultimaVaga) : '') : 'Paciente sem máquina na escala.'}</div></div>
+          ${M.saiuDaClinica(p) && A.podeEditar() ? `<label class="f so-edicao" style="margin-top:10px">Tipo de saída (corrigir)<select data-f="tiposaida">${Object.entries(M.SAIDAS).map(([k, sd]) => `<option value="${k}" ${p.status === k ? 'selected' : ''}>${esc(sd.opcao)}</option>`).join('')}</select></label>` : ''}`}
         ${vinculo}
         ${p ? `<div class="bloco"><h4>${ic('flask')} Controles</h4><div style="display:flex;flex-wrap:wrap;gap:8px">
           ${Object.entries(M.CONTROLES).map(([k, c]) => `<button class="toggle" style="--cor:${c.cor}" data-f="controle" data-k="${k}" aria-pressed="${!!(p.controles && p.controles[k])}"><span class="k" style="--cor:${c.cor}">${c.sigla}</span>${c.rotulo}</button>`).join('')}
@@ -287,7 +288,10 @@
       const b2 = e.target.closest('[data-f]'); if (!b2 || b2.tagName === 'SELECT') return;
       acaoFicha(b2.dataset.f, b2, v, p);
     };
-    g.onchange = e => { if (e.target.dataset.f === 'trocar' && e.target.value) acaoFicha('trocar', e.target, v, p); };
+    g.onchange = e => {
+      if (e.target.dataset.f === 'trocar' && e.target.value) acaoFicha('trocar', e.target, v, p);
+      if (e.target.dataset.f === 'tiposaida') acaoFicha('tiposaida', e.target, v, p);
+    };
     abrirCamada(g);
   }
 
@@ -306,6 +310,17 @@
     const reabrir = () => abrirFicha(v ? v.id : null, v ? null : p && p.id);
     if (f === 'fechar') return fechar();
     if (f === 'cpf') { A.ui.revelarCpf = !A.ui.revelarCpf; return reabrir(); }
+    if (f === 'tiposaida') {
+      if (!A.podeEditar()) return A.toast('Seu usuário só visualiza.', 'shield');
+      const novo = el.value; if (!p || !M.SAIDAS[novo] || novo === p.status) return;
+      const antes = p.status, data = M.dataSaida(p);
+      A.marcar('tipo de saída');
+      p.status = novo;
+      if (novo === 'obito') { p.obitoEm = data; delete p.saiuEm; } else { p.saiuEm = data; delete p.obitoEm; }
+      A.evento(novo === 'saiu' ? 'retorno' : novo, p.id, `${nomeCurto(p.nome)}: saída corrigida de “${M.STATUS[antes].rotulo}” para “${M.STATUS[novo].rotulo}” (${fmtData(data)})`);
+      A.salvar(); A.render(); A.toast(`Saída de ${nomeCurto(p.nome)}: ${M.STATUS[novo].rotulo}`, 'userx', true);
+      return reabrir();
+    }
     if (!A.podeEditar()) return A.toast('Seu usuário só visualiza.', 'shield');
     if (f === 'confirmar') { confirmarVinculo(v.id); return reabrir(); }
     if (f === 'desvincular') { trocarVinculo(v.id, ''); return reabrir(); }
