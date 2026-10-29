@@ -258,7 +258,7 @@
           ${p.lab ? `<div class="campo"><small>Lab. cliente (CSV)</small><b>${esc(p.lab)}</b></div>` : ''}
           ${p.admissao ? `<div class="campo"><small>Admissão</small><b>${fmtData(p.admissao)}</b></div>` : ''}
           ${A.etiquetaDe && A.etiquetaDe(p) ? `<div class="campo"><small>Protocolo (etiqueta)</small><b class="mono">${esc(A.etiquetaDe(p).protocolo)}</b></div>` : ''}
-          ${p.cpf ? `<div class="campo"><small>Convênio</small><button class="toggle" data-f="unimed" aria-pressed="${conv === 'unimed'}" title="Marca pelo CPF — vale todos os meses">${seloConvenio('unimed')} Unimed</button></div>` : ''}
+          ${p.cpf ? `<div class="campo campo-conv"><small>Convênio</small><div class="conv-opcoes" role="group" aria-label="Convênio">${Object.entries(M.CONVENIOS).map(([k, c]) => `<button class="toggle" data-f="convenio" data-conv="${k}" aria-pressed="${conv === k}" style="--cor:${c.cor}" title="Marca pelo CPF — vale todos os meses (clique de novo para tirar)">${seloConvenio(k)} ${esc(c.rotulo)}</button>`).join('')}</div></div>` : ''}
         </div>` : ''}
         ${v ? `<div class="bloco"><h4>${ic('room')} Posição</h4><b>${esc(A.local(v))}</b>
           <div style="color:var(--muted);font-weight:700;font-size:13px;margin-top:2px">Dialisa: ${(v.dias.length ? v.dias : M.GRUPOS[v.grupo].dias).map(d => M.DIAS[d]).join(' · ')}${v.notaTransito ? ' · ' + esc(v.notaTransito) : ''}</div></div>`
@@ -328,9 +328,11 @@
     if (f === 'remover') { fechar(); return removerDaEscala(v.id); }
     if (f === 'travar') { travarVaga(v.id); return reabrir(); }
     if (f === 'destravar') return pedirDestravar(v.id, reabrir);
-    if (f === 'unimed') {
-      A.marcar('convênio'); A.definirConvenio(p.cpf, A.convenioDe(p) === 'unimed' ? null : 'unimed'); A.salvar(); A.render();
-      A.toast(A.convenioDe(p) ? `${nomeCurto(p.nome)}: convênio Unimed` : `${nomeCurto(p.nome)}: sem convênio marcado`, 'tag', true);
+    if (f === 'convenio') {
+      const k = el.dataset.conv; if (!M.CONVENIOS[k]) return;
+      A.marcar('convênio'); A.definirConvenio(p.cpf, A.convenioDe(p) === k ? null : k); A.salvar(); A.render();
+      const agora = A.convenioDe(p);
+      A.toast(agora ? `${nomeCurto(p.nome)}: convênio ${M.CONVENIOS[agora].rotulo}` : `${nomeCurto(p.nome)}: sem convênio marcado`, 'tag', true);
       return reabrir();
     }
     if (f === 'trocar') { if (el.value === '*') return modalVincular(v.id); trocarVinculo(v.id, el.value); return reabrir(); }
@@ -606,7 +608,7 @@
   /** Selo pequeno do convênio (mesmo formato dos selos da máquina). */
   function seloConvenio(conv) {
     const c = M.CONVENIOS[conv]; if (!c) return '';
-    return `<span class="st conv" style="--cor:${c.cor}" title="Convênio ${esc(c.rotulo)}"><img src="${c.logo}" alt="${esc(c.rotulo)}" width="14" height="14"></span>`;
+    return `<span class="st conv conv-${conv}${c.cheio ? ' cheio' : ''}${c.fundo ? ' claro' : ''}" style="--cor:${c.fundo || c.cor}" title="Convênio ${esc(c.rotulo)}"><img src="${c.logo}" alt="${esc(c.rotulo)}" width="14" height="14"></span>`;
   }
 
   /** Trava a pessoa como "outro laboratório" (vale nos próximos meses). */

@@ -100,9 +100,12 @@
   };
   M.DIAS = { seg: 'Seg', qua: 'Qua', sex: 'Sex', ter: 'Ter', qui: 'Qui', sab: 'Sáb' };
 
-  // Convênios marcados por CPF (valem todos os meses). Logo pequena em img/.
+  // Convênios marcados por CPF (valem todos os meses; um por paciente). Logo pequena em img/.
+  // cor = cor do texto/realce; fundo = cor do selo (se diferente); cheio = a logo ocupa o selo inteiro.
   M.CONVENIOS = {
     unimed: { rotulo: 'Unimed', cor: '#019657', logo: 'img/unimed.png' },
+    celula: { rotulo: 'Célula', cor: '#db070b', fundo: '#ffffff', logo: 'img/celula.png' },
+    impcg:  { rotulo: 'IMPCG', cor: '#105caa', logo: 'img/impcg.png', cheio: true },
   };
 
   M.STATUS = {

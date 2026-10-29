@@ -104,7 +104,7 @@
       titulo: 'Começar do zero', ic: 'undo', cor: 'var(--crit)',
       corpo: `<p style="margin:0">Apaga <b>deste navegador</b> tudo o que o MedRim guardou: escala, sincronização, vínculos confirmados, internações/admissões/óbitos, histórico, observações e resultados de TXT. Seus arquivos (Word, CSVs, planilhas) não são tocados.</p>
         <label style="display:flex;gap:8px;align-items:center;font-weight:800"><input type="checkbox" name="bk" checked> Baixar um backup antes de apagar</label>
-        <label style="display:flex;gap:8px;align-items:center;font-weight:800"><input type="checkbox" name="fixos" checked> Manter as travas de outro laboratório e os convênios (Unimed)</label>
+        <label style="display:flex;gap:8px;align-items:center;font-weight:800"><input type="checkbox" name="fixos" checked> Manter as travas de outro laboratório e os convênios (Unimed, Célula, IMPCG)</label>
         <div class="alerta-box">${ic('alert')}<div>Depois de apagar não dá para desfazer (só restaurando o backup).</div></div>`,
       botoes: [{ rot: 'Cancelar' }, { rot: 'Apagar tudo', cls: 'rim', ic: 'x', acao: async f => {
         if (f.bk.checked && E()) A.exportarBackup();

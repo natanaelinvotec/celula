@@ -77,7 +77,9 @@
       pct: vagas.length ? Math.round(oc.length / vagas.length * 1000) / 10 : 0,
       naEscala: principais.length, coletam: pacs.filter(p => A.situacao(p).coleta).length,
       internados: P.filter(p => p.status === 'internado'), transito: P.filter(p => p.status === 'transito'),
-      travados: Object.keys(ev.travas || {}).length, unimed: Object.keys(ev.convenios || {}).length,
+      travados: Object.keys(ev.travas || {}).length,
+      // convênios de quem está na escala agora (um por CPF)
+      convenios: Object.fromEntries(Object.keys(M.CONVENIOS).map(k => [k, pacs.filter(p => A.convenioDe(p) === k).length])),
       porSalao, grade,
     };
   }
@@ -184,15 +186,16 @@
         <div class="rp-hero-leg"><b>${n(a.ocupadas)}</b> ocupadas · <b>${n(a.vazias)}</b> vazias · ${n(a.vagas)} vagas</div>
       </div>
     </section>`;
+    const convs = `<span class="rp-convs">${Object.entries(M.CONVENIOS).map(([k, c]) => `<span title="${n(a.convenios[k])} ${esc(c.rotulo)} na escala" aria-label="${n(a.convenios[k])} ${esc(c.rotulo)}">${A.seloConvenio(k)}<b>${n(a.convenios[k])}</b></span>`).join('')}</span>`;
     const kpis = `<div class="rp-kpis">
       ${kpi('room', 'var(--blue)', a.maquinas, 'Máquinas', 'equipamentos físicos')}
       ${kpi('grid', 'var(--blue)', a.vagas, 'Vagas na escala', 'máquina × turno × dias')}
       ${kpi('check', 'var(--ok)', a.ocupadas, 'Ocupadas', `${String(a.pct).replace('.', ',')}% da escala`)}
       ${kpi('plus', 'var(--muted)', a.vazias, 'Vazias', 'disponíveis')}
-      ${kpi('userplus', 'var(--teal)', a.naEscala, 'Pacientes na escala', `${n(a.coletam)} coletam na bateria`)}
+      ${kpi('userplus', 'var(--teal)', a.naEscala, 'Pacientes na escala', `${n(a.coletam)} coletam na bateria${convs}`)}
       ${kpi('bed', 'var(--warn)', a.internados.length, 'Internados agora', '')}
       ${kpi('route', 'var(--c5)', a.transito.length, 'Em trânsito', '')}
-      ${kpi('lock', 'var(--muted)', a.travados, 'Outro laboratório', `${n(a.unimed)} Unimed`)}
+      ${kpi('lock', 'var(--muted)', a.travados, 'Outro laboratório', 'travados (cadeado)')}
     </div>`;
     const salas = `<div class="rp-grid2">
       <section class="rp-card"><h3>${ic('room')} Ocupação por salão</h3><p class="desc">Vagas ocupadas de cada salão (todas as máquinas × turnos × dias).</p>
@@ -238,7 +241,8 @@
     const p = periodo(), a = atual(), mv = movimentos(p);
     const L = [['Relatório do período', p.rotulo], ['Gerado em', new Date().toLocaleString('pt-BR')], [],
       ['Números atuais'], ['Máquinas', a.maquinas], ['Vagas na escala', a.vagas], ['Ocupadas', a.ocupadas], ['Vazias', a.vazias], ['Ocupação (%)', String(a.pct).replace('.', ',')],
-      ['Pacientes na escala', a.naEscala], ['Coletam na bateria', a.coletam], ['Internados agora', a.internados.length], ['Em trânsito', a.transito.length], ['Outro laboratório', a.travados], [],
+      ['Pacientes na escala', a.naEscala], ['Coletam na bateria', a.coletam], ['Internados agora', a.internados.length], ['Em trânsito', a.transito.length], ['Outro laboratório', a.travados],
+      ...Object.entries(M.CONVENIOS).map(([k, c]) => ['Convênio ' + c.rotulo + ' (na escala)', a.convenios[k]]), [],
       ['Ocupação por salão'], ['Salão', 'Máquinas', 'Ocupadas', 'Vagas', '%'], ...a.porSalao.map(x => [x.s, x.maqs, x.oc, x.total, x.total ? Math.round(x.oc / x.total * 100) : 0]), [],
       ['Movimentações no período'], ...Object.keys(TIPOS).map(k => [TIPOS[k].rot, mv.grupos[k].length]), [],
       ['Detalhe'], ['Tipo', 'Data', 'Paciente / movimentação', 'Local', 'Registrado por'],
