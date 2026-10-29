@@ -51,7 +51,7 @@ Pasta para o repositório `celula`. Depois de enviada, a página fica em **`celu
 | `js/etiquetas.js` | Lê os PDFs de etiquetas do Autolac (sem biblioteca externa), liga protocolo → paciente e monta o mapa de coleta. |
 | `js/resultados.js` | Importa o TXT de resultados, guarda o histórico, visão do médico, ficha do paciente, arquivos para download e tela da interface. |
 | `js/relatorio.js` | **Relatório do período**: números atuais dos equipamentos e movimentações (transferências, óbitos, abandonos, transplantes, altas, internações…) entre duas datas. |
-| `img/` | Logos (Célula e Hiperrim) e ícone da aba. |
+| `img/` | Logos (Célula e Hiperrim), selos dos convênios (Unimed, Célula, IMPCG) e ícone da aba. |
 
 ## Como subir no GitHub
 
@@ -135,7 +135,9 @@ No mockup, os resultados ficam no IndexedDB do navegador (não vão para o GitHu
 - Sem pedido no CSV: cadastrar com a bateria escolhida (mensal/trimestral/semestral) — entra na sequência normal; “Excluir” tira o nome da escala.
 - Outro laboratório = **trava** (cadeado). Vale pela pessoa (CPF, ou nome da escala + dias + turno), atravessa os meses e o
   "Começar do zero": mesmo que a Hiperrim mande o paciente no CSV, ele fica fora do relatório e das pendências. Clique no cadeado para liberar.
-- Convênio (Unimed): marcado pelo CPF na ficha do paciente; selo pequeno na máquina, no relatório e coluna Convênio no Excel.
+- Convênio (Unimed, Célula ou IMPCG — um por paciente): marcado pelo CPF na ficha do paciente (clique de novo para tirar);
+  selo pequeno na máquina, no relatório de cadastro, no mapa de coleta e coluna Convênio no Excel. O Relatório do período
+  mostra quantos pacientes da escala há em cada convênio. Para incluir outro convênio: `M.CONVENIOS` em `js/dados.js` + logo em `img/`.
 - Internado: fora até o retorno. Trânsito: fora por padrão. Saída da clínica (óbito, saiu — alta/transferência externa,
   **abandonou o tratamento**, **transplantado** — não faz mais diálise): libera a máquina e tira das baterias; fica no histórico.
 - Ordem do relatório: Salão → Seg/Qua/Sex (manhã, tarde, noite) → Ter/Qui/Sáb (manhã, tarde, noite) → máquina.
