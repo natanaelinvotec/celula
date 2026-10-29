@@ -254,6 +254,10 @@ svg.i{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-widt
 .st.conv img{width:14px;height:14px;display:block}
 .chip.conv{gap:5px}.chip.conv .st{width:16px;height:16px;border-radius:5px}.chip.conv .st img{width:11px;height:11px}
 .toggle .st.conv{width:18px;height:18px;border-radius:6px}.toggle .st.conv img{width:12px;height:12px}.toggle[aria-pressed="false"] .st.conv{opacity:.35}
+.st.conv.cheio{overflow:hidden}.st.conv.cheio img,.chip.conv .st.cheio img,.toggle .st.conv.cheio img,.mq-k .st.cheio img{width:100%;height:100%;object-fit:cover}
+.st.conv.claro{box-shadow:inset 0 0 0 1px rgba(15,23,42,.14)}
+.campo-conv{grid-column:1/-1}.conv-opcoes{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.conv-opcoes .toggle{cursor:pointer}
 .btn.trava{background:var(--surface-3);border-color:var(--line-2)}
 .btn.trava .i{color:var(--warn)}
 .btn.trava:hover{background:var(--warn-50);border-color:var(--warn)}
@@ -582,8 +586,8 @@ body.nuvem:not([data-papel="programador"]) [data-res="importar"],body.nuvem:not(
 /* faturamento: só visualiza */
 body[data-papel="faturamento"] .so-edicao{display:none!important}
 body[data-papel="faturamento"] [data-ferr]:not([data-ferr="nomes"]):not([data-ferr="filtro"]){display:none!important}
-body[data-papel="faturamento"] #gaveta [data-f]:not([data-f="fechar"]):not([data-f="cpf"]):not([data-f="controle"]):not([data-f="unimed"]),body[data-papel="faturamento"] #gaveta .sel-cand{display:none!important}
-body[data-papel="faturamento"] #gaveta [data-f="controle"],body[data-papel="faturamento"] #gaveta [data-f="unimed"],body[data-papel="faturamento"] [data-destravar]{pointer-events:none}
+body[data-papel="faturamento"] #gaveta [data-f]:not([data-f="fechar"]):not([data-f="cpf"]):not([data-f="controle"]):not([data-f="convenio"]),body[data-papel="faturamento"] #gaveta .sel-cand{display:none!important}
+body[data-papel="faturamento"] #gaveta [data-f="controle"],body[data-papel="faturamento"] #gaveta [data-f="convenio"],body[data-papel="faturamento"] [data-destravar]{pointer-events:none}
 body[data-papel="faturamento"] .faixa.vaga{cursor:default}
 /* usuários / integração */
 .papel-linha{display:flex;gap:10px;align-items:baseline;padding:6px 0;border-bottom:1px dashed var(--line)}
@@ -699,6 +703,7 @@ span.rg-mes{cursor:default}
 .rp-kpi b{font-size:28px;font-weight:900;letter-spacing:-.03em;line-height:1.05}
 .rp-kpi .l{font-size:13px;font-weight:800}
 .rp-kpi small{font-size:11.5px;font-weight:700;color:var(--muted)}
+.rp-convs{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:6px}.rp-convs>span{display:inline-flex;align-items:center;gap:4px}.rp-convs .st{width:16px;height:16px;border-radius:5px}.rp-convs .st img{width:11px;height:11px}.rp-convs .st.cheio img{width:100%;height:100%}.rp-convs b{font-size:12px;font-weight:900;color:var(--text)}
 .rp-card{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:18px 20px;box-shadow:var(--shadow-s);min-width:0}
 .rp-card h3{display:flex;align-items:center;gap:8px;margin:0 0 4px;font-size:16px;font-weight:900;letter-spacing:-.01em}
 .rp-card h3>svg{width:18px;height:18px;color:var(--blue)}
