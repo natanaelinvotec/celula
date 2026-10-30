@@ -47,7 +47,7 @@ Pasta para o repositório `celula`. Depois de enviada, a página fica em **`celu
 | `js/app.js` | Estado, regras de coleta, painel, busca e navegação. |
 | `js/salao.js` | Salões/máquinas, ficha do paciente, ferramentas (transferir, trânsito, admissão, internação, óbito). |
 | `js/telas.js` | Importação, sincronização, relatório de cadastro, baterias & regras, proposta. |
-| `js/nephrosys.js` | **Configuração da interface de resultados**: tabela de códigos do PDF Nephrosys, como cada código do TXT é interpretado, alvos e valores críticos. |
+| `js/nephrosys.js` | **Configuração da interface de resultados**: tabela de códigos do PDF Nephrosys, como cada código do TXT é interpretado, valores de referência do laudo e valores críticos. |
 | `js/etiquetas.js` | Lê os PDFs de etiquetas do Autolac (sem biblioteca externa), liga protocolo → paciente e monta o mapa de coleta. |
 | `js/resultados.js` | Importa o TXT de resultados, guarda o histórico, visão do médico, ficha do paciente, arquivos para download e tela da interface. |
 | `js/relatorio.js` | **Relatório do período**: números atuais dos equipamentos e movimentações (transferências, óbitos, abandonos, transplantes, altas, internações…) entre duas datas. |
@@ -96,10 +96,10 @@ Pasta para o repositório `celula`. Depois de enviada, a página fica em **`celu
 
 1. **Resultados → Subir TXT**: escolha o arquivo que o sistema do laboratório exporta (ex.: `Bateria_Out_2026.txt`).
    A competência vem do nome do arquivo (ou da data de coleta + 1 mês) e pode ser trocada antes de importar.
-2. A tela **Resultados** mostra o mapa por salão/dias/turno, com cores por alvo, valores críticos no topo
+2. A tela **Resultados** mostra o mapa por salão/dias/turno, com cores pela referência do laudo, valores críticos no topo
    e setas ↑↓ em relação ao mês anterior (a partir do 2º TXT importado).
 3. Clique no paciente para a **ficha**: destaques (URR, Kt/V estimado, Hb, Ht, K, P, Ca×P, PTH, ferritina, IST, albumina) —
-   clicar num destaque abre a **régua do histórico daquele exame** (valor de cada mês na onda, colorido pelo alvo) —
+   clicar num destaque abre a **régua do histórico daquele exame** (valor de cada mês na onda, colorido pela referência) —
    tabelas por grupo, hemograma completo, histórico de todos os meses e observações do médico.
 4. **Arquivos TXT**: cada TXT fica guardado exatamente como foi exportado (mesmos bytes) para a Hiperrim baixar.
 5. **Interface Nephrosys**: os códigos do TXT do laboratório **são** os da integração com o Nephrosys da Hiperrim
@@ -123,7 +123,9 @@ Layout lido do TXT (separador `|`, ISO-8859-1, CRLF):
 02 | sequência | código | valor | valor absoluto | (vazio) |            ← resultado
 ```
 
-Os alvos e valores críticos (`js/nephrosys.js`) são uma sugestão baseada em KDIGO/KDOQI — validar com o nefrologista responsável.
+Os valores de referência (`js/nephrosys.js`) seguem o **laudo do Laboratório Célula**. Quando o laudo separa por sexo
+(TGP, ferro, IST, ferritina) aparecem os dois (H e M) e a cor usa a faixa que cobre os dois; detalhes por idade ficam no ⓘ da ficha.
+URR, Kt/V e Ca×P não saem no laudo: continuam como metas da diálise. Os valores críticos precisam do aval do nefrologista responsável.
 No mockup, os resultados ficam no IndexedDB do navegador (não vão para o GitHub).
 
 ## Regras assumidas (a confirmar)
