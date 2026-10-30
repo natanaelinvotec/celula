@@ -706,8 +706,8 @@
     const tr = box.querySelector('.destaques');
     const marcar = () => {
       const max = tr.scrollWidth - tr.clientWidth;
-      box.classList.toggle('tem-esq', tr.scrollLeft > 2);
-      box.classList.toggle('tem-dir', tr.scrollLeft < max - 2);
+      box.classList.toggle('tem-esq', tr.scrollLeft > 8);
+      box.classList.toggle('tem-dir', tr.scrollLeft < max - 8);
     };
     box.querySelectorAll('[data-car]').forEach(b => {
       b.onclick = () => tr.scrollBy({ left: (b.dataset.car === 'dir' ? 1 : -1) * tr.clientWidth, behavior: semMovimento() ? 'auto' : 'smooth' });
