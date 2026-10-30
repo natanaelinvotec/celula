@@ -434,7 +434,7 @@ label.f{display:grid;grid-template-columns:minmax(0,1fr);gap:5px;font-size:12.5p
 .ficha-top{display:flex;flex-wrap:wrap;gap:16px;align-items:center}
 /* carrossel de exames da ficha */
 .dest-carrossel{position:relative;margin-top:14px;container-type:inline-size;--n:5}
-.destaques{display:grid;grid-auto-flow:column;grid-auto-columns:calc((100% - (var(--n) - 1) * 12px) / var(--n));gap:12px;overflow-x:auto;overscroll-behavior-x:contain;scroll-snap-type:x mandatory;scroll-behavior:smooth;scrollbar-width:none;padding:2px 2px 4px}
+.destaques{display:grid;grid-auto-flow:column;grid-auto-columns:calc((100% - (var(--n) - 1) * 12px) / var(--n));gap:12px;overflow-x:auto;overscroll-behavior-x:contain;scroll-snap-type:x mandatory;scroll-behavior:smooth;scrollbar-width:none;padding:2px 0 4px;scroll-padding-inline:0}
 .destaques::-webkit-scrollbar{display:none}
 .destaques .dest{scroll-snap-align:start}
 @container (min-width:1250px){.destaques{--n:7}}
