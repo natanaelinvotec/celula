@@ -112,9 +112,17 @@ Pasta para o repositório `celula`. Depois de enviada, a página fica em **`celu
    Ponto cheio = TXT carregado (clique para ver o mês); vazio = falta — o programador clica para subir o TXT daquele mês
    ou arrasta **vários TXT de uma vez**: cada arquivo vai para o mês do nome (ex.: `Bateria_Out_2026`) ou da coleta + 1 mês,
    com conferência antes de importar (mês que já tem TXT vem desmarcado). Respeita “reduzir movimento” do sistema.
-   Pacientes do TXT que **não estão no MedRim hoje** aparecem agrupados (“fora do sistema”), com excluir/manter por paciente.
-   Em meses anteriores vêm marcados para **excluir**: não entram no histórico e o TXT guardado vira uma cópia filtrada e
-   renumerada (avisada em Arquivos TXT). No mês atual o padrão é manter, porque esse TXT vai para a Hiperrim.
+   Pacientes do TXT que **não estão no MedRim hoje** aparecem agrupados (“fora do sistema”), com uma escolha por paciente:
+   - **Ex-paciente** (óbito, transplantado, abandonou, alta/transferência externa ou motivo não informado) — padrão em meses
+     anteriores: o histórico fica guardado à parte, no grupo “Ex-pacientes” dos resultados, **fora dos alertas** e das
+     porcentagens; na ficha o programador corrige o motivo e a data da saída (com data, entra nas saídas do Relatório do período).
+   - **Manter** — padrão no mês atual: entra como paciente sem posição na escala (ex.: de passagem).
+   - **Excluir**: não entra no histórico e o TXT guardado vira uma cópia filtrada e renumerada (avisada em Arquivos TXT).
+   Quem já está nos ex-pacientes volta marcado com o mesmo motivo nos próximos TXT.
+   **Arquivo de ex-pacientes**: além do TXT, quem tem a saída registrada no salão (óbito, transplante, abandono, alta) e não vem
+   no CSV do mês seguinte passa para o arquivo automaticamente, com motivo, data e última máquina. Se a pessoa voltar a vir no
+   CSV (ex.: o transplante não deu certo), sai do arquivo e fica registrado “voltou à clínica”. O arquivo vale todos os meses
+   (na nuvem, junto do estado; só o programador altera).
 
 Layout lido do TXT (separador `|`, ISO-8859-1, CRLF):
 
