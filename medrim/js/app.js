@@ -462,7 +462,7 @@
       <div class="grid" style="align-content:start">
         <div class="card"><h2>Pendências</h2><p class="desc">O que precisa de olho humano antes de cadastrar.</p>${pendCrit}${pend}</div>
         ${(() => { const r = M.app.resumoUltimoLote && M.app.resumoUltimoLote(); return r ? `<a class="card card-link" href="#/resultados/${r.lote.competencia}"><h2>Últimos resultados · ${esc(M.app.rotComp(r.lote.competencia))}</h2><p class="desc">${r.n} pacientes com laudo importado do TXT.</p>
-          <div style="display:flex;flex-wrap:wrap;gap:8px"><span class="chip b" style="--cor:var(--ok)">URR médio ${r.urrMed != null ? String(r.urrMed).replace('.', ',') + '%' : '—'}</span><span class="chip b" style="--cor:var(--rim)">Hb na meta ${r.hb != null ? r.hb + '%' : '—'}</span>${r.crit ? `<span class="chip b" style="--cor:var(--crit)">${ic('bell')} ${r.crit} com valor crítico</span>` : ''}</div></a>`
+          <div style="display:flex;flex-wrap:wrap;gap:8px"><span class="chip b" style="--cor:var(--ok)">URR médio ${r.urrMed != null ? String(r.urrMed).replace('.', ',') + '%' : '—'}</span><span class="chip b" style="--cor:var(--rim)">Hb na referência ${r.hb != null ? r.hb + '%' : '—'}</span>${r.crit ? `<span class="chip b" style="--cor:var(--crit)">${ic('bell')} ${r.crit} com valor crítico</span>` : ''}</div></a>`
           : `<a class="card card-link" href="#/resultados"><h2>Resultados dos pacientes</h2><p class="desc" style="margin:0">Suba o TXT que o sistema do laboratório exporta para o Nephrosys e acompanhe o histórico de cada paciente.</p></a>`; })()}
         <div class="card"><h2>Movimentações recentes</h2><p class="desc">Histórico de transferências, internações, admissões, trânsito e óbitos.</p><div class="lista-mov">${movs}</div></div>
       </div>
