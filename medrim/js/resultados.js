@@ -658,12 +658,13 @@
           <span class="legenda" style="margin:0"><span><i class="dot" style="--cor:var(--blue)"></i>abaixo</span><span><i class="dot" style="--cor:var(--warn)"></i>acima</span><span><i class="dot" style="--cor:var(--crit)"></i>crítico</span></span>
         </div>
         <div class="print-only"><h2 style="margin:0">Resultados ${rotComp(lote.competencia)} · Hiperrim</h2><p>${ls.length} pacientes · valores de referência do laudo do Laboratório Célula</p></div>
-        <div class="mapa-wrap"><table class="tbl mapa"><thead><tr><th class="fixa">Paciente</th><th>Coleta</th>${cab}</tr></thead><tbody>${corpo || `<tr><td colspan="${M.RES_MAPA.length + 2}" class="vazio">Nenhum paciente com esse filtro.</td></tr>`}</tbody></table></div>
+        ${barraX()}<div class="mapa-wrap"><table class="tbl mapa"><thead><tr><th class="fixa">Paciente</th><th>Coleta</th>${cab}</tr></thead><tbody>${corpo || `<tr><td colspan="${M.RES_MAPA.length + 2}" class="vazio">Nenhum paciente com esse filtro.</td></tr>`}</tbody></table></div>
         <p class="desc" style="margin:10px 0 0">Clique no paciente para ver a ficha com o histórico. Valores de referência do laudo do Laboratório Célula (quando o laudo separa por sexo, aparecem os dois: H e M). URR e Ca×P são metas da diálise. *Kt/V na ficha é estimado.</p>
       </div>`;
   }
   function ligarResultados(comp) {
     const c = $('#conteudo');
+    ligarBarrasX(c);
     c.onclick = e => {
       const b = e.target.closest('[data-res]');
       if (b) {
@@ -697,6 +698,78 @@
     A.toast('Mapa exportado para Excel', 'sheet');
   }
 
+  // ================= ROLAGEM LATERAL: carrossel e barra das tabelas largas =================
+  const semMovimento = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+  /** Carrossel de exames: setas ‹ › andam uma “página”; somem quando não há mais para aquele lado. */
+  function ligarCarrossel(box) {
+    if (!box) return;
+    const tr = box.querySelector('.destaques');
+    const marcar = () => {
+      const max = tr.scrollWidth - tr.clientWidth;
+      box.classList.toggle('tem-esq', tr.scrollLeft > 2);
+      box.classList.toggle('tem-dir', tr.scrollLeft < max - 2);
+    };
+    box.querySelectorAll('[data-car]').forEach(b => {
+      b.onclick = () => tr.scrollBy({ left: (b.dataset.car === 'dir' ? 1 : -1) * tr.clientWidth, behavior: semMovimento() ? 'auto' : 'smooth' });
+    });
+    tr.addEventListener('scroll', marcar, { passive: true });
+    if (window.ResizeObserver) new ResizeObserver(marcar).observe(tr);
+    marcar();
+  }
+  /** Barra para puxar a tabela para o lado (fica em cima da tabela, sempre visível). */
+  const barraX = () => `<div class="rx no-print" hidden><button type="button" class="rx-b" data-rx="esq" aria-label="Rolar a tabela para a esquerda" title="Voltar">${ic('chev')}</button><div class="rx-trilho" role="scrollbar" aria-orientation="horizontal" aria-label="Arraste para ver mais colunas" tabindex="0" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="rx-polegar"></div></div><button type="button" class="rx-b" data-rx="dir" aria-label="Rolar a tabela para a direita" title="Avançar">${ic('chev')}</button><small class="rx-dica">arraste a barra ou a tabela para o lado</small></div>`;
+  function ligarBarrasX(raiz) {
+    raiz.querySelectorAll('.rx').forEach(barra => {
+      const wrap = barra.nextElementSibling; if (!wrap || !wrap.classList.contains('mapa-wrap')) return;
+      const trilho = barra.querySelector('.rx-trilho'), pol = barra.querySelector('.rx-polegar');
+      const [bEsq, bDir] = barra.querySelectorAll('.rx-b');
+      const medir = () => {
+        const max = wrap.scrollWidth - wrap.clientWidth, tw = trilho.clientWidth;
+        barra.hidden = max <= 2;
+        if (barra.hidden) return;
+        const pw = Math.max(36, tw * wrap.clientWidth / wrap.scrollWidth);
+        pol.style.width = pw + 'px';
+        pol.style.transform = `translateX(${(tw - pw) * (wrap.scrollLeft / max)}px)`;
+        trilho.setAttribute('aria-valuenow', Math.round(wrap.scrollLeft / max * 100));
+        bEsq.disabled = wrap.scrollLeft <= 2; bDir.disabled = wrap.scrollLeft >= max - 2;
+        wrap.classList.toggle('tem-dir', wrap.scrollLeft < max - 2);
+      };
+      const andar = d => wrap.scrollBy({ left: d * wrap.clientWidth * 0.7, behavior: semMovimento() ? 'auto' : 'smooth' });
+      bEsq.onclick = () => andar(-1); bDir.onclick = () => andar(1);
+      trilho.onkeydown = e => {
+        const k = { ArrowLeft: -80, ArrowRight: 80, PageUp: -wrap.clientWidth, PageDown: wrap.clientWidth }[e.key];
+        if (k) { e.preventDefault(); wrap.scrollLeft += k; }
+        if (e.key === 'Home') { e.preventDefault(); wrap.scrollLeft = 0; }
+        if (e.key === 'End') { e.preventDefault(); wrap.scrollLeft = wrap.scrollWidth; }
+      };
+      // puxar o polegar (ou clicar no trilho para ir até ali)
+      trilho.onpointerdown = e => {
+        e.preventDefault();
+        const max = wrap.scrollWidth - wrap.clientWidth, tw = trilho.clientWidth, pw = pol.offsetWidth;
+        const r = trilho.getBoundingClientRect();
+        if (e.target !== pol) wrap.scrollLeft = Math.min(max, Math.max(0, (e.clientX - r.left - pw / 2) / (tw - pw) * max));
+        const x0 = e.clientX, s0 = wrap.scrollLeft;
+        trilho.setPointerCapture(e.pointerId); barra.classList.add('puxando');
+        trilho.onpointermove = ev => { wrap.scrollLeft = s0 + (ev.clientX - x0) * max / Math.max(1, tw - pw); };
+        trilho.onpointerup = trilho.onpointercancel = () => { trilho.onpointermove = null; barra.classList.remove('puxando'); };
+      };
+      // arrastar a própria tabela com o mouse (sem abrir o paciente sem querer)
+      let arr = null, arrastou = false;
+      wrap.onpointerdown = e => { if (e.pointerType !== 'mouse' || e.button !== 0) return; arr = { x: e.clientX, s: wrap.scrollLeft }; arrastou = false; };
+      wrap.onpointermove = e => {
+        if (!arr) return;
+        const dx = e.clientX - arr.x;
+        if (!arrastou && Math.abs(dx) > 6) { arrastou = true; wrap.classList.add('puxando'); try { wrap.setPointerCapture(e.pointerId); } catch (er) { /* ok */ } }
+        if (arrastou) wrap.scrollLeft = arr.s - dx;
+      };
+      wrap.onpointerup = wrap.onpointercancel = () => { arr = null; wrap.classList.remove('puxando'); };
+      wrap.addEventListener('click', e => { if (arrastou) { e.stopPropagation(); e.preventDefault(); arrastou = false; } }, true);
+      wrap.addEventListener('scroll', medir, { passive: true });
+      if (window.ResizeObserver) new ResizeObserver(medir).observe(wrap);
+      medir();
+    });
+  }
+
   // ================= TELA: FICHA DO PACIENTE (histórico) =================
   function vPaciente(chave) {
     chave = decodeURIComponent(chave || '');
@@ -707,7 +780,10 @@
     const ult = hist[hist.length - 1], ant = hist.length > 1 ? hist[hist.length - 2] : null;
     const v = localDe(chave, base.nome), pe = pacienteDaEscala(chave, base.nome);
     const serie = cod => hist.map(h => ({ comp: h.comp, v: h.val[cod] }));
-    const dest = ['urr', 'ktv', '016', '017', '004', '006', 'cap', '034', '029', '030', '026'];
+    const ordemC = c => { const k = Object.keys(M.RES).indexOf(c); return k < 0 ? 1000 + Object.keys(M.RES_DERIVADOS).indexOf(c) : k; };
+    // carrossel: primeiro os principais, depois todos os outros exames do último mês
+    const prio = ['urr', 'ktv', '016', '017', '004', '006', 'cap', '034', '029', '030', '026'];
+    const dest = prio.concat(Object.keys(ult.val).filter(c => !prio.includes(c) && !M.defRes(c).oculto && !M.defRes(c).desconhecido).sort((a, b) => ordemC(a) - ordemC(b)));
     const aberto = fichaAberta.chave === chave && ult.val[fichaAberta.cod] ? fichaAberta.cod : null;
     const card = cod => {
       const d = M.defRes(cod), val = ult.val[cod]; if (!val) return '';
@@ -717,14 +793,13 @@
     const grupos = {};
     Object.keys(Object.assign({}, ...hist.map(h => h.val))).forEach(c => { const d = M.defRes(c); if (d.oculto) return; (grupos[d.grupo] = grupos[d.grupo] || []).push(c); });
     const ordemG = Object.keys(M.RES_GRUPOS).concat('outros');
-    const ordemC = c => { const k = Object.keys(M.RES).indexOf(c); return k < 0 ? 1000 + Object.keys(M.RES_DERIVADOS).indexOf(c) : k; };
     const tabelas = ordemG.filter(g => grupos[g]).map(g => `<div class="card"><h3>${esc(M.RES_GRUPOS[g] || 'Outros')}</h3>
       <div style="overflow:auto"><table class="tbl"><thead><tr><th>Exame</th><th class="num">${rotComp(ult.comp).slice(0, 3)}/${ult.comp.slice(2, 4)}</th><th class="num">Anterior</th><th>Referência</th><th>Tendência</th></tr></thead><tbody>
       ${grupos[g].sort((a, b) => ordemC(a) - ordemC(b)).map(c => { const d = M.defRes(c), x = ult.val[c], y = ant && ant.val[c], cl = M.classificar(c, x); return `<tr><td><b>${esc(d.nome)}</b> <small class="faint">${esc(d.un)}</small>${d.inferido ? ' <span class="faint" title="Código interpretado pelos valores — confirmar na interface">ⁱ</span>' : ''}</td>
         <td class="num rv ${CLS[cl] || ''}">${fmtValor(c, x)}${x && x.abs ? ` <small class="faint">(${esc(x.abs.trim())}/mm³)</small>` : ''}</td><td class="num faint">${y ? fmtValor(c, y) : '—'}</td><td class="faint" style="white-space:nowrap"${M.defRes(c).nota ? ` title="${esc(M.defRes(c).nota)}"` : ''}>${esc(refTxt(c))}${M.defRes(c).nota ? ' <span title="' + esc(M.defRes(c).nota) + '">ⓘ</span>' : ''}</td><td>${sparkline(serie(c), c)}</td></tr>`; }).join('')}
       </tbody></table></div></div>`).join('');
     const todosCods = Object.keys(Object.assign({}, ...hist.map(h => h.val))).filter(c => !M.defRes(c).oculto).sort((a, b) => ordemC(a) - ordemC(b));
-    const tabHist = `<div class="card"><h3>Histórico completo</h3><p class="desc">Cada TXT importado vira uma coluna.</p><div class="mapa-wrap"><table class="tbl mapa"><thead><tr><th class="fixa">Exame</th>${hist.slice().reverse().map(h => `<th class="num">${rotComp(h.comp).slice(0, 3)}/${h.comp.slice(2, 4)}<small>${fmtData(h.p.data)}</small></th>`).join('')}</tr></thead><tbody>
+    const tabHist = `<div class="card"><h3>Histórico completo</h3><p class="desc">Cada TXT importado vira uma coluna.</p>${barraX()}<div class="mapa-wrap"><table class="tbl mapa"><thead><tr><th class="fixa">Exame</th>${hist.slice().reverse().map(h => `<th class="num">${rotComp(h.comp).slice(0, 3)}/${h.comp.slice(2, 4)}<small>${fmtData(h.p.data)}</small></th>`).join('')}</tr></thead><tbody>
       ${todosCods.map(c => `<tr><td class="fixa">${esc(M.defRes(c).nome)}</td>${hist.slice().reverse().map(h => `<td class="num rv ${CLS[M.classificar(c, h.val[c])] || ''}">${fmtValor(c, h.val[c])}</td>`).join('')}</tr>`).join('')}
       </tbody></table></div></div>`;
     const notas = (E() && E().notas && E().notas[chave]) || [];
@@ -748,7 +823,11 @@
         </div>
       </section>
       ${ult.val.urr && ult.val.urr.aviso ? `<div class="alerta-box" style="margin:12px 0">${ic('alert')}<div><b>${esc(ult.val.urr.aviso)}.</b> URR calculado: ${fmtValor('urr', ult.val.urr)}%.</div></div>` : ''}
-      <div class="destaques">${dest.map(card).join('')}</div>
+      <div class="dest-carrossel" role="region" aria-label="Exames de ${rotComp(ult.comp)}">
+        <button type="button" class="car-b esq" data-car="esq" aria-label="Exames anteriores" title="Voltar">${ic('chev')}</button>
+        <div class="destaques">${dest.map(card).join('')}</div>
+        <button type="button" class="car-b dir" data-car="dir" aria-label="Próximos exames" title="Avançar">${ic('chev')}</button>
+      </div>
       ${aberto ? htmlReguaExame(hist, aberto) : ''}
       <div class="grid g2" style="margin-top:16px;align-items:start">${tabelas}</div>
       <div style="margin-top:16px">${tabHist}</div>
@@ -763,17 +842,25 @@
     const c = $('#conteudo');
     const reg = document.getElementById('regua-exame');
     if (reg) prepararOnda(reg, reg.querySelector('.rg-mes.atual'));
+    ligarCarrossel($('.dest-carrossel'));
+    ligarBarrasX(c);
+    // re-desenha sem perder a rolagem da página nem a do carrossel
+    const redesenhar = () => {
+      const y = window.scrollY, tr = $('.destaques'), sx = tr ? tr.scrollLeft : 0;
+      A.render(); window.scrollTo(0, y);
+      const t2 = $('.destaques'); if (t2) { t2.style.scrollBehavior = 'auto'; t2.scrollLeft = sx; t2.style.scrollBehavior = ''; }
+    };
     const alternar = cod => {
       const abrir = !(fichaAberta.chave === chave && fichaAberta.cod === cod);
       Object.assign(fichaAberta, { chave, cod: abrir ? cod : null });
-      const y = window.scrollY; A.render(); window.scrollTo(0, y);
+      redesenhar();
       const card = abrir && document.querySelector(`.dest[data-cod="${cod}"]`); if (card) card.focus({ preventScroll: true });
     };
     c.onkeydown = e => { const d = e.target.closest('.dest[data-fp="hist"]'); if (d && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); alternar(d.dataset.cod); } };
     c.onclick = e => {
       const b = e.target.closest('[data-fp]'); if (!b || b.tagName === 'FORM') return;
       if (b.dataset.fp === 'hist') return alternar(b.dataset.cod);
-      if (b.dataset.fp === 'fechar-hist') { Object.assign(fichaAberta, { cod: null }); const y = window.scrollY; A.render(); window.scrollTo(0, y); return; }
+      if (b.dataset.fp === 'fechar-hist') { Object.assign(fichaAberta, { cod: null }); redesenhar(); return; }
       if (b.dataset.fp === 'imprimir') window.print();
       if (b.dataset.fp === 'csv') {
         let base = null; for (const l of R.lotes) { if (l.pacientes[chave]) { base = l.pacientes[chave]; break; } }
