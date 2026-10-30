@@ -540,7 +540,7 @@
         <li><b>Painel gerencial</b>, <b>salões com as máquinas</b> (arrastar e soltar para transferir/trocar), ficha do paciente e ferramentas: transferência, trânsito, admissão, internação/retorno, óbito/saída — tudo com histórico e <b>desfazer</b>.</li>
         <li><b>Relatório de cadastro</b> na ordem das etiquetas, com exportação para Excel e impressão/PDF.</li>
         <li><b>Regras das baterias</b> (9/14/19/29) e matriz de controles editável.</li>
-        <li><b>Resultados pelo TXT do laboratório</b> (o mesmo que vai para o Nephrosys): visão do médico por salão/turno com alvos e valores críticos, ficha de cada paciente com histórico mês a mês, URR, Ca×P, cálcio corrigido e observações do médico.</li>
+        <li><b>Resultados pelo TXT do laboratório</b> (o mesmo que vai para o Nephrosys): visão do médico por salão/turno com os valores de referência do laudo e valores críticos, ficha de cada paciente com histórico mês a mês, URR, Ca×P, cálcio corrigido e observações do médico.</li>
         <li><b>Arquivos TXT</b> guardados byte a byte para a Hiperrim baixar, com checagem do arquivo (sem CPF, recoleta, ureia pós ≥ pré).</li>
         <li><b>Interface Nephrosys</b>: os códigos do TXT comparados com a tabela do PDF, apontando o que diverge.</li>
       </ul>
@@ -555,7 +555,7 @@
         <li><b>Ordem do relatório:</b> Salão → Seg/Qua/Sex (manhã, tarde, noite) → Ter/Qui/Sáb (manhã, tarde, noite) → máquina, com HDF logo após a máquina anterior.</li>
         <li><b>Nomes sem CSV</b>${s4 ? ` (principalmente no Salão 4: ${s4.sem} de ${s4.tot})` : ''}: são de outro laboratório ou convênio? Se forem, marco “outro lab” e eles saem das pendências. Alguns fizeram a bateria de outubro (estão no TXT) e sumiram do CSV de novembro — faltou no pedido?</li>
         <li><b>Códigos do TXT × PDF Nephrosys:</b> sódio sai como 043 (no PDF, Transferrina), Hb glicada como 067 (Anti-HIV), hemácias como 015 (Plaquetas), CHCM como 061 (Colesterol) e o total do diferencial como 062 (HDL). Se a Hiperrim importa pela tabela do PDF, esses valores podem estar caindo no exame errado — vale conferir com eles.</li>
-        <li><b>Alvos e valores críticos</b> da tela de resultados: sugestão KDIGO/KDOQI (Hb 10–12, P 3,5–5,5, PTH 130–600, ferritina 200–800, IST 20–50%, URR ≥ 65%; crítico K &gt; 6,5, Hb &lt; 7, Na &lt; 125). Precisa do aval do nefrologista responsável.</li>
+        <li><b>Referências e valores críticos</b> da tela de resultados: as referências seguem o laudo do Laboratório Célula (ex.: K 3,5–5,1, P 2,7–4,5, PTH 18,5–88,0, Ca 8,6–10,3); URR ≥ 65% e Ca×P ≤ 55 são metas da diálise; crítico K &gt; 6,5, Hb &lt; 7, Na &lt; 125. Os valores críticos precisam do aval do nefrologista responsável.</li>
       </ol>
 
       <h3>Segurança e LGPD</h3>
