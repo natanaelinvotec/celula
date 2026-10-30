@@ -342,13 +342,16 @@
     if (Math.abs(dif) < 0.05) return '<span class="seta" title="estável">→</span>';
     return `<span class="seta" title="anterior: ${esc(fmtValor(cod, ant))}">${dif > 0 ? '↑' : '↓'}</span>`;
   }
-  function refTxt(cod) {
+  /** Valor de referência do laudo em texto. curto = versão para o cabeçalho do mapa. */
+  function refTxt(cod, curto) {
     const d = M.defRes(cod);
     if (d.quali) return d.quali === 'protecao' ? 'Reagente (protegido)' : 'Não reagente';
+    if (curto && d.rotCurto) return d.rotCurto;
+    if (d.rotRef) return d.rotRef;
     if (!d.ref) return '—';
     const f = x => x.toLocaleString('pt-BR');
     if (d.ref[0] != null && d.ref[1] != null) return `${f(d.ref[0])} – ${f(d.ref[1])}`;
-    return d.ref[0] != null ? `≥ ${f(d.ref[0])}` : `≤ ${f(d.ref[1])}`;
+    return d.ref[0] != null ? `≥ ${f(d.ref[0])}` : `${d.lt ? '<' : '≤'} ${f(d.ref[1])}`;
   }
   function sparkline(serie, cod, w = 96, h = 26) {
     const pts = serie.filter(x => x.v && x.v.n != null);
@@ -460,10 +463,10 @@
     </section>`;
   }
 
-  // régua de um exame na ficha do paciente: valor de cada mês, colorido pelo alvo
+  // régua de um exame na ficha do paciente: valor de cada mês, colorido pela referência do laudo
   const fichaAberta = { chave: null, cod: null };
   const COR_CL = { ok: 'var(--ok)', baixo: 'var(--blue)', alto: 'var(--warn)', 'crit-baixo': 'var(--crit)', 'crit-alto': 'var(--crit)' };
-  const ROT_CL = { ok: 'no alvo', baixo: 'abaixo do alvo', alto: 'acima do alvo', 'crit-baixo': 'crítico (baixo)', 'crit-alto': 'crítico (alto)' };
+  const ROT_CL = { ok: 'dentro da referência', baixo: 'abaixo da referência', alto: 'acima da referência', 'crit-baixo': 'crítico (baixo)', 'crit-alto': 'crítico (alto)' };
   function htmlReguaExame(hist, cod) {
     const d = M.defRes(cod), porComp = Object.fromEntries(hist.map(h => [h.comp, h]));
     const lotes = new Set(R.lotes.map(l => l.competencia));
@@ -485,7 +488,7 @@
       : 'Sem resultado numérico nos TXT importados.';
     return `<section class="card regua-card regua-exame no-print" id="regua-exame" role="region" aria-label="Régua do histórico de ${esc(d.nome)}">
       <div class="regua-cab">
-        <div><h2>${ic('chart')} ${esc(d.nome)} <small class="faint" style="font-size:13px;font-weight:700">${esc(d.un)} · alvo ${esc(refTxt(cod))}</small></h2>
+        <div><h2>${ic('chart')} ${esc(d.nome)} <small class="faint" style="font-size:13px;font-weight:700">${esc(d.un)} · referência ${esc(refTxt(cod))}</small></h2>
           <p class="desc" style="margin:2px 0 0">${resumo}. ${A.ehProgramador() ? 'Para completar o histórico, suba os TXT dos meses vazios na régua de Resultados.' : ''}</p></div>
         <button class="btn sm ghost" data-fp="fechar-hist" aria-label="Fechar a régua">${ic('x')}</button>
       </div>
@@ -609,7 +612,7 @@
     const urr = todas.filter(l => l.val.urr && l.val.urr.n > 0);
     const tile = (cor, v, l, s) => `<div class="kpi" style="--cor:${cor}"><span class="v mono">${v == null ? '—' : v}</span><span class="l">${l}</span>${s ? `<span class="s">${s}</span>` : ''}</div>`;
     const crit = todas.filter(l => l.crit.length || l.aviso);
-    const cab = M.RES_MAPA.map(c => { const d = M.defRes(c); return `<th class="num" title="${esc(d.nome)} · ${esc(d.un)} · alvo ${esc(refTxt(c))}">${esc(d.curto)}<small>${esc(refTxt(c))}</small></th>`; }).join('');
+    const cab = M.RES_MAPA.map(c => { const d = M.defRes(c); return `<th class="num" title="${esc(d.nome)} · ${esc(d.un)} · referência do laudo ${esc(refTxt(c))}">${esc(d.curto)}<small>${esc(refTxt(c, true)).split(' · ').join('<br>')}</small></th>`; }).join('');
     let grupo = null, corpo = '';
     for (const l of ls) {
       const g = l.v ? `Salão ${l.v.salao} · ${M.GRUPOS[l.v.grupo].rotulo} · ${A.rotTurno(l.v.turno)}` : 'Sem posição na escala atual';
@@ -636,10 +639,10 @@
       <div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">
         ${tile('var(--blue)', todas.length, 'Pacientes com laudo', `${Object.keys(lote.datas).length} data(s) de coleta`)}
         ${tile('var(--ok)', urr.length ? Math.round(urr.filter(l => l.val.urr.n >= 65).length / urr.length * 100) + '%' : null, 'URR ≥ 65%', urr.length ? `média ${(urr.reduce((s, l) => s + l.val.urr.n, 0) / urr.length).toFixed(1).replace('.', ',')}%` : '')}
-        ${tile('var(--rim)', pctNaMeta(todas, '016') != null ? pctNaMeta(todas, '016') + '%' : null, 'Hb 10–12 g/dL', '')}
-        ${tile('var(--b-sem)', pctNaMeta(todas, '006') != null ? pctNaMeta(todas, '006') + '%' : null, 'Fósforo 3,5–5,5', '')}
-        ${tile('var(--c5)', pctNaMeta(todas, '034') != null ? pctNaMeta(todas, '034') + '%' : null, 'PTH 130–600', '')}
-        ${tile('var(--teal)', pctNaMeta(todas, '030') != null ? pctNaMeta(todas, '030') + '%' : null, 'IST 20–50%', '')}
+        ${tile('var(--rim)', pctNaMeta(todas, '016') != null ? pctNaMeta(todas, '016') + '%' : null, `Hb na referência (${refTxt('016')} g/dL)`, '')}
+        ${tile('var(--b-sem)', pctNaMeta(todas, '006') != null ? pctNaMeta(todas, '006') + '%' : null, `Fósforo ${refTxt('006')}`, '')}
+        ${tile('var(--c5)', pctNaMeta(todas, '034') != null ? pctNaMeta(todas, '034') + '%' : null, `PTH ${refTxt('034')}`, '')}
+        ${tile('var(--teal)', pctNaMeta(todas, '030') != null ? pctNaMeta(todas, '030') + '%' : null, `IST ${refTxt('030')} %`, '')}
         ${tile('var(--crit)', crit.length, 'Com valor crítico', 'ou ureia pós ≥ pré')}
       </div>
       ${crit.length ? `<details class="card secao-sync" style="margin-bottom:14px" open><summary><span class="kpi" style="--cor:var(--crit);border:0;padding:0;background:none;box-shadow:none"><span class="ic" style="margin:0">${ic('bell')}</span></span><div><h2>Valores críticos <span class="chip b" style="--cor:var(--crit)">${crit.length}</span></h2><p class="desc" style="margin:0">Fora dos limites de alerta — avisar o nefrologista de plantão.</p></div><svg class="i chev"><use href="#i-chev"/></svg></summary>
@@ -650,13 +653,13 @@
           <select class="btn sm" data-rf="salao"><option value="">Todos os salões</option>${opSal.map(s => `<option value="${s}" ${filtroR.salao === String(s) ? 'selected' : ''}>Salão ${s}</option>`).join('')}<option value="sem" ${filtroR.salao === 'sem' ? 'selected' : ''}>Sem posição</option></select>
           <select class="btn sm" data-rf="grupo"><option value="">Todos os dias</option>${['SQS', 'TQS'].map(g => `<option value="${g}" ${filtroR.grupo === g ? 'selected' : ''}>${M.GRUPOS[g].rotulo}</option>`).join('')}</select>
           <select class="btn sm" data-rf="turno"><option value="">Todos os turnos</option>${['M', 'T', 'N'].map(t => `<option value="${t}" ${filtroR.turno === t ? 'selected' : ''}>${A.rotTurno(t)}</option>`).join('')}</select>
-          <button class="btn sm ${filtroR.alterados ? 'pri' : ''}" data-rf="alterados">${ic('alert')} Só fora do alvo</button>
+          <button class="btn sm ${filtroR.alterados ? 'pri' : ''}" data-rf="alterados">${ic('alert')} Só fora da referência</button>
           <span class="esp" style="flex:1"></span>
           <span class="legenda" style="margin:0"><span><i class="dot" style="--cor:var(--blue)"></i>abaixo</span><span><i class="dot" style="--cor:var(--warn)"></i>acima</span><span><i class="dot" style="--cor:var(--crit)"></i>crítico</span></span>
         </div>
-        <div class="print-only"><h2 style="margin:0">Resultados ${rotComp(lote.competencia)} · Hiperrim</h2><p>${ls.length} pacientes · alvos sugeridos KDIGO/KDOQI (validar)</p></div>
+        <div class="print-only"><h2 style="margin:0">Resultados ${rotComp(lote.competencia)} · Hiperrim</h2><p>${ls.length} pacientes · valores de referência do laudo do Laboratório Célula</p></div>
         <div class="mapa-wrap"><table class="tbl mapa"><thead><tr><th class="fixa">Paciente</th><th>Coleta</th>${cab}</tr></thead><tbody>${corpo || `<tr><td colspan="${M.RES_MAPA.length + 2}" class="vazio">Nenhum paciente com esse filtro.</td></tr>`}</tbody></table></div>
-        <p class="desc" style="margin:10px 0 0">Clique no paciente para ver a ficha com o histórico. Alvos sugeridos (KDIGO/KDOQI) — validar com o nefrologista responsável. *Kt/V na ficha é estimado.</p>
+        <p class="desc" style="margin:10px 0 0">Clique no paciente para ver a ficha com o histórico. Valores de referência do laudo do Laboratório Célula (quando o laudo separa por sexo, aparecem os dois: H e M). URR e Ca×P são metas da diálise. *Kt/V na ficha é estimado.</p>
       </div>`;
   }
   function ligarResultados(comp) {
@@ -709,16 +712,16 @@
     const card = cod => {
       const d = M.defRes(cod), val = ult.val[cod]; if (!val) return '';
       const cl = M.classificar(cod, val);
-      return `<div class="dest ${CLS[cl] || ''}${aberto === cod ? ' aberto' : ''}" role="button" tabindex="0" data-fp="hist" data-cod="${cod}" aria-expanded="${aberto === cod}" title="${esc(d.nota || d.nome)} — clique para ver a régua do histórico"><small>${esc(d.nome)}</small><div class="dv"><b class="mono">${fmtValor(cod, val)}</b> <span>${esc(d.un)}</span>${seta(cod, val, ant && ant.val[cod])}</div>${regua(cod, val)}<div class="dref">alvo ${esc(refTxt(cod))}</div>${sparkline(serie(cod), cod, 120, 28)}</div>`;
+      return `<div class="dest ${CLS[cl] || ''}${aberto === cod ? ' aberto' : ''}" role="button" tabindex="0" data-fp="hist" data-cod="${cod}" aria-expanded="${aberto === cod}" title="${esc(d.nota || d.nome)} — clique para ver a régua do histórico"><small>${esc(d.nome)}</small><div class="dv"><b class="mono">${fmtValor(cod, val)}</b> <span>${esc(d.un)}</span>${seta(cod, val, ant && ant.val[cod])}</div>${regua(cod, val)}<div class="dref">ref. ${esc(refTxt(cod))}</div>${sparkline(serie(cod), cod, 120, 28)}</div>`;
     };
     const grupos = {};
     Object.keys(Object.assign({}, ...hist.map(h => h.val))).forEach(c => { const d = M.defRes(c); if (d.oculto) return; (grupos[d.grupo] = grupos[d.grupo] || []).push(c); });
     const ordemG = Object.keys(M.RES_GRUPOS).concat('outros');
     const ordemC = c => { const k = Object.keys(M.RES).indexOf(c); return k < 0 ? 1000 + Object.keys(M.RES_DERIVADOS).indexOf(c) : k; };
     const tabelas = ordemG.filter(g => grupos[g]).map(g => `<div class="card"><h3>${esc(M.RES_GRUPOS[g] || 'Outros')}</h3>
-      <div style="overflow:auto"><table class="tbl"><thead><tr><th>Exame</th><th class="num">${rotComp(ult.comp).slice(0, 3)}/${ult.comp.slice(2, 4)}</th><th class="num">Anterior</th><th>Alvo</th><th>Tendência</th></tr></thead><tbody>
+      <div style="overflow:auto"><table class="tbl"><thead><tr><th>Exame</th><th class="num">${rotComp(ult.comp).slice(0, 3)}/${ult.comp.slice(2, 4)}</th><th class="num">Anterior</th><th>Referência</th><th>Tendência</th></tr></thead><tbody>
       ${grupos[g].sort((a, b) => ordemC(a) - ordemC(b)).map(c => { const d = M.defRes(c), x = ult.val[c], y = ant && ant.val[c], cl = M.classificar(c, x); return `<tr><td><b>${esc(d.nome)}</b> <small class="faint">${esc(d.un)}</small>${d.inferido ? ' <span class="faint" title="Código interpretado pelos valores — confirmar na interface">ⁱ</span>' : ''}</td>
-        <td class="num rv ${CLS[cl] || ''}">${fmtValor(c, x)}${x && x.abs ? ` <small class="faint">(${esc(x.abs.trim())}/mm³)</small>` : ''}</td><td class="num faint">${y ? fmtValor(c, y) : '—'}</td><td class="faint" style="white-space:nowrap">${esc(refTxt(c))}</td><td>${sparkline(serie(c), c)}</td></tr>`; }).join('')}
+        <td class="num rv ${CLS[cl] || ''}">${fmtValor(c, x)}${x && x.abs ? ` <small class="faint">(${esc(x.abs.trim())}/mm³)</small>` : ''}</td><td class="num faint">${y ? fmtValor(c, y) : '—'}</td><td class="faint" style="white-space:nowrap"${M.defRes(c).nota ? ` title="${esc(M.defRes(c).nota)}"` : ''}>${esc(refTxt(c))}${M.defRes(c).nota ? ' <span title="' + esc(M.defRes(c).nota) + '">ⓘ</span>' : ''}</td><td>${sparkline(serie(c), c)}</td></tr>`; }).join('')}
       </tbody></table></div></div>`).join('');
     const todosCods = Object.keys(Object.assign({}, ...hist.map(h => h.val))).filter(c => !M.defRes(c).oculto).sort((a, b) => ordemC(a) - ordemC(b));
     const tabHist = `<div class="card"><h3>Histórico completo</h3><p class="desc">Cada TXT importado vira uma coluna.</p><div class="mapa-wrap"><table class="tbl mapa"><thead><tr><th class="fixa">Exame</th>${hist.slice().reverse().map(h => `<th class="num">${rotComp(h.comp).slice(0, 3)}/${h.comp.slice(2, 4)}<small>${fmtData(h.p.data)}</small></th>`).join('')}</tr></thead><tbody>
@@ -753,7 +756,7 @@
         <form data-fp="nota" class="so-edicao" style="display:flex;gap:8px;flex-wrap:wrap"><input name="t" class="sel-cand" style="flex:1;min-width:240px;max-width:none" placeholder="Ex.: ajustar quelante de fósforo; repetir K na próxima sessão" maxlength="400"><button class="btn pri sm">${ic('plus')} Registrar</button></form>
         <div class="lista-mov" style="margin-top:10px">${notas.map(n => `<div class="mov" style="--cor:var(--blue)"><span class="ic">${ic('chat')}</span><div>${esc(n.texto)}<br><small>${new Date(n.ts).toLocaleString('pt-BR')} · ref. ${rotComp(n.comp)}${n.por ? ' · ' + esc(n.por) : ''}</small></div></div>`).join('') || '<div class="faint" style="padding:6px">Sem observações.</div>'}</div>
       </div>
-      <p class="desc" style="margin-top:12px">*Kt/V estimado por Daugirdas 2ª geração com sessão de 4 h e sem UF/peso — para o valor exato faltam tempo de sessão, UF e peso pós (dados da clínica). Alvos sugeridos KDIGO/KDOQI, a validar com o nefrologista responsável.</p>`;
+      <p class="desc" style="margin-top:12px">*Kt/V estimado por Daugirdas 2ª geração com sessão de 4 h e sem UF/peso — para o valor exato faltam tempo de sessão, UF e peso pós (dados da clínica). Referências do laudo do Laboratório Célula; URR, Kt/V e Ca×P são metas da diálise.</p>`;
   }
   function ligarPaciente(chave) {
     chave = decodeURIComponent(chave || '');
@@ -776,7 +779,7 @@
         let base = null; for (const l of R.lotes) { if (l.pacientes[chave]) { base = l.pacientes[chave]; break; } }
         const hist = historico(chave, base.nome);
         const cods = Object.keys(Object.assign({}, ...hist.map(h => h.val))).filter(x => !M.defRes(x).oculto);
-        const linhas = [['Exame', 'Unidade', 'Alvo', ...hist.map(h => rotComp(h.comp))], ...cods.map(x => [M.defRes(x).nome, M.defRes(x).un, refTxt(x), ...hist.map(h => h.val[x] ? (h.val[x].t || String(h.val[x].n).replace('.', ',')) : '')])];
+        const linhas = [['Exame', 'Unidade', 'Referência', ...hist.map(h => rotComp(h.comp))], ...cods.map(x => [M.defRes(x).nome, M.defRes(x).un, refTxt(x), ...hist.map(h => h.val[x] ? (h.val[x].t || String(h.val[x].n).replace('.', ',')) : '')])];
         const url = URL.createObjectURL(new Blob(['﻿' + linhas.map(l => l.join(';')).join('\r\n')], { type: 'text/csv;charset=utf-8' }));
         const a = Object.assign(document.createElement('a'), { href: url, download: `historico-${M.norm(base.nome).replace(/ /g, '-').toLowerCase()}.csv` });
         document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
@@ -863,7 +866,7 @@
           <p class="desc" style="margin:8px 0 0"><code class="cod">001</code> conferido no laudo · <code class="cod inf">067</code> inferido (passe o mouse para ver o motivo).</p></div>
       </div>
       <div class="card" style="margin-bottom:16px"><h2>Códigos do TXT → como o MedRim interpreta</h2><p class="desc">Base da visão do médico. “Conferido” = valor do TXT igual ao do laudo; “inferido” = não dava para conferir no laudo de exemplo (motivo abaixo do status).</p>
-        <div style="overflow:auto"><table class="tbl"><thead><tr><th>Código</th><th>Exame</th><th>Unidade</th><th>Qtd no último TXT</th><th>Alvo sugerido</th><th>Exame da bateria</th><th>Situação</th></tr></thead><tbody>${linhas}</tbody></table></div></div>`;
+        <div style="overflow:auto"><table class="tbl"><thead><tr><th>Código</th><th>Exame</th><th>Unidade</th><th>Qtd no último TXT</th><th>Referência (laudo)</th><th>Exame da bateria</th><th>Situação</th></tr></thead><tbody>${linhas}</tbody></table></div></div>`;
   }
 
   Object.assign(A.views, { vResultados, vPaciente, vArquivos, vInterface });
