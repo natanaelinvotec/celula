@@ -689,10 +689,26 @@ span.rg-mes{cursor:default}
 .fora-sis summary{cursor:pointer;font-size:13px;line-height:1.4}
 .fora-acoes{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}
 .fora-acoes .faint{font-size:12px;font-weight:700}
-.fora-lista{max-height:220px;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:2px 12px}
-.fora-item{display:flex;gap:8px;align-items:flex-start;font-size:13px;padding:5px 2px;cursor:pointer;min-width:0}
-.fora-item b{font-weight:800}.fora-item small{display:block;color:var(--muted);font-size:11px;font-weight:700}
-.fora-item input{margin-top:3px;flex:none}
+.fora-lista{max-height:260px;overflow:auto;display:grid;gap:6px;padding-right:2px}
+.fora-item{display:flex;gap:10px;align-items:center;justify-content:space-between;font-size:13px;padding:7px 8px 7px 10px;min-width:0;border-radius:10px;border:1px solid var(--line);border-left:4px solid var(--muted);background:var(--surface)}
+.fora-item[data-dec="ex"]{border-left-color:var(--c5)}.fora-item[data-dec="manter"]{border-left-color:var(--ok)}.fora-item[data-dec="excluir"]{border-left-color:var(--crit);opacity:.75}
+.fora-item[data-dec="excluir"] .fora-nome b{text-decoration:line-through}
+.fora-nome{min-width:0}.fora-item b{font-weight:800}.fora-item small{display:block;color:var(--muted);font-size:11px;font-weight:700}
+.fora-ja{color:var(--c5)}
+.fora-dec{flex:none;width:min(272px,58%);padding:6px 8px;border-radius:9px;border:1px solid var(--line);background:var(--surface);color:var(--text);font:700 12.5px/1.2 'Nunito',system-ui,sans-serif;text-overflow:ellipsis}
+.fora-conta{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px;min-height:22px}
+.fc{font-size:12px;font-weight:800;padding:2px 9px;border-radius:99px;background:color-mix(in srgb,var(--cor) 13%,transparent);color:var(--cor)}
+.fc.ex{--cor:var(--c5)}.fc.manter{--cor:var(--ok)}.fc.excluir{--cor:var(--crit)}
+@media (max-width:520px){.fora-item{flex-direction:column;align-items:stretch}.fora-dec{width:100%}}
+/* ex-pacientes */
+.ex-tag{display:inline-block;font-size:10.5px;font-weight:800;padding:1px 7px;border-radius:99px;background:var(--surface-3);color:var(--muted)}
+.ex-tag[data-m="obito"]{background:color-mix(in srgb,var(--muted) 18%,transparent)}
+.ex-tag[data-m="transplante"]{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
+.ex-tag[data-m="abandono"]{background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn)}
+.ex-chip svg{width:13px;height:13px}
+.ex-edit{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-top:10px;padding:10px 12px;border-radius:12px;background:var(--surface-2);font-size:12.5px;font-weight:800;color:var(--muted)}
+.ex-edit label{display:grid;gap:4px}
+.ex-edit select,.ex-edit input{padding:6px 9px;border-radius:9px;border:1px solid var(--line);background:var(--surface);color:var(--text);font:700 13px/1.2 'Nunito',system-ui,sans-serif}
 
 
 /* ================= relatório do período (gerencial) ================= */
