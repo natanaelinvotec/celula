@@ -164,7 +164,7 @@
   };
 
   // ================= pacientes do TXT que não estão no sistema atual =================
-  // Ao subir TXT antigos, só entra o histórico de quem está no MedRim hoje; os demais ficam agrupados para excluir.
+  // Ao subir TXT, quem não está no MedRim hoje fica agrupado: guardar como ex-paciente (com o motivo), manter ou excluir.
   function indiceSistema() {
     const P = E() ? E().pacientes : {}, cpfs = new Set(), nomes = new Set();
     Object.entries(P).forEach(([id, x]) => { if (x.cpf) cpfs.add(x.cpf); if (/^\d{11}$/.test(id)) cpfs.add(id); if (x.nome) nomes.add(M.norm(x.nome)); });
@@ -204,32 +204,65 @@
     const novo = filtrarTxt(buf, new Set(tirar)), r2 = M.lerTxtResultados(novo);
     return salvarLote({ name: arquivo.name, type: 'text/plain' }, novo, r2, comp, silencioso, { filtrado: { removidos: tirar.length, tamanhoOriginal: buf.byteLength } });
   }
-  /** bloco agrupado (com marcar/desmarcar) — lista: [{ chave, nome, cpf, meses? }] */
-  function htmlForaSistema(lista, excluir) {
+  // Decisão para cada paciente fora do sistema: 'ex:<motivo>' (guardar como ex-paciente), 'manter' ou 'excluir'.
+  const OPC_FORA = () => [...Object.entries(M.EX_MOTIVOS).map(([k, r]) => ['ex:' + k, 'Ex-paciente · ' + r]), ['manter', 'Manter (paciente sem posição)'], ['excluir', 'Excluir (não entra)']];
+  const arquivado = x => { const X = (E() && E().exPacientes) || {}; return X[x.chave] || Object.values(X).find(a => M.norm(a.nome) === M.norm(x.nome)) || null; };
+  /** padrão: quem já está no arquivo volta com o mesmo motivo; os demais viram ex-paciente (motivo a informar) — ou ficam, no mês atual */
+  function decisoesIniciais(lista, antigo) {
+    const dec = new Map();
+    lista.forEach(x => { const a = arquivado(x); dec.set(x.chave, a ? 'ex:' + (a.motivo || 'desconhecido') : antigo ? 'ex:desconhecido' : 'manter'); });
+    return dec;
+  }
+  const excluidosDe = (lista, dec) => new Set(lista.filter(x => dec.get(x.chave) === 'excluir').map(x => x.chave));
+  /** depois de importar: guarda os ex-pacientes no arquivo (com o motivo e os meses do TXT) */
+  function guardarDecisoes(lista, dec, comps) {
+    let n = 0;
+    lista.forEach(x => {
+      const d = dec.get(x.chave) || ''; if (!d.startsWith('ex:')) return;
+      const a = arquivado(x), chave = a && a.cpf && E().exPacientes[a.cpf] ? a.cpf : x.chave;
+      const meses = [...new Set([...((a && a.meses) || []), ...(x.meses || comps || [])])].sort();
+      A.guardarExPaciente(chave, { nome: x.nome, cpf: x.cpf || (a && a.cpf) || '', motivo: d.slice(3), origem: (a && a.origem) || 'txt', meses });
+      n++;
+    });
+    if (n) { A.evento('exPaciente', null, `${n} ${n === 1 ? 'paciente guardado' : 'pacientes guardados'} nos ex-pacientes pelo TXT de resultados`); A.salvar(); }
+    return n;
+  }
+  /** bloco agrupado — lista: [{ chave, nome, cpf, meses? }] */
+  function htmlForaSistema(lista, dec) {
     if (!lista.length) return '';
     const mc = c => `${MES_CURTO[+c.slice(5) - 1]}/${c.slice(2, 4)}`;
     return `<details class="fora-sis" open><summary><b>${lista.length} ${lista.length === 1 ? 'paciente' : 'pacientes'} fora do sistema atual</b> <span class="faint">— não estão no MedRim hoje (saíram antes ou não são da escala)</span></summary>
-      <div class="fora-acoes"><button type="button" class="btn sm ghost" data-fs="todos">${ic('check')} Excluir todos</button><button type="button" class="btn sm ghost" data-fs="nenhum">${ic('undo')} Manter todos</button><span class="faint" data-fs="conta"></span></div>
-      <div class="fora-lista">${lista.map((x, i) => `<label class="fora-item"><input type="checkbox" data-fs-i="${i}" ${excluir.has(x.chave) ? 'checked' : ''}><span><b>${esc(titulo(x.nome))}</b><small>${x.cpf ? esc(mascCpf(x.cpf)) : 'sem CPF'}${x.meses && x.meses.length ? ' · ' + x.meses.map(mc).join(', ') : ''}</small></span></label>`).join('')}</div>
-      <p class="desc" style="margin:8px 0 0">Marcado = <b>excluir</b>: não entra no histórico e sai também do TXT guardado no MedRim (a cópia fica filtrada e renumerada). Para meses antigos, que a Hiperrim já recebeu, é o recomendado.</p></details>`;
+      <div class="fora-acoes"><button type="button" class="btn sm ghost" data-fs="ex">${ic('userx')} Todos ex-pacientes</button><button type="button" class="btn sm ghost" data-fs="excluir">${ic('x')} Excluir todos</button><button type="button" class="btn sm ghost" data-fs="manter">${ic('undo')} Manter todos</button></div>
+      <div class="fora-conta" data-fs="conta" aria-live="polite"></div>
+      <div class="fora-lista">${lista.map((x, i) => { const a = arquivado(x), d = dec.get(x.chave); return `<div class="fora-item" data-fs-linha="${i}"><span class="fora-nome"><b>${esc(titulo(x.nome))}</b><small>${x.cpf ? esc(mascCpf(x.cpf)) : 'sem CPF'}${x.meses && x.meses.length ? ' · ' + x.meses.map(mc).join(', ') : ''}${a ? ' · <span class="fora-ja">já nos ex-pacientes</span>' : ''}</small></span>
+        <select class="fora-dec" data-fs-i="${i}" aria-label="O que fazer com ${esc(titulo(x.nome))}">${OPC_FORA().map(([v, r]) => `<option value="${v}" ${d === v ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></div>`; }).join('')}</div>
+      <p class="desc" style="margin:8px 0 0"><b>Ex-paciente</b>: o histórico fica guardado à parte, com o motivo (óbito, transplante…) — aparece no grupo “Ex-pacientes” dos resultados, sem entrar nos alertas, e o motivo pode ser corrigido depois na ficha. <b>Excluir</b>: não entra no histórico e sai do TXT guardado no MedRim. <b>Manter</b>: entra como paciente sem posição na escala (ex.: de passagem).</p></details>`;
   }
-  /** liga o bloco: atualiza o conjunto `excluir` e o contador */
-  function ligarForaSistema(raiz, lista, excluir, aoMudar) {
-    const conta = () => { const el = raiz.querySelector('[data-fs="conta"]'); if (el) el.textContent = `${lista.filter(x => excluir.has(x.chave)).length} de ${lista.length} serão excluídos`; };
+  /** liga o bloco: atualiza as decisões, o contador e a cor de cada linha */
+  function ligarForaSistema(raiz, lista, dec, aoMudar) {
+    const pintar = () => {
+      raiz.querySelectorAll('[data-fs-linha]').forEach(l => { const d = dec.get(lista[+l.dataset.fsLinha].chave) || ''; l.dataset.dec = d.startsWith('ex:') ? 'ex' : d; });
+      const c = { ex: 0, manter: 0, excluir: 0 }; lista.forEach(x => { const d = dec.get(x.chave) || ''; c[d.startsWith('ex:') ? 'ex' : d]++; });
+      const el = raiz.querySelector('[data-fs="conta"]');
+      if (el) el.innerHTML = [c.ex && `<span class="fc ex">${c.ex} ex-paciente${c.ex > 1 ? 's' : ''}</span>`, c.manter && `<span class="fc manter">${c.manter} mantido${c.manter > 1 ? 's' : ''}</span>`, c.excluir && `<span class="fc excluir">${c.excluir} excluído${c.excluir > 1 ? 's' : ''}</span>`].filter(Boolean).join('');
+    };
     raiz.addEventListener('change', e => {
       const i = e.target.dataset && e.target.dataset.fsI; if (i == null) return;
       e.stopPropagation();
-      if (e.target.checked) excluir.add(lista[+i].chave); else excluir.delete(lista[+i].chave);
-      conta(); if (aoMudar) aoMudar();
+      dec.set(lista[+i].chave, e.target.value);
+      pintar(); if (aoMudar) aoMudar();
     });
     raiz.addEventListener('click', e => {
-      const b = e.target.closest('[data-fs="todos"],[data-fs="nenhum"]'); if (!b) return;
-      const marcar = b.dataset.fs === 'todos';
-      lista.forEach(x => (marcar ? excluir.add(x.chave) : excluir.delete(x.chave)));
-      raiz.querySelectorAll('[data-fs-i]').forEach(ch => { ch.checked = marcar; });
-      conta(); if (aoMudar) aoMudar();
+      const b = e.target.closest('[data-fs="ex"],[data-fs="excluir"],[data-fs="manter"]'); if (!b) return;
+      const tipo = b.dataset.fs;
+      lista.forEach((x, i) => {
+        const atual = dec.get(x.chave) || '', a = arquivado(x);
+        const v = tipo === 'ex' ? (atual.startsWith('ex:') ? atual : 'ex:' + ((a && a.motivo) || 'desconhecido')) : tipo;
+        dec.set(x.chave, v); const sel = raiz.querySelector(`[data-fs-i="${i}"]`); if (sel) sel.value = v;
+      });
+      pintar(); if (aoMudar) aoMudar();
     });
-    conta();
+    pintar();
   }
 
   // ================= importação =================
@@ -248,7 +281,7 @@
     const palpite = adivinharCompetencia(arquivo.name, r.datas), comp = compForcada || palpite;
     const idx = indiceSistema(), fora = foraDoSistema(r, idx);
     const naEscala = Object.keys(r.pacientes).length - (idx.vazio ? Object.keys(r.pacientes).length : fora.length);
-    const excluir = new Set(comp < refAtual() ? fora.map(x => x.chave) : []);
+    const dec = decisoesIniciais(fora, comp < refAtual());
     const porTipo = {}; r.avisos.forEach(a => { porTipo[a.tipo] = (porTipo[a.tipo] || 0) + 1; });
     const rotAv = { semcpf: 'sem CPF', cpf: 'CPF inválido', recoleta: 'recoletas', urr: 'ureia pós ≥ pré', texto: 'valores “superior a”', codigo: 'códigos não interpretados', seq: 'sequência', campo: 'campos extras', tipo: 'registro desconhecido', orfao: 'linha órfã' };
     const opts = [];
@@ -268,10 +301,10 @@
         ${compForcada && palpite !== compForcada ? `<div class="alerta-box">${ic('alert')}<div>Você escolheu ${rotComp(compForcada)} na régua, mas pelo ${/[A-Z]{3}[^0-9]*\d{4}/i.test(arquivo.name) ? 'nome do arquivo' : 'dia da coleta'} ele parece ser de <b>${rotComp(palpite)}</b>. Confira a competência acima.</div></div>` : ''}
         ${R.lotes.some(l => l.competencia === comp) ? `<div class="alerta-box">${ic('alert')}<div>Já existe um lote de ${rotComp(comp)}. Importar de novo <b>substitui</b> esse lote (o histórico dos outros meses fica).</div></div>` : ''}
         ${r.avisos.length ? `<div class="alerta-box">${ic('alert')}<div><b>Checagem do arquivo:</b> ${Object.entries(porTipo).map(([t, n]) => `${n} ${rotAv[t] || t}`).join(' · ')}. Os detalhes ficam na aba Arquivos TXT.</div></div>` : `<div class="alerta-box ok">${ic('check')}<div>Arquivo consistente.</div></div>`}
-        ${htmlForaSistema(fora, excluir)}
+        ${htmlForaSistema(fora, dec)}
         ${R.ok ? '' : `<div class="alerta-box">${ic('alert')}<div>Este navegador bloqueou o armazenamento local (IndexedDB): os resultados ficam só até fechar a página.</div></div>`}`,
-      botoes: [{ rot: 'Cancelar' }, { rot: 'Importar', cls: 'pri', ic: 'check', acao: f => { gravarSemExcluidos(arquivo, buf, r, f.comp.value, excluir); } }],
-      aoAbrir: (m, form) => { const bl = form.querySelector('.fora-sis'); if (bl) ligarForaSistema(bl, fora, excluir); },
+      botoes: [{ rot: 'Cancelar' }, { rot: 'Importar', cls: 'pri', ic: 'check', acao: f => { const c = f.comp.value; Promise.resolve(gravarSemExcluidos(arquivo, buf, r, c, excluidosDe(fora, dec))).then(() => { if (guardarDecisoes(fora, dec, [c])) A.render(); }); } }],
+      aoAbrir: (m, form) => { const bl = form.querySelector('.fora-sis'); if (bl) ligarForaSistema(bl, fora, dec); },
     });
   }
   async function salvarLote(arquivo, buf, r, comp, silencioso, extra) {
@@ -386,13 +419,14 @@
       if (anterior) { const pa = anterior.pacientes[p.chave] || Object.values(anterior.pacientes).find(x => M.norm(x.nome) === M.norm(p.nome)); if (pa) ant = Object.assign({}, pa.valores, M.derivados(pa.valores)); }
       const crit = Object.keys(val).filter(c => (M.classificar(c, val[c]) || '').startsWith('crit'));
       const fora = M.RES_MAPA.filter(c => ['baixo', 'alto'].includes(M.classificar(c, val[c])) || (M.classificar(c, val[c]) || '').startsWith('crit'));
-      return { p, v, val, ant, crit, fora, aviso: val.urr && val.urr.aviso };
-    }).sort((a, b) => (a.v && b.v) ? A.ordemRelatorio(a.v, b.v) : a.v ? -1 : b.v ? 1 : a.p.nome.localeCompare(b.p.nome));
+      const ex = v ? null : A.exPacienteDe(p.chave, p.nome);
+      return { p, v, val, ant, crit, fora, ex, aviso: val.urr && val.urr.aviso };
+    }).sort((a, b) => { const g = l => (l.v ? 0 : l.ex ? 2 : 1); return g(a) - g(b) || ((a.v && b.v) ? A.ordemRelatorio(a.v, b.v) : a.p.nome.localeCompare(b.p.nome)); });
   }
   const pctNaMeta = (linhas, cod) => { const c = linhas.filter(l => l.val[cod] && l.val[cod].n != null); return c.length ? Math.round(c.filter(l => M.classificar(cod, l.val[cod]) === 'ok').length / c.length * 100) : null; };
   A.resumoUltimoLote = function () {
     if (!R.lotes.length) return null;
-    const lote = R.lotes[0], ls = linhasLote(lote);
+    const lote = R.lotes[0], ls = linhasLote(lote).filter(l => !l.ex);
     const urr = ls.filter(l => l.val.urr && l.val.urr.n > 0).map(l => l.val.urr.n);
     return { lote, n: ls.length, crit: ls.filter(l => l.crit.length || l.aviso).length, urrMed: urr.length ? Math.round(urr.reduce((a, b) => a + b, 0) / urr.length * 10) / 10 : null, hb: pctNaMeta(ls, '016') };
   };
@@ -534,7 +568,7 @@
     const idx = indiceSistema(), porChave = {};
     itens.forEach(it => { it.fora = foraDoSistema(it.r, idx); it.fora.forEach(x => { (porChave[x.chave] = porChave[x.chave] || Object.assign({ meses: [] }, x)).meses.push(it.comp); }); });
     const fora = Object.values(porChave).sort((a, b) => a.nome.localeCompare(b.nome));
-    const excluir = new Set(fora.map(x => x.chave));
+    const dec = decisoesIniciais(fora, true);
     const fim = somaMes(fimRegua(), 1), opts = [];
     for (let k = 0; k < 48; k++) opts.push(somaMes(fim, -k));
     itens.forEach(it => { if (it.comp && !opts.includes(it.comp)) opts.push(it.comp); });
@@ -549,19 +583,19 @@
     const corSit = { erro: 'var(--crit)', fora: 'var(--muted)', dup: 'var(--crit)', subst: 'var(--warn)', novo: 'var(--ok)' };
     const linhas = () => { const st = situacao(); return itens.map((it, i) => `<tr>
         <td><input type="checkbox" data-lt="marca" data-i="${i}" ${it.marcado ? 'checked' : ''} ${it.erro ? 'disabled' : ''} aria-label="Importar ${esc(it.f.name)}"></td>
-        <td><b>${esc(it.f.name)}</b><br><small class="faint">${it.r ? `${Object.keys(it.r.pacientes).length} pacientes${it.fora && it.fora.length ? (n => (n ? ` · ${n} fora do sistema excluídos` : ` · ${it.fora.length} fora do sistema vão entrar`))(it.fora.filter(x => excluir.has(x.chave)).length) : ''} · coleta ${Object.keys(it.r.datas).sort().map(fmtData).join(', ')}` : ''}</small></td>
+        <td><b>${esc(it.f.name)}</b><br><small class="faint">${it.r ? `${Object.keys(it.r.pacientes).length} pacientes${it.fora && it.fora.length ? (n => ` · ${it.fora.length} fora do sistema${n ? ` (${n} ${n === 1 ? 'excluído' : 'excluídos'})` : ''}`)(it.fora.filter(x => dec.get(x.chave) === 'excluir').length) : ''} · coleta ${Object.keys(it.r.datas).sort().map(fmtData).join(', ')}` : ''}</small></td>
         <td>${it.erro ? '—' : `<select class="sel-cand" data-lt="comp" data-i="${i}">${opts.map(c => `<option value="${c}" ${c === it.comp ? 'selected' : ''}>${rotComp(c)} · ${tipoComp(c).rotulo}</option>`).join('')}</select>`}</td>
         <td><span class="chip b" style="--cor:${corSit[st[i][0]]}">${st[i][0] === 'novo' ? 'novo' : st[i][0] === 'subst' ? 'substitui' : st[i][0] === 'dup' ? 'repetido' : st[i][0] === 'erro' ? 'erro' : 'não importa'}</span><br><small class="faint">${esc(st[i][1])}</small></td></tr>`).join(''); };
     A.abrirModal({
       titulo: `Subir ${itens.length} TXT de resultados`, ic: 'upload', cor: 'var(--blue)',
       corpo: `<p style="margin:0 0 8px">Cada arquivo vai para o mês indicado (pelo nome do arquivo ou pela data da coleta + 1 mês). Confira e ajuste antes de importar.</p>
         <div class="tbl-wrap" style="max-height:52vh;overflow:auto"><table class="tbl lote-txt"><thead><tr><th></th><th>Arquivo</th><th>Competência</th><th>Situação</th></tr></thead><tbody data-lt="corpo">${linhas()}</tbody></table></div>
-        ${htmlForaSistema(fora, excluir)}
+        ${htmlForaSistema(fora, dec)}
         <div class="login-msg" data-lt="msg"></div>`,
       botoes: [{ rot: 'Cancelar' }, { rot: 'Importar marcados', cls: 'pri', ic: 'check', acao: form => { importarMarcados(form); return false; } }],
       aoAbrir: (m, form) => {
         const repintar = () => { form.querySelector('[data-lt=corpo]').innerHTML = linhas(); };
-        const bl = form.querySelector('.fora-sis'); if (bl) ligarForaSistema(bl, fora, excluir, repintar);
+        const bl = form.querySelector('.fora-sis'); if (bl) ligarForaSistema(bl, fora, dec, repintar);
         form.addEventListener('change', e => {
           const t = e.target, it = itens[+t.dataset.i]; if (!it) return;
           if (t.dataset.lt === 'marca') it.marcado = t.checked;
@@ -579,12 +613,13 @@
       let ok = 0;
       for (const it of vai) {
         msg(`Importando ${rotComp(it.comp)} (${ok + 1}/${vai.length})…`);
-        try { await gravarSemExcluidos(it.f, it.buf, it.r, it.comp, excluir, true); ok++; }
+        try { await gravarSemExcluidos(it.f, it.buf, it.r, it.comp, excluidosDe(fora, dec), true); ok++; }
         catch (e) { b.disabled = false; return msg(`Parou em ${it.f.name}: ${e.message || e}. Os ${ok} anteriores ficaram salvos.`); }
       }
+      const nGuard = guardarDecisoes(fora, dec, vai.map(it => it.comp));
       A.fechar(); A.render();
-      const nEx = fora.filter(x => excluir.has(x.chave)).length;
-      A.toast(`${ok} ${ok === 1 ? 'mês importado' : 'meses importados'} para o histórico${nEx ? ` · ${nEx} pacientes fora do sistema não entraram` : ''}`, 'check');
+      const nEx = fora.filter(x => dec.get(x.chave) === 'excluir').length;
+      A.toast(`${ok} ${ok === 1 ? 'mês importado' : 'meses importados'} para o histórico${nGuard ? ` · ${nGuard} guardados nos ex-pacientes` : ''}${nEx ? ` · ${nEx} excluídos` : ''}`, 'check');
     }
   }
 
@@ -601,24 +636,24 @@
   function vResultados(compParam) {
     if (!R.lotes.length) return htmlRegua(null) + vazioResultados();
     const lote = R.lotes.find(l => l.competencia === compParam) || R.lotes[0];
-    const todas = linhasLote(lote);
+    const todas = linhasLote(lote), ativas = todas.filter(l => !l.ex), nEx = todas.length - ativas.length;
     const anterior = R.lotes.find(l => l.competencia < lote.competencia);
     let ls = todas;
-    if (filtroR.salao) ls = ls.filter(l => filtroR.salao === 'sem' ? !l.v : l.v && l.v.salao === +filtroR.salao);
+    if (filtroR.salao) ls = ls.filter(l => filtroR.salao === 'sem' ? !l.v && !l.ex : filtroR.salao === 'ex' ? !!l.ex : l.v && l.v.salao === +filtroR.salao);
     if (filtroR.turno) ls = ls.filter(l => l.v && l.v.turno === filtroR.turno);
     if (filtroR.grupo) ls = ls.filter(l => l.v && l.v.grupo === filtroR.grupo);
     if (filtroR.busca) { const q = M.norm(filtroR.busca); ls = ls.filter(l => M.norm(l.p.nome + ' ' + l.p.cpf).includes(q)); }
     if (filtroR.alterados) ls = ls.filter(l => l.fora.length || l.aviso);
-    const urr = todas.filter(l => l.val.urr && l.val.urr.n > 0);
+    const urr = ativas.filter(l => l.val.urr && l.val.urr.n > 0);
     const tile = (cor, v, l, s) => `<div class="kpi" style="--cor:${cor}"><span class="v mono">${v == null ? '—' : v}</span><span class="l">${l}</span>${s ? `<span class="s">${s}</span>` : ''}</div>`;
-    const crit = todas.filter(l => l.crit.length || l.aviso);
+    const crit = ativas.filter(l => l.crit.length || l.aviso);
     const cab = M.RES_MAPA.map(c => { const d = M.defRes(c); return `<th class="num" title="${esc(d.nome)} · ${esc(d.un)} · referência do laudo ${esc(refTxt(c))}">${esc(d.curto)}<small>${esc(refTxt(c, true)).split(' · ').join('<br>')}</small></th>`; }).join('');
     let grupo = null, corpo = '';
     for (const l of ls) {
-      const g = l.v ? `Salão ${l.v.salao} · ${M.GRUPOS[l.v.grupo].rotulo} · ${A.rotTurno(l.v.turno)}` : 'Sem posição na escala atual';
+      const g = l.v ? `Salão ${l.v.salao} · ${M.GRUPOS[l.v.grupo].rotulo} · ${A.rotTurno(l.v.turno)}` : l.ex ? 'Ex-pacientes (guardados — fora dos alertas)' : 'Sem posição na escala atual';
       if (g !== grupo) { grupo = g; corpo += `<tr class="rel-grupo"><td colspan="${M.RES_MAPA.length + 2}">${esc(g)}</td></tr>`; }
       corpo += `<tr class="res-linha" data-pac="${esc(l.p.chave)}" tabindex="0">
-        <td class="fixa"><b>${esc(nomeCurto(l.p.nome))}</b>${l.crit.length || l.aviso ? ` <span class="st" style="--cor:var(--crit)" title="${esc([...l.crit.map(c => M.defRes(c).nome), l.aviso].filter(Boolean).join(' · '))}">${ic('alert')}</span>` : ''}<br><small>${l.v ? 'Máq ' + esc(l.v.maq) : esc(mascCpf(l.p.cpf))}${l.p.coletas.length > 1 ? ' · recoleta' : ''}</small></td>
+        <td class="fixa"><b>${esc(nomeCurto(l.p.nome))}</b>${l.crit.length || l.aviso ? ` <span class="st" style="--cor:var(--crit)" title="${esc([...l.crit.map(c => M.defRes(c).nome), l.aviso].filter(Boolean).join(' · '))}">${ic('alert')}</span>` : ''}<br><small>${l.v ? 'Máq ' + esc(l.v.maq) : l.ex ? `<span class="ex-tag" data-m="${esc(l.ex.motivo || 'desconhecido')}">${esc(M.EX_MOTIVOS[l.ex.motivo] || 'Ex-paciente')}</span>` : esc(mascCpf(l.p.cpf))}${l.p.coletas.length > 1 ? ' · recoleta' : ''}</small></td>
         <td class="mono" style="color:var(--muted);font-size:12px">${fmtData(l.p.data).slice(0, 5)}</td>
         ${M.RES_MAPA.map(c => { const cl = M.classificar(c, l.val[c]); return `<td class="num rv ${CLS[cl] || ''}">${fmtValor(c, l.val[c])}${seta(c, l.val[c], l.ant && l.ant[c])}</td>`; }).join('')}</tr>`;
     }
@@ -637,12 +672,12 @@
         </div>
       </div>
       <div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">
-        ${tile('var(--blue)', todas.length, 'Pacientes com laudo', `${Object.keys(lote.datas).length} data(s) de coleta`)}
+        ${tile('var(--blue)', ativas.length, 'Pacientes com laudo', `${Object.keys(lote.datas).length} data(s) de coleta${nEx ? ` · + ${nEx} ex-paciente${nEx > 1 ? 's' : ''}` : ''}`)}
         ${tile('var(--ok)', urr.length ? Math.round(urr.filter(l => l.val.urr.n >= 65).length / urr.length * 100) + '%' : null, 'URR ≥ 65%', urr.length ? `média ${(urr.reduce((s, l) => s + l.val.urr.n, 0) / urr.length).toFixed(1).replace('.', ',')}%` : '')}
-        ${tile('var(--rim)', pctNaMeta(todas, '016') != null ? pctNaMeta(todas, '016') + '%' : null, `Hb na referência (${refTxt('016')} g/dL)`, '')}
-        ${tile('var(--b-sem)', pctNaMeta(todas, '006') != null ? pctNaMeta(todas, '006') + '%' : null, `Fósforo ${refTxt('006')}`, '')}
-        ${tile('var(--c5)', pctNaMeta(todas, '034') != null ? pctNaMeta(todas, '034') + '%' : null, `PTH ${refTxt('034')}`, '')}
-        ${tile('var(--teal)', pctNaMeta(todas, '030') != null ? pctNaMeta(todas, '030') + '%' : null, `IST ${refTxt('030')} %`, '')}
+        ${tile('var(--rim)', pctNaMeta(ativas, '016') != null ? pctNaMeta(ativas, '016') + '%' : null, `Hb na referência (${refTxt('016')} g/dL)`, '')}
+        ${tile('var(--b-sem)', pctNaMeta(ativas, '006') != null ? pctNaMeta(ativas, '006') + '%' : null, `Fósforo ${refTxt('006')}`, '')}
+        ${tile('var(--c5)', pctNaMeta(ativas, '034') != null ? pctNaMeta(ativas, '034') + '%' : null, `PTH ${refTxt('034')}`, '')}
+        ${tile('var(--teal)', pctNaMeta(ativas, '030') != null ? pctNaMeta(ativas, '030') + '%' : null, `IST ${refTxt('030')} %`, '')}
         ${tile('var(--crit)', crit.length, 'Com valor crítico', 'ou ureia pós ≥ pré')}
       </div>
       ${crit.length ? `<details class="card secao-sync" style="margin-bottom:14px" open><summary><span class="kpi" style="--cor:var(--crit);border:0;padding:0;background:none;box-shadow:none"><span class="ic" style="margin:0">${ic('bell')}</span></span><div><h2>Valores críticos <span class="chip b" style="--cor:var(--crit)">${crit.length}</span></h2><p class="desc" style="margin:0">Fora dos limites de alerta — avisar o nefrologista de plantão.</p></div><svg class="i chev"><use href="#i-chev"/></svg></summary>
@@ -650,7 +685,7 @@
       <div class="card">
         <div class="no-print" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;align-items:center">
           <div class="busca" style="width:240px"><svg class="i"><use href="#i-search"/></svg><input data-rf="busca" type="search" placeholder="Filtrar paciente…" value="${esc(filtroR.busca)}"></div>
-          <select class="btn sm" data-rf="salao"><option value="">Todos os salões</option>${opSal.map(s => `<option value="${s}" ${filtroR.salao === String(s) ? 'selected' : ''}>Salão ${s}</option>`).join('')}<option value="sem" ${filtroR.salao === 'sem' ? 'selected' : ''}>Sem posição</option></select>
+          <select class="btn sm" data-rf="salao"><option value="">Todos os salões</option>${opSal.map(s => `<option value="${s}" ${filtroR.salao === String(s) ? 'selected' : ''}>Salão ${s}</option>`).join('')}<option value="sem" ${filtroR.salao === 'sem' ? 'selected' : ''}>Sem posição</option>${nEx ? `<option value="ex" ${filtroR.salao === 'ex' ? 'selected' : ''}>Ex-pacientes (${nEx})</option>` : ''}</select>
           <select class="btn sm" data-rf="grupo"><option value="">Todos os dias</option>${['SQS', 'TQS'].map(g => `<option value="${g}" ${filtroR.grupo === g ? 'selected' : ''}>${M.GRUPOS[g].rotulo}</option>`).join('')}</select>
           <select class="btn sm" data-rf="turno"><option value="">Todos os turnos</option>${['M', 'T', 'N'].map(t => `<option value="${t}" ${filtroR.turno === t ? 'selected' : ''}>${A.rotTurno(t)}</option>`).join('')}</select>
           <button class="btn sm ${filtroR.alterados ? 'pri' : ''}" data-rf="alterados">${ic('alert')} Só fora da referência</button>
@@ -804,6 +839,15 @@
       </tbody></table></div></div>`;
     const notas = (E() && E().notas && E().notas[chave]) || [];
     const ehResultado = pe && pe.status ? M.STATUS[pe.status] : null;
+    // ex-paciente: chip + edição do motivo/data (o que veio de uma saída registrada no salão se corrige na ficha do salão)
+    const ex = v ? null : A.exPacienteDe(chave, base.nome);
+    const X = (E() && E().exPacientes) || {}, kArq = Object.keys(X).find(k => k === chave || M.norm(X[k].nome) === M.norm(base.nome));
+    const noSistema = !!(E() && (E().pacientes[chave] || Object.values(E().pacientes).some(x => M.norm(x.nome) === M.norm(base.nome))));
+    const blocoEx = ex && kArq && !(pe && M.saiuDaClinica(pe)) ? `<div class="ex-edit so-prog no-print">
+        <label>Motivo <select data-ex="motivo">${Object.entries(M.EX_MOTIVOS).map(([k, r]) => `<option value="${k}" ${ex.motivo === k ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></label>
+        <label>Data da saída <input type="date" data-ex="data" value="${esc(ex.desde || '')}"></label>
+        <button type="button" class="btn sm ghost" data-fp="ex-tirar">${ic('undo')} Tirar dos ex-pacientes</button></div>`
+      : !ex && !v && !noSistema && E() ? `<div class="ex-edit so-prog no-print"><span class="faint">Não está no MedRim hoje.</span><button type="button" class="btn sm" data-fp="ex-guardar">${ic('userx')} Guardar como ex-paciente</button></div>` : '';
     return `<div class="no-print" style="margin-bottom:10px"><a class="btn sm ghost" href="#/resultados/${ult.comp}">← Resultados de ${rotComp(ult.comp)}</a></div>
       <section class="ficha-top card">
         <span class="avatar" style="width:64px;height:64px;font-size:22px">${esc(iniciais(base.nome))}</span>
@@ -814,8 +858,10 @@
             ${pe && pe.nasc ? `<span class="chip">${esc(pe.nasc)} · ${idade(pe.nasc)} anos</span>` : ''}
             <span class="chip">CPF ${esc(mascCpf(base.cpf))}</span>
             ${ehResultado && pe.status !== 'ativo' ? `<span class="chip b" style="--cor:${ehResultado.cor}">${ehResultado.rotulo}</span>` : ''}
+            ${ex && !(pe && M.saiuDaClinica(pe)) ? `<span class="chip b ex-chip" style="--cor:var(--muted)">${ic('userx')} Ex-paciente · ${esc(M.EX_MOTIVOS[ex.motivo] || 'motivo não informado')}${ex.desde ? ' · ' + fmtData(ex.desde) : ''}</span>` : ''}
             <span class="chip b" style="--cor:var(--teal)">${hist.length} ${hist.length === 1 ? 'mês' : 'meses'} de histórico</span>
           </div>
+          ${blocoEx}
         </div>
         <div class="no-print" style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn sm" data-fp="csv">${ic('sheet')} Histórico (Excel)</button>
@@ -861,6 +907,14 @@
       const b = e.target.closest('[data-fp]'); if (!b || b.tagName === 'FORM') return;
       if (b.dataset.fp === 'hist') return alternar(b.dataset.cod);
       if (b.dataset.fp === 'fechar-hist') { Object.assign(fichaAberta, { cod: null }); redesenhar(); return; }
+      if (b.dataset.fp === 'ex-guardar' || b.dataset.fp === 'ex-tirar') {
+        let base = null; for (const l of R.lotes) { if (l.pacientes[chave]) { base = l.pacientes[chave]; break; } }
+        const X = E().exPacientes || {}, k = Object.keys(X).find(x => x === chave || M.norm(X[x].nome) === M.norm(base.nome));
+        A.marcar('ex-paciente');
+        if (b.dataset.fp === 'ex-tirar') { A.tirarExPaciente(k); A.evento('exPaciente', null, `${titulo(base.nome)} saiu da lista de ex-pacientes`); A.toast(`${titulo(base.nome)} saiu dos ex-pacientes`, 'undo', true); }
+        else { A.guardarExPaciente(chave, { nome: base.nome, cpf: base.cpf || '', motivo: 'desconhecido', origem: 'txt', meses: R.lotes.filter(l => l.pacientes[chave]).map(l => l.competencia).sort() }); A.evento('exPaciente', null, `${titulo(base.nome)} guardado nos ex-pacientes`); A.toast(`${titulo(base.nome)} guardado nos ex-pacientes — informe o motivo`, 'userx', true); }
+        A.salvar(); redesenhar(); return;
+      }
       if (b.dataset.fp === 'imprimir') window.print();
       if (b.dataset.fp === 'csv') {
         let base = null; for (const l of R.lotes) { if (l.pacientes[chave]) { base = l.pacientes[chave]; break; } }
@@ -871,6 +925,16 @@
         const a = Object.assign(document.createElement('a'), { href: url, download: `historico-${M.norm(base.nome).replace(/ /g, '-').toLowerCase()}.csv` });
         document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
       }
+    };
+    c.onchange = e => {
+      const t = e.target.closest('[data-ex]'); if (!t) return;
+      let base = null; for (const l of R.lotes) { if (l.pacientes[chave]) { base = l.pacientes[chave]; break; } }
+      const X = E().exPacientes || {}, k = Object.keys(X).find(x => x === chave || M.norm(X[x].nome) === M.norm(base.nome)); if (!k) return;
+      A.marcar('ex-paciente');
+      if (t.dataset.ex === 'motivo') A.guardarExPaciente(k, { motivo: t.value });
+      if (t.dataset.ex === 'data') A.guardarExPaciente(k, { desde: t.value || null });
+      A.evento('exPaciente', null, `${titulo(base.nome)}: ex-paciente — ${(M.EX_MOTIVOS[X[k].motivo] || '').toLowerCase()}${X[k].desde ? ' em ' + fmtData(X[k].desde) : ''}`);
+      A.salvar(); redesenhar(); A.toast('Ex-paciente atualizado', 'check', true);
     };
     const form = $('form[data-fp="nota"]');
     if (form) form.onsubmit = e => {

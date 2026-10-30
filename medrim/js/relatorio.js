@@ -105,6 +105,13 @@
       const d = M.dataSaida(pc); if (!d || d < p.de || d > p.ate) return;
       grupos[pc.status].push({ tipo: pc.status, ts: d + 'T12:00:00', dia: d, data: d, paciente: pc, onde: pc.ultimaVaga || '' });
     });
+    // … e quem já foi para o arquivo de ex-pacientes (saídas de meses anteriores), se tiver data e motivo
+    const P = E().pacientes || {}, nomesP = new Set(Object.values(P).map(x => M.norm(x.nome)));
+    Object.entries(E().exPacientes || {}).forEach(([k, x]) => {
+      if (!grupos[x.motivo] || !M.SAIDAS[x.motivo] || !x.desde || x.desde < p.de || x.desde > p.ate) return;
+      if (P[k] || (x.cpf && P[x.cpf]) || nomesP.has(M.norm(x.nome))) return;   // já contado pelo status
+      grupos[x.motivo].push({ tipo: x.motivo, ts: x.desde + 'T12:00:00', dia: x.desde, data: x.desde, paciente: { nome: x.nome, cpf: x.cpf }, onde: x.ultimaVaga || '' });
+    });
     Object.values(grupos).forEach(l => l.sort((a, b) => b.ts.localeCompare(a.ts)));
     const total = Object.values(grupos).reduce((s, l) => s + l.length, 0);
     const saidas = ['obito', 'abandono', 'transplante', 'saiu'].reduce((s, k) => s + grupos[k].length, 0);

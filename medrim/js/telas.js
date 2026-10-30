@@ -222,10 +222,18 @@
     }
     if (ant) Object.values(ant.pacientes).filter(p => (p.origem === 'manual' || p.origem === 'transito') && !pacs[p.id]).forEach(p => { pacs[p.id] = Object.assign({}, p, { vagaId: null }); });
     novo.pacientes = pacs;
+    // arquivo de ex-pacientes: saídas do mês anterior que não vieram no novo CSV ficam guardadas; quem voltou sai do arquivo
+    const ex = novo.exPacientes = novo.exPacientes || {}, voltaram = [];
+    if (ant) Object.values(ant.pacientes).filter(p => M.saiuDaClinica(p) && !pacs[p.id]).forEach(p => {
+      const k = p.cpf || p.id;
+      ex[k] = Object.assign({}, ex[k], { nome: p.nome, cpf: p.cpf || '', nasc: p.nasc || '', motivo: p.status, desde: M.dataSaida(p) || null, ultimaVaga: p.ultimaVaga || '', origem: 'saida', em: A.hojeISO() });
+    });
+    Object.values(pacs).forEach(p => { if (p.cpf && ex[p.cpf]) { voltaram.push([p, ex[p.cpf]]); delete ex[p.cpf]; } });
     const r = M.sincronizar(novo.vagas, pacs, novo.apelidos);
     novo.importadoEm = new Date().toISOString();
     novo.arquivos.csv = csvs.map(f => f.name);
     A.E = novo;
+    voltaram.forEach(([p, x]) => A.evento('retorno', p.id, `${titulo(p.nome)} voltou à clínica (estava nos ex-pacientes: ${(M.EX_MOTIVOS[x.motivo] || x.motivo).toLowerCase()})`));
     A.evento('importacao', null, `Importação: ${docx ? docx.name + ' + ' : ''}${csvs.length} CSV · ${Object.values(pacs).filter(p => p.origem === 'csv').length} pedidos · ${r.alta} casados automaticamente`);
     A.salvar();
     if (xlsx) { const lista = await aplicarLista(xlsx); return Object.assign(M.resumoDivergencias(E().vagas, E().pacientes), { lista }); }

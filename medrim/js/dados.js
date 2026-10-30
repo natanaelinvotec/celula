@@ -125,6 +125,11 @@
     abandono:    { opcao: 'Abandonou o tratamento',                  motivo: 'Abandonou o tratamento em' },
     transplante: { opcao: 'Transplantado — não faz mais diálise',    motivo: 'Transplantado em', resto: ' — não faz mais diálise' },
   };
+  // Arquivo de ex-pacientes: quem saiu da clínica fica guardado (com o histórico de resultados) para sempre.
+  M.EX_MOTIVOS = {
+    obito: 'Óbito', transplante: 'Transplantado', abandono: 'Abandonou o tratamento',
+    saiu: 'Alta / transferência externa', desconhecido: 'Motivo não informado',
+  };
   M.saiuDaClinica = p => !!(p && M.SAIDAS[p.status]);
   M.dataSaida = p => (p ? (p.status === 'obito' ? p.obitoEm : p.saiuEm) : null);
 })(window.MED = window.MED || {});

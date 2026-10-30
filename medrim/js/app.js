@@ -54,12 +54,13 @@
       eventos: (anterior && anterior.eventos) || [], outroLab: {},
       travas: (anterior && anterior.travas) || fixos().travas || {},
       convenios: (anterior && anterior.convenios) || fixos().convenios || {},
+      exPacientes: (anterior && anterior.exPacientes) || fixos().exPacientes || {},
       etiquetas: (anterior && anterior.etiquetas) || null,
     };
   }
   /** Regras que valem todos os meses e sobrevivem ao "Começar do zero" (guardadas à parte). */
   function fixos() { if (M.nuvem) return {}; try { return JSON.parse(localStorage.getItem('medrim:fixos')) || {}; } catch (e) { return {}; } }
-  function guardarFixos() { try { if (E) localStorage.setItem('medrim:fixos', JSON.stringify({ travas: E.travas || {}, convenios: E.convenios || {} })); } catch (e) { /* sem storage */ } }
+  function guardarFixos() { try { if (E) localStorage.setItem('medrim:fixos', JSON.stringify({ travas: E.travas || {}, convenios: E.convenios || {}, exPacientes: E.exPacientes || {} })); } catch (e) { /* sem storage */ } }
   function marcar(rotulo) { historico.push({ rotulo, json: JSON.stringify(E) }); if (historico.length > 20) historico.shift(); }
   function desfazer() {
     const h = historico.pop(); if (!h) return;
@@ -191,6 +192,7 @@
     let mudou = false;
     if (!E.travas) { E.travas = fixos().travas || {}; mudou = true; }
     if (!E.convenios) { E.convenios = fixos().convenios || {}; mudou = true; }
+    if (!E.exPacientes) { E.exPacientes = fixos().exPacientes || {}; mudou = true; }
     if (E.outroLab && Object.keys(E.outroLab).length) {          // formato antigo: marcado por máquina
       Object.keys(E.outroLab).forEach(id => { const v = vagaPor(id); if (v && ocupada(v) && !travaDe(v)) { const p = pacDe(v);
         const t = { id: uid(), chave: chaveTrava(v), nomeEscala: v.nomeEscala || '', grupo: v.grupo, turno: v.turno, cpf: (p && p.cpf) || '', nome: '', desde: hojeISO(), motivo: 'outro laboratório' };
@@ -206,6 +208,23 @@
     if (mudou) salvar();
   }
   const convenioDe = p => (p && p.cpf && E.convenios && E.convenios[p.cpf]) || null;
+  /** Ex-paciente: pelo arquivo (CPF ou nome) ou por uma saída registrada neste mês. → { motivo, desde, origem, ... } | null */
+  function exPacienteDe(chave, nome) {
+    if (!E) return null;
+    const X = E.exPacientes || {}, nn = nome ? M.norm(nome) : '';
+    const arq = X[chave] || (nn && Object.values(X).find(x => M.norm(x.nome) === nn)) || null;
+    const p = E.pacientes[chave] || (nn && Object.values(E.pacientes).find(x => M.norm(x.nome) === nn)) || null;
+    if (p && !M.saiuDaClinica(p)) return null;                                  // está ativo na clínica
+    if (p) return Object.assign({}, arq, { nome: p.nome, cpf: p.cpf || '', motivo: p.status, desde: M.dataSaida(p) || (arq && arq.desde) || null, ultimaVaga: p.ultimaVaga || (arq && arq.ultimaVaga) || '', origem: 'saida' });
+    return arq;
+  }
+  /** Guarda (ou atualiza) alguém no arquivo de ex-pacientes. dados: { nome, cpf, motivo, desde, origem, ... } */
+  function guardarExPaciente(chave, dados) {
+    E.exPacientes = E.exPacientes || {};
+    const u = M.sessao && M.sessao.perfil;
+    E.exPacientes[chave] = Object.assign({ desde: null, em: hojeISO() }, E.exPacientes[chave], dados, u ? { por: u.nome || u.email } : {});
+  }
+  function tirarExPaciente(chave) { if (E.exPacientes) delete E.exPacientes[chave]; }
   function definirConvenio(cpf, conv) {
     cpf = M.soDigitos(cpf || ''); if (!cpf) return false;
     if (conv) E.convenios[cpf] = conv; else delete E.convenios[cpf];
@@ -472,7 +491,7 @@
   const EVT = {
     transferencia: ['swap', 'var(--blue)'], internacao: ['bed', 'var(--warn)'], retorno: ['check', 'var(--ok)'],
     obito: ['userx', 'var(--muted)'], saida: ['userx', 'var(--c5)'], abandono: ['userx', 'var(--warn)'], transplante: ['check', 'var(--ok)'], admissao: ['userplus', 'var(--teal)'], transito: ['route', 'var(--c5)'],
-    vinculo: ['link', 'var(--blue)'], importacao: ['upload', 'var(--rim)'], controle: ['flask', 'var(--k-glic)'], remocao: ['x', 'var(--crit)'], cadastro: ['userplus', 'var(--blue)'],
+    vinculo: ['link', 'var(--blue)'], importacao: ['upload', 'var(--rim)'], controle: ['flask', 'var(--k-glic)'], remocao: ['x', 'var(--crit)'], cadastro: ['userplus', 'var(--blue)'], exPaciente: ['userx', 'var(--muted)'],
   };
   const movHtml = e => { const [icn, cor] = EVT[e.tipo] || ['info', 'var(--muted)']; return `<div class="mov" style="--cor:${cor}"><span class="ic">${ic(icn)}</span><div>${esc(e.texto)}<br><small>${fmtDataHora(e.ts)}</small></div></div>`; };
 
@@ -574,7 +593,7 @@
     ui, salvar, toast, iniciar, marcar, desfazer, evento, estadoVazio, render, ir, rotaAtual,
     tipoRef, bateriaRef, nomeRef, dataCadastro, examesDo, situacao, tipoDoPaciente, pacDe, vagaPor, ocupada, rotTurno, local, nomeExibicao, nomeFaixa,
     saloes, ordemRelatorio, divergencias, metricas, movHtml,
-    travaDe, travaPorCpf, travar, destravar, normalizar, convenioDe, definirConvenio,
+    travaDe, travaPorCpf, travar, destravar, normalizar, convenioDe, definirConvenio, exPacienteDe, guardarExPaciente, tirarExPaciente,
     papel, podeEditar, ehProgramador, rotaPermitida,
   });
   Object.defineProperty(M.app, 'E', { get: () => E, set: v => { E = v; }, configurable: true });
